@@ -1,0 +1,1165 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LagerPal (Web)</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+:root{--ink:#16243a;--ink-2:#1f3350;--blue:#2563a8;--blue-bright:#3b82d4;--blue-tint:#eef4fb;--amber:#d97316;--amber-soft:#fff4e6;--green:#15803d;--red:#c0392f;--paper:#f6f7f9;--card:#fff;--line:#e5e8ec;--line-soft:#eef0f3;--zebra:#f7f9fb;--text:#1a2433;--text-2:#5a6678;--text-3:#97a1b0;--field-h:38px;--shadow-sm:0 1px 2px rgba(20,36,58,.06),0 1px 3px rgba(20,36,58,.08);--shadow-lg:0 12px 40px rgba(20,36,58,.18);--font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:var(--font);background:var(--paper);color:var(--text);font-size:14px;-webkit-font-smoothing:antialiased;padding-bottom:64px;}
+.mono,td,input[type=number]{font-variant-numeric:tabular-nums;}
+header{background:var(--ink);color:#fff;padding:0 16px;height:50px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:20;}
+header h1{font-size:1rem;font-weight:700;}
+#glocke{position:relative;background:rgba(255,255,255,.1);border:none;color:#fff;width:36px;height:36px;border-radius:8px;font-size:1.05rem;margin-left:auto;}
+#glocke:hover{background:rgba(255,255,255,.2);}
+#glocke.hat-neue{animation:gp 1.5s ease-in-out infinite;}
+@keyframes gp{0%,100%{background:rgba(217,115,22,.3);}50%{background:rgba(217,115,22,.6);}}
+#glocke-zahl{position:absolute;top:-4px;right:-4px;background:var(--amber);color:#fff;font-size:.66rem;font-weight:700;min-width:17px;height:17px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 4px;}
+#hdr-logout{background:rgba(255,255,255,.1);border:none;color:#fff;height:34px;padding:0 12px;border-radius:8px;font-weight:600;}
+#leer-panel{position:fixed;top:56px;right:12px;width:380px;max-width:calc(100vw - 24px);max-height:calc(100vh - 80px);background:#fff;border-radius:12px;box-shadow:var(--shadow-lg);z-index:1500;display:none;flex-direction:column;border:1px solid var(--line);overflow:hidden;}
+.leer-panel-head{background:var(--ink);color:#fff;padding:12px 16px;font-weight:700;display:flex;align-items:center;justify-content:space-between;}
+#leer-panel-body{overflow-y:auto;flex:1;padding:8px;}
+.leer-item{padding:10px 12px;border-radius:8px;border:1px solid var(--line-soft);margin-bottom:6px;background:#fafbfc;}
+.leer-item-art{font-weight:700;font-size:.88rem;}
+.leer-item-meta{font-size:.78rem;color:var(--text-2);margin-top:2px;}
+.leer-panel-foot{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;background:#f9fafb;}
+.lp{display:inline-block;background:var(--amber-soft);color:#7c4a12;border:1px solid #f3dfc0;padding:1px 8px;border-radius:6px;font-weight:600;font-size:.76rem;margin:2px 4px 0 0;}
+.tabs{display:flex;flex-wrap:wrap;background:var(--ink-2);padding:0 8px;gap:1px;position:sticky;top:50px;z-index:15;}
+.tab{padding:10px 15px;color:rgba(255,255,255,.55);font-size:.85rem;font-weight:600;border:none;border-bottom:2px solid transparent;background:transparent;font-family:var(--font);}
+.tab:hover{color:rgba(255,255,255,.85);background:rgba(255,255,255,.04);}
+.tab.active{color:#fff;border-bottom-color:var(--amber);background:rgba(255,255,255,.06);}
+.container{padding:16px;max-width:1120px;margin:0 auto;}
+.tabpanel{display:block;}
+.card{background:var(--card);border-radius:8px;border:1px solid var(--line);padding:16px;margin-bottom:12px;}
+label{display:block;font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3);margin:10px 0 4px;}
+input,select{height:var(--field-h);padding:0 12px;border:1.5px solid var(--line);border-radius:8px;font-size:.92rem;font-family:var(--font);color:var(--text);background:#fff;outline:none;max-width:100%;}
+input:focus,select:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,168,.1);}
+select[multiple]{height:auto;}
+button{cursor:pointer;font-family:var(--font);}
+button:not(.tab):not(#glocke):not(#hdr-logout):not(.sec):not(.lager-btn):not(.ss-lp-btn):not(.ss-mode):not(#undo-bar-btn){display:inline-flex;align-items:center;justify-content:center;gap:6px;height:var(--field-h);padding:0 16px;border:none;border-radius:8px;font-size:.88rem;font-weight:600;background:var(--blue);color:#fff;box-shadow:var(--shadow-sm);}
+button:not(.tab):not(#glocke):not(#hdr-logout):not(.sec):not(.lager-btn):not(.ss-lp-btn):not(.ss-mode):not(#undo-bar-btn):hover{background:#1f5594;}
+.sec{display:inline-flex!important;align-items:center;justify-content:center;height:var(--field-h);padding:0 14px;border:none;border-radius:8px;font-size:.85rem;font-weight:600;background:#eceff3!important;color:var(--text-2)!important;box-shadow:none!important;}
+.sec:hover{background:#e1e5ec!important;color:var(--text)!important;}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.buchung-box{background:var(--ink);border-radius:8px;padding:16px;margin-bottom:12px;color:#fff;}
+.buchung-box label{color:rgba(255,255,255,.6);}
+.buchung-box input,.buchung-box select{background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.22);color:#fff;}
+.buchung-box input::placeholder{color:rgba(255,255,255,.4);}
+.ss-lp-btn{padding:6px 12px;border-radius:7px;border:1.5px solid var(--line);background:#fff;color:var(--text);font-size:.86rem;font-weight:600;}
+.ss-lp-btn:hover{border-color:var(--blue);}
+.ss-lp-btn.active{background:var(--blue-bright);border-color:var(--blue-bright);color:#fff;}
+#lager-grid,.lager-grid{display:grid;grid-template-columns:repeat(auto-fill,120px);gap:8px;}
+.lager-btn{width:120px;min-height:92px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:2px;padding:8px;line-height:1.2;border:1.5px solid var(--line);background:#fff;border-radius:8px;}
+.lager-btn:hover{border-color:var(--blue);}
+.lager-btn.active{background:var(--blue-bright);border-color:var(--blue-bright);color:#fff;}
+.lager-btn-name{font-size:.95rem;font-weight:700;word-break:break-word;}
+.lager-btn-sub{font-size:.7rem;font-weight:600;color:var(--text-2);}
+.lager-btn.active .lager-btn-sub{color:rgba(255,255,255,.85);}
+table{width:100%;border-collapse:collapse;font-size:.86rem;}
+thead th{background:var(--blue-tint);padding:8px 10px;text-align:left;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-2);}
+tbody td{padding:7px 10px;border-bottom:1px solid var(--line-soft);color:var(--text);}
+tbody tr:nth-child(even) td{background:var(--zebra);}
+tbody tr:hover td{background:#eef4fb;}
+.badge{display:inline-block;font-size:.66rem;font-weight:700;padding:1px 6px;border-radius:4px;margin-left:6px;vertical-align:middle;}
+.b-on{background:#C6F6D5;color:#276749;}.b-off{background:#fed7d7;color:#9b2c2c;}.b-unk{background:#e2e8f0;color:#4a5568;}
+.set-badge{display:inline-block;margin-left:8px;padding:1px 6px;font-size:.66rem;font-weight:800;color:#fff;background:var(--red);border-radius:4px;}
+.art{border-bottom:1px solid var(--line-soft);padding:10px 2px;}
+.art-name{font-weight:700;}
+.art-meta{font-size:.82rem;color:var(--text-2);margin-top:2px;}
+.muted{color:var(--text-3);font-size:.82rem;}.hint{font-size:.8rem;color:var(--text-3);}
+.err{color:var(--red);white-space:pre-wrap;}.ok{color:var(--green);}
+#undo-bar{position:fixed;left:0;right:0;bottom:0;background:var(--amber-soft);border-top:1px solid #f3dfc0;display:none;align-items:center;gap:12px;padding:8px 16px;z-index:30;}
+#undo-bar-info{font-size:.82rem;color:#7c4a12;flex:1;min-width:0;}
+#undo-bar-btn{background:var(--amber);color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:.82rem;font-weight:600;}
+#undo-bar-btn:hover{background:#c2630f;}
+.ss-mode-toggle{display:inline-flex;border:1.5px solid var(--line);border-radius:8px;overflow:hidden;}
+.ss-mode{padding:8px 18px;background:#fff;color:var(--text);font-weight:600;font-size:.9rem;cursor:pointer;border:none;}
+.ss-mode+.ss-mode{border-left:1.5px solid var(--line);}
+.ss-mode.active{background:var(--blue-bright);color:#fff;}
+.lp-btn-row{display:flex;flex-wrap:wrap;gap:8px;}
+.lp-btn-label{font-size:.8rem;font-weight:600;color:var(--text-2);margin:0 0 8px;}
+.pt{display:inline-block;font-size:.68rem;font-weight:700;padding:2px 8px;border-radius:4px;white-space:nowrap;}
+.pt-ein{background:#C6F6D5;color:#276749;}.pt-aus{background:#fed7d7;color:#9b2c2c;}
+.pt-um{background:#bee3f8;color:#2a4e7c;}.pt-inv{background:#e9d8fd;color:#553c9a;}
+.pt-lp{background:#feebc8;color:#7c4a12;}.pt-undo{background:#e2e8f0;color:#4a5568;}
+.pt-csv{background:#d6f0ef;color:#285e61;}.pt-art{background:#fefcbf;color:#744210;}
+.login-wrap{max-width:460px;margin:24px auto;padding:0 16px;}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-start;justify-content:center;padding:16px;z-index:50;overflow:auto;}
+.modal-box{background:#fff;border-radius:12px;padding:18px;max-width:460px;width:100%;margin-top:5vh;}
+</style>
+</head>
+<body>
+<header>
+  <h1>📦 LagerPal</h1>
+  <button id="glocke" style="display:none;" onclick="toggleLeerPanel()" title="Leermeldungen">🔔<span id="glocke-zahl" style="display:none;">0</span></button>
+  <button id="hdr-logout" style="display:none;" onclick="abmelden()">Abmelden</button>
+</header>
+<div id="leer-panel">
+  <div class="leer-panel-head"><span>🔔 Offene Leermeldungen</span><button class="sec" onclick="toggleLeerPanel()">✕</button></div>
+  <div id="leer-panel-body"></div>
+  <div class="leer-panel-foot"><button class="sec" onclick="leerGesehen()">Alle als gesehen markieren</button></div>
+</div>
+
+<!-- Verbindung / Login -->
+<div class="login-wrap" id="auth-card"><div class="card">
+  <div id="cfg-block">
+    <p class="hint">Einmalig: Supabase <b>Project URL</b> und <b>anon public key</b> (Project Settings → API).</p>
+    <label>Supabase Project URL</label><input id="url" placeholder="https://xxxx.supabase.co">
+    <label>anon public key</label><input id="key" placeholder="eyJhbGci...">
+    <div class="row" style="margin-top:10px;"><button onclick="verbinden()">Verbinden</button></div>
+  </div>
+  <div id="login-block" style="display:none;">
+    <label>E-Mail</label><input id="email" type="email" autocomplete="username">
+    <label>Passwort</label><input id="pass" type="password" autocomplete="current-password"
+      onkeydown="if(event.key==='Enter')anmelden()">
+    <div class="row" style="margin-top:10px;"><button onclick="anmelden()">Anmelden</button>
+      <span id="login-status" class="hint"></span></div>
+  </div>
+</div></div>
+
+<!-- App -->
+<div id="app" style="display:none;">
+  <div class="tabs">
+    <button class="tab active" data-t="suche" onclick="showTab('suche')">🔎 Suche</button>
+    <button class="tab" data-t="buchen" onclick="showTab('buchen')">📟 Scanner</button>
+    <button class="tab" data-t="umlagern" onclick="showTab('umlagern')">🔀 Umlagern</button>
+    <button class="tab" data-t="einraeumen" onclick="showTab('einraeumen')">🧺 Einräumen</button>
+    <button class="tab" data-t="inventur" onclick="showTab('inventur')">🧮 Inventur</button>
+    <button class="tab" data-t="kartons" onclick="showTab('kartons')">📦 Kartons</button>
+    <button class="tab" data-t="protokoll" onclick="showTab('protokoll')">📋 Protokoll</button>
+    <button class="tab" data-t="uebersicht" onclick="showTab('uebersicht')">📊 Übersicht</button>
+  </div>
+  <div class="container">
+
+  <div id="tab-suche" class="tabpanel">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;"><b>Artikel</b>
+        <button onclick="openNeu()">＋ Neuer Artikel</button></div>
+      <div class="lp-btn-label" style="margin-top:10px;">Paletten — anklicken zeigt die Artikel darauf:</div>
+      <div id="such-paletten" class="lp-btn-row"></div>
+      <label style="margin-top:12px;">Artikel suchen (Nummer, Name oder EAN)</label>
+      <input id="suche" placeholder="mind. 2 Zeichen…" oninput="sucheDebounced()">
+      <div id="such-status" class="hint" style="margin-top:6px;"></div>
+      <div id="ergebnisse"></div>
+    </div>
+  </div>
+
+  <div id="tab-buchen" class="tabpanel" style="display:none;">
+    <div class="card">
+      <div class="ss-mode-toggle">
+        <button id="ss-mode-aus" class="ss-mode active" onclick="ssSetMode('aus')">− Ausbuchen</button>
+        <button id="ss-mode-ein" class="ss-mode" onclick="ssSetMode('ein')">＋ Einbuchen</button>
+      </div>
+
+      <div id="ss-lp-section" style="display:none;margin-top:16px;">
+        <div class="lp-btn-label">📍 Lagerplatz wählen — bleibt aktiv bis zur Änderung:</div>
+        <div id="ss-lp-btns" class="lp-btn-row"></div>
+        <div id="ss-lp-hint" class="err" style="display:none;margin-top:6px;">⚠️ Bitte zuerst Lagerplatz wählen</div>
+      </div>
+
+      <div style="margin-top:16px;">
+        <div class="lp-btn-label">🔍 Menge &amp; EAN / Artikelnummer scannen:</div>
+        <div class="row" style="margin-top:6px;">
+          <input id="ss-menge" type="number" min="1" value="1" title="Menge" style="width:72px;flex:0 0 auto;">
+          <input id="ss-scan" placeholder="Barcode scannen oder eingeben…" autocomplete="off" autocapitalize="off"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();ssScan();}" style="flex:1;min-width:180px;">
+          <button class="sec" onclick="el('ss-scan').value='';el('ss-scan').focus();" title="Leeren">✕</button>
+        </div>
+      </div>
+
+      <div id="ss-pick-section" style="display:none;margin-top:14px;">
+        <div id="ss-pick-btns" class="lp-btn-row"></div>
+      </div>
+
+      <div id="ss-status" class="hint" style="margin-top:16px;">Modus wählen und scannen</div>
+    </div>
+  </div>
+
+  <div id="tab-umlagern" class="tabpanel" style="display:none;">
+    <div class="card">
+      <label>Artikelnummer oder EAN</label>
+      <input id="u-artnr" placeholder="z. B. WE-0-001 oder EAN" onchange="umlagernArtikelGeladen()">
+      <div id="u-artikel" class="hint" style="margin-top:4px;"></div>
+      <label>Von Lagerplatz (nur mit Bestand)</label>
+      <select id="u-von"><option value="">— erst Artikel eingeben —</option></select>
+      <label>Nach Lagerplatz</label>
+      <select id="u-nach" onchange="toggleNeu('u-nach','u-nach-neu')"><option value="">—</option></select>
+      <input id="u-nach-neu" placeholder="neuer Lagerplatz…" style="display:none;margin-top:6px;">
+      <label>Menge</label>
+      <input id="u-menge" type="number" min="1" value="1">
+      <div class="row" style="margin-top:12px;"><button onclick="umlagern()">🔀 Umlagern</button></div>
+      <div id="u-status" style="margin-top:12px;"></div>
+    </div>
+  </div>
+
+  <div id="tab-einraeumen" class="tabpanel" style="display:none;">
+    <div class="card">
+      <div class="hint" style="margin-bottom:8px;">Quelle ausräumen: Artikel scannen, die App legt Kartons automatisch an
+        (P01-K01, K02, …) und sagt nach Amazon-Status, in welchen Karton. Voraussetzung: Amazon-Status ist gepflegt.</div>
+      <div id="er-setup">
+        <label>Quelle (ausräumen)</label>
+        <select id="er-quelle"><option value="">— Quelle wählen —</option></select>
+        <label>Palette</label>
+        <select id="er-palette"><option value="">— Palette wählen —</option></select>
+        <div class="row" style="margin-top:12px;"><button onclick="erStart()">▶︎ Starten</button></div>
+      </div>
+      <div id="er-run" style="display:none;">
+        <div id="er-ctx" style="margin-bottom:10px;"></div>
+        <label>Artikel scannen (Nummer/EAN)</label>
+        <input id="er-scan" placeholder="scannen…" onkeydown="if(event.key==='Enter'){event.preventDefault();erScan();}">
+        <label>Menge</label>
+        <input id="er-menge" type="number" min="1" value="1">
+        <div class="row" style="margin-top:12px;">
+          <button onclick="erScan()">Buchen</button>
+          <button class="sec" onclick="erFertig()">✓ Palette fertig</button>
+        </div>
+        <div id="er-status" style="margin-top:12px;"></div>
+      </div>
+    </div>
+    <div class="card"><div id="er-log" class="hint">Noch nichts eingeräumt.</div></div>
+  </div>
+
+  <div id="tab-inventur" class="tabpanel" style="display:none;">
+    <div class="card">
+      <div class="hint" style="margin-bottom:8px;">Lagerplatz wählen, je Artikel die <b>gezählte</b> Menge (Ist) eintragen.
+        Nur geänderte Werte werden übernommen und als „Inventur" protokolliert.</div>
+      <label>Lagerplatz</label>
+      <select id="inv-lp" onchange="invLadePlatz()"><option value="">— Lagerplatz wählen —</option></select>
+      <div style="margin-top:10px;">
+        <label>Artikel ergänzen (Nummer/EAN)</label>
+        <input id="inv-add" placeholder="scannen, dann Enter" onkeydown="if(event.key==='Enter'){event.preventDefault();invAddArtikel();}">
+      </div>
+      <div id="inv-table" style="margin-top:10px;"></div>
+      <div class="row" style="margin-top:12px;"><button onclick="invAbschliessen()">✓ Inventur übernehmen</button>
+        <span id="inv-status" class="hint"></span></div>
+    </div>
+  </div>
+
+  <div id="tab-kartons" class="tabpanel" style="display:none;">
+    <div class="card">
+      <b>🛠 Lagerplätze verwalten</b>
+      <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:10px;">
+        <div><label>Neuer Lagerplatz</label>
+          <div class="row"><input id="lp-neu" placeholder="Name"><button onclick="lpNeu()">Anlegen</button></div></div>
+        <div><label>Umbenennen</label>
+          <div class="row"><select id="lp-um-von"></select><input id="lp-um-nach" placeholder="neuer Name"><button onclick="lpUmbenennen()">→</button></div></div>
+        <div><label>Löschen</label>
+          <div class="row"><select id="lp-del"></select><button style="background:#c05621;" onclick="lpLoeschen()">Löschen</button></div></div>
+        <div><label>Zusammenlegen (mehrere Quellen wählen: Strg/Cmd-Klick)</label>
+          <select id="lp-merge-q" multiple size="4" style="height:auto;"></select>
+          <div class="row" style="margin-top:6px;"><input id="lp-merge-ziel" placeholder="Zielname"><button onclick="lpZusammenlegen()">Zusammenlegen</button></div></div>
+        <div><label>Karton-Einstellungen (Palette / Kanal)</label>
+          <div class="row"><select id="karton-sel" onchange="kartonSelChange()"></select>
+            <input id="karton-pal" placeholder="Palette" style="width:110px;">
+            <select id="karton-kanal" style="width:130px;"><option value="0">gemischt</option><option value="1">online</option><option value="2">nicht online</option></select>
+            <button onclick="kartonSetzen()">Speichern</button></div></div>
+      </div>
+      <div id="lp-status" class="hint" style="margin-top:8px;"></div>
+    </div>
+    <div class="card" style="margin-top:12px;">
+      <div class="row" style="justify-content:space-between;"><b>Paletten — anklicken zeigt die Kartons</b>
+        <button class="sec" onclick="kartonsLaden()">↻ Aktualisieren</button></div>
+      <div id="kartons-grid" class="lager-grid" style="margin-top:10px;">Wird geladen…</div>
+      <div id="kartons-detail" style="margin-top:14px;"></div>
+    </div>
+  </div>
+
+  <div id="tab-protokoll" class="tabpanel" style="display:none;">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <b>📋 Protokoll</b>
+        <div class="row" style="gap:8px;flex-wrap:wrap;">
+          <input id="prot-suche" placeholder="Artikel, Nr., EAN, Platz…" oninput="protoFilterChanged()" style="width:190px;">
+          <select id="prot-typ" onchange="protokollLaden()" style="width:160px;">
+            <option value="">Alle Typen</option>
+            <option>Eingang</option><option>Ausgang</option><option>Umlagerung</option>
+            <option>Inventur</option><option>Artikeländerung</option>
+            <option>Lagerplatz angelegt</option><option>Lagerplatz gelöscht</option>
+            <option>Umbenennung</option><option>Zusammenlegung</option><option>Rückgängig</option>
+          </select>
+          <button class="sec" onclick="protokollLaden()">↻</button>
+        </div>
+      </div>
+      <div id="prot-count" class="hint" style="margin-top:8px;"></div>
+      <div id="protokoll-body" style="margin-top:8px;overflow-x:auto;">Wird geladen…</div>
+    </div>
+  </div>
+
+  <div id="tab-uebersicht" class="tabpanel" style="display:none;">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;"><b>Übersicht</b>
+        <button class="sec" onclick="loadDashboard()">↻ Aktualisieren</button></div>
+      <div id="dash-cards" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;"><span class="hint">Wird geladen…</span></div>
+      <div style="margin-top:16px;font-weight:700;">Letzte Bewegungen</div>
+      <div id="dash-letzte" class="hint" style="margin-top:6px;"></div>
+    </div>
+  </div>
+
+  </div><!-- /container -->
+</div>
+
+<div id="undo-bar">
+  <span id="undo-bar-info"></span>
+  <button id="undo-bar-btn" onclick="rueckgaengigJetzt()">↩︎ Rückgängig</button>
+</div>
+
+<script>
+let client = null;
+const el = id => document.getElementById(id);
+
+function verbinden() {
+  const url = el('url').value.trim(), key = el('key').value.trim();
+  if (!url || !key) { el('login-status').innerHTML = '<span class="err">URL und Schlüssel eingeben.</span>'; return; }
+  try {
+    client = supabase.createClient(url, key);
+    localStorage.setItem('lp_url', url); localStorage.setItem('lp_key', key);
+    el('cfg-block').style.display = 'none';
+    el('login-block').style.display = 'block';
+    pruefeSession();
+  } catch(e) { alert('Fehler: ' + e.message); }
+}
+
+async function pruefeSession() {
+  if (!client) return;
+  const { data } = await client.auth.getSession();
+  if (data.session) zeigeApp(data.session.user.email);
+}
+async function anmelden() {
+  if (!client) return;
+  el('login-status').textContent = 'Anmelden…';
+  const { data, error } = await client.auth.signInWithPassword({ email: el('email').value.trim(), password: el('pass').value });
+  if (error) { el('login-status').innerHTML = '<span class="err">Login fehlgeschlagen: ' + error.message + '</span>'; return; }
+  zeigeApp(data.user.email);
+}
+async function abmelden() {
+  if (client) await client.auth.signOut();
+  location.reload();
+}
+let refreshTimer = null;
+async function zeigeApp(email) {
+  el('auth-card').style.display = 'none';
+  el('app').style.display = 'block';
+  el('glocke').style.display = 'inline-block';
+  el('hdr-logout').style.display = 'inline-block';
+  await ladeAllePlaetze();
+  ladeSuchPaletten();
+  refreshLeer(); refreshUndo();
+  if (!refreshTimer) refreshTimer = setInterval(() => { refreshLeer(); refreshUndo(); }, 15000);
+  el('suche').focus();
+}
+
+// ── Rückgängig (Leiste unten) ───────────────────────────────────────────────
+const UNDO_TYPEN = ['Eingang','Ausgang','Umlagerung','Artikeländerung','Lagerplatz angelegt','Lagerplatz gelöscht','Umbenennung','Zusammenlegung'];
+function beschreibeBuchung(b) {
+  if (b.typ === 'Artikeländerung') return 'Artikel geändert · ' + b.artikelnummer;
+  if (b.typ === 'Umlagerung') return 'Umlagerung ' + (b.lagerplatz||'') + ' (' + b.menge + ' Stk)';
+  if (b.typ === 'Lagerplatz angelegt') return 'Lagerplatz angelegt · ' + (b.lagerplatz||'');
+  if (b.typ === 'Lagerplatz gelöscht') return 'Lagerplatz gelöscht · ' + (b.lagerplatz||'');
+  if (b.typ === 'Umbenennung') return 'Lagerplatz umbenannt · ' + (b.lagerplatz||'');
+  if (b.typ === 'Zusammenlegung') return 'Lagerplätze zusammengelegt · ' + (b.lagerplatz||'');
+  return (b.typ === 'Eingang' ? 'Eingebucht' : 'Ausgebucht') + ': ' + b.menge + '× ' + (b.artikelname||b.artikelnummer) + ' auf ' + (b.lagerplatz||'');
+}
+async function refreshUndo() {
+  if (!client) return;
+  const { data } = await client.from('buchungen').select('typ,artikelnummer,artikelname,lagerplatz,menge')
+    .in('typ', UNDO_TYPEN).eq('rueckgaengig_gemacht', 0).order('id', { ascending: false }).limit(1);
+  const bar = el('undo-bar');
+  if (!data || !data.length) { bar.style.display = 'none'; return; }
+  el('undo-bar-info').innerHTML = 'Letzte Aktion: <strong>' + esc(beschreibeBuchung(data[0])) + '</strong>';
+  bar.style.display = 'flex';
+}
+async function rueckgaengigJetzt() {
+  const { data: res, error } = await client.rpc('rueckgaengig');
+  if (error) { alert('Fehler: ' + error.message); return; }
+  await ladeAllePlaetze();
+  refreshUndo(); refreshLeer();
+  if (el('suche').value.trim().length >= 2) suchen();
+}
+
+// alle bekannten Lagerplätze (für die Dropdowns)
+let allePlaetze = [];
+async function ladeAllePlaetze() {
+  const { data } = await client.from('v_lagerplaetze').select('name');
+  allePlaetze = (data || []).map(x => x.name).sort((a,b) => a.localeCompare(b));
+}
+// Plätze, auf denen ein Artikel aktuell liegt (Bestand > 0)
+async function artikelPlaetze(artnr) {
+  const { data } = await client.from('bestaende').select('lagerplatz,menge').eq('artikelnummer', artnr).gt('menge', 0);
+  return (data || []).sort((a,b) => a.lagerplatz.localeCompare(b.lagerplatz));
+}
+function escAttr(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function toggleNeu(selId, neuId){ el(neuId).style.display = el(selId).value === '__neu__' ? 'block' : 'none'; }
+function chosenLp(selId, neuId){ const s = el(selId); return s.value === '__neu__' ? el(neuId).value.trim() : s.value; }
+
+let suchTimer = null;
+function sucheDebounced() { clearTimeout(suchTimer); suchTimer = setTimeout(suchen, 250); }
+
+async function suchen() {
+  document.querySelectorAll('#such-paletten .ss-lp-btn').forEach(b=>b.classList.remove('active'));
+  selectedPaletten.clear();
+  const raw = el('suche').value.trim();
+  const q = raw.replace(/[,()%]/g, ' ').trim();   // Sonderzeichen entschärfen
+  const box = el('ergebnisse'), st = el('such-status');
+  if (q.length < 2) { box.innerHTML = ''; st.textContent = ''; return; }
+  st.textContent = 'Suche…';
+  // 1) passende Artikel
+  const { data: arts, error } = await client.from('artikel')
+    .select('artikelnummer,artikelname,gtin,online')
+    .or(`artikelnummer.ilike.%${q}%,artikelname.ilike.%${q}%,gtin.ilike.%${q}%`)
+    .order('artikelname').limit(50);
+  if (error) { st.innerHTML = '<span class="err">Fehler: ' + error.message + '</span>'; return; }
+  if (!arts.length) { st.textContent = 'Keine Treffer.'; box.innerHTML = ''; return; }
+  // 2) Bestände dieser Artikel holen
+  const nummern = arts.map(a => a.artikelnummer);
+  const { data: best } = await client.from('bestaende')
+    .select('artikelnummer,lagerplatz,menge').in('artikelnummer', nummern).gt('menge', 0);
+  const bmap = {};
+  (best || []).forEach(b => { (bmap[b.artikelnummer] = bmap[b.artikelnummer] || []).push(b); });
+  st.textContent = arts.length + ' Treffer' + (arts.length === 50 ? ' (max. 50 angezeigt — Suche verfeinern)' : '');
+  box.innerHTML = arts.map(a => artikelKarte(a, (bmap[a.artikelnummer] || []).sort((x,y)=>x.lagerplatz.localeCompare(y.lagerplatz)))).join('');
+}
+
+// eine Artikel-Karte (geteilt von Suche + Paletten-Ansicht)
+function artikelKarte(a, plaetze) {
+  const gesamt = plaetze.reduce((s,p)=>s+p.menge, 0);
+  const lps = plaetze.map(p => `<span class="lp">${esc(p.lagerplatz)}: ${p.menge}</span>`).join('') || '<span class="muted">kein Bestand</span>';
+  const badge = a.online===1 ? '<span class="badge b-on">online</span>'
+              : a.online===2 ? '<span class="badge b-off">nicht online</span>'
+              : '<span class="badge b-unk">?</span>';
+  return `<div class="art">
+    <div class="art-name">${esc(a.artikelname||'')}${badge}
+      <button class="sec" style="padding:2px 8px;float:right;" onclick="openEdit('${jsAttr(a.artikelnummer)}')">✏️ Bearbeiten</button></div>
+    <div class="art-meta">${esc(a.artikelnummer)}${a.gtin?' · EAN '+esc(a.gtin):''} · Gesamt <b>${gesamt}</b></div>
+    <div style="margin-top:4px;">${lps}</div>
+  </div>`;
+}
+
+// Paletten-Buttons oben in der Suche — Mehrfachauswahl, plus "Ohne Palette"
+let selectedPaletten = new Set();   // Werte: Palettenname, oder '' für „Ohne Palette"
+async function ladeSuchPaletten() {
+  const box = el('such-paletten');
+  if (!box) return;
+  const { data } = await client.from('v_lagerplaetze').select('name,palette');
+  const rows = data || [];
+  const pals = [...new Set(rows.map(x=>x.palette).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  const hatOhne = rows.some(x => !x.palette);
+  if (!pals.length && !hatOhne) { box.innerHTML = '<span class="muted">Noch keine Lagerplätze angelegt.</span>'; return; }
+  let html = pals.map(p => `<button class="ss-lp-btn" onclick="togglePalette('${jsAttr(p)}',this)">📦 ${esc(p)}</button>`).join('');
+  if (hatOhne) html += `<button class="ss-lp-btn" onclick="togglePalette('',this)">🚫 Ohne Palette</button>`;
+  box.innerHTML = html;
+}
+function togglePalette(key, btn) {
+  btn.classList.toggle('active');
+  if (selectedPaletten.has(key)) selectedPaletten.delete(key); else selectedPaletten.add(key);
+  el('suche').value = '';
+  suchePaletten();
+}
+async function suchePaletten() {
+  const st = el('such-status'), box = el('ergebnisse');
+  if (!selectedPaletten.size) { st.textContent = ''; box.innerHTML = ''; return; }
+  const labels = [...selectedPaletten].map(k => k === '' ? 'Ohne Palette' : 'Palette ' + k);
+  st.textContent = 'Lade ' + labels.join(', ') + '…';
+  const { data: lps } = await client.from('v_lagerplaetze').select('name,palette');
+  const namen = (lps||[]).filter(x => selectedPaletten.has(x.palette || '')).map(x=>x.name);
+  if (!namen.length) { st.textContent = 'Keine Kartons in dieser Auswahl.'; box.innerHTML = ''; return; }
+  const { data: best } = await client.from('bestaende').select('artikelnummer,lagerplatz,menge').in('lagerplatz', namen).gt('menge', 0);
+  if (!best || !best.length) { st.textContent = labels.join(', ') + ': keine Artikel mit Bestand.'; box.innerHTML = ''; return; }
+  const nummern = [...new Set(best.map(b=>b.artikelnummer))];
+  const { data: arts } = await client.from('artikel').select('artikelnummer,artikelname,gtin,online').in('artikelnummer', nummern);
+  const amap = {}; (arts||[]).forEach(a=>amap[a.artikelnummer]=a);
+  const bmap = {}; best.forEach(b=>{(bmap[b.artikelnummer]=bmap[b.artikelnummer]||[]).push(b);});
+  const liste = nummern.map(n=>amap[n]).filter(Boolean).sort((a,b)=>(a.artikelname||'').localeCompare(b.artikelname||''));
+  st.textContent = labels.join(', ') + ': ' + liste.length + ' Artikel · ' + best.reduce((s,b)=>s+b.menge,0) + ' Stück';
+  box.innerHTML = liste.map(a => artikelKarte(a, (bmap[a.artikelnummer]||[]).slice().sort((x,y)=>x.lagerplatz.localeCompare(y.lagerplatz)))).join('');
+}
+
+// ── Reiter ──────────────────────────────────────────────────────────────────
+function showTab(name) {
+  ['suche','buchen','umlagern','einraeumen','inventur','kartons','protokoll','uebersicht'].forEach(t => {
+    document.querySelector(`.tab[data-t="${t}"]`).classList.toggle('active', t === name);
+    el('tab-'+t).style.display = t === name ? 'block' : 'none';
+  });
+  if (name === 'inventur') invInit();
+  if (name === 'kartons') kartonsLaden();
+  if (name === 'protokoll') protokollLaden();
+  if (name === 'uebersicht') loadDashboard();
+  if (name === 'suche') el('suche').focus();
+  if (name === 'buchen') ssInit();
+  if (name === 'umlagern') el('u-artnr').focus();
+  if (name === 'einraeumen') initEinraeumen();
+}
+
+// ── Einräumen (Ein-Durchgang-Inventur, kanal-geführt) ───────────────────────
+let erSession = null;
+function erKartonName(pal, n){ return pal + '-K' + String(n).padStart(2,'0'); }
+
+async function initEinraeumen() {
+  erSession = null;
+  el('er-setup').style.display = 'block';
+  el('er-run').style.display = 'none';
+  el('er-status').innerHTML = '';
+  el('er-log').textContent = 'Noch nichts eingeräumt.';
+  // Palette P01..P40
+  el('er-palette').innerHTML = '<option value="">— Palette wählen —</option>'
+    + Array.from({length:40}, (_,i)=>{ const p='P'+String(i+1).padStart(2,'0'); return `<option value="${p}">${p}</option>`; }).join('');
+  // Quelle = Plätze mit Bestand
+  await ladeAllePlaetze();
+  const { data } = await client.from('v_lagerplaetze').select('name,artikel,stueck').gt('stueck',0);
+  const q = (data||[]).sort((a,b)=>a.name.localeCompare(b.name));
+  el('er-quelle').innerHTML = '<option value="">— Quelle wählen —</option>'
+    + q.map(x=>`<option value="${escAttr(x.name)}">${esc(x.name)} (${x.artikel} SKUs / ${x.stueck} Stk)</option>`).join('');
+}
+
+function erNaechsteNummer(pal) {
+  let max = 0; const re = new RegExp('^' + pal.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '-K(\\d+)$');
+  allePlaetze.forEach(n => { const m = (n||'').match(re); if (m) max = Math.max(max, parseInt(m[1])); });
+  return max;
+}
+async function erSetKarton(name, kanal) {
+  return client.rpc('karton_setzen', { p_name: name, p_palette: erSession.pal, p_kanal: kanal });
+}
+async function erStart() {
+  const quelle = el('er-quelle').value, pal = el('er-palette').value;
+  if (!quelle) { alert('Bitte Quelle wählen'); return; }
+  if (!pal) { alert('Bitte Palette wählen'); return; }
+  const start = erNaechsteNummer(pal);
+  erSession = { quelle, pal, counter: start+2, aktivOnline: erKartonName(pal,start+1), aktivOffline: erKartonName(pal,start+2), kartonStk:{}, gebucht:[], stk:0 };
+  await erSetKarton(erSession.aktivOnline, 1);
+  await erSetKarton(erSession.aktivOffline, 2);
+  el('er-setup').style.display = 'none';
+  el('er-run').style.display = 'block';
+  erRenderCtx();
+  setTimeout(()=>el('er-scan').focus(), 50);
+}
+function erRenderCtx() {
+  const s = erSession;
+  const box = (farbe,titel,name,ch) => `<div style="flex:1 1 220px;border:2px solid ${farbe};border-radius:8px;padding:10px 12px;margin:4px 0;">
+      <div class="muted" style="text-transform:uppercase;font-size:.7rem;">${titel}</div>
+      <div style="font-weight:800;color:${farbe};">${esc(name)}</div>
+      <div class="muted">${s.kartonStk[name]||0} Stück eingeräumt</div>
+      <button class="sec" style="margin-top:6px;padding:4px 10px;" onclick="erKartonVoll('${ch}')">📄 Karton voll → drucken & nächster</button>
+    </div>`;
+  el('er-ctx').innerHTML = `<div class="muted" style="margin-bottom:6px;">Palette <b>${esc(s.pal)}</b> · Quelle <b>${esc(s.quelle)}</b></div>`
+    + `<div style="display:flex;gap:10px;flex-wrap:wrap;">${box('#276749','🟢 Aktiver Online-Karton',s.aktivOnline,'online')}${box('#9b2c2c','🔴 Aktiver Nicht-online-Karton',s.aktivOffline,'offline')}</div>`;
+}
+async function erBestandAuf(artnr, lp) {
+  const { data } = await client.from('bestaende').select('menge').eq('artikelnummer',artnr).eq('lagerplatz',lp).limit(1);
+  return (data && data.length) ? data[0].menge : 0;
+}
+async function erScan() {
+  if (!erSession) return;
+  const code = el('er-scan').value.trim(); const menge = parseInt(el('er-menge').value,10);
+  const st = el('er-status');
+  if (!code) return;
+  if (!Number.isInteger(menge) || menge < 1) { st.innerHTML='<span class="err">Menge ≥ 1</span>'; return; }
+  const g = await resolveArtikel(code);
+  if (!g) { st.innerHTML='<span class="err">❌ Nicht gefunden: '+esc(code)+'</span>'; el('er-scan').select(); return; }
+  if (g.mehrdeutig) { st.innerHTML='<span class="err">EAN mehrdeutig – Artikelnummer eingeben</span>'; el('er-scan').select(); return; }
+  let ziel, farbe, label;
+  if (g.online === 1) { ziel = erSession.aktivOnline; farbe='#276749'; label='🟢 ONLINE'; }
+  else if (g.online === 2) { ziel = erSession.aktivOffline; farbe='#9b2c2c'; label='🔴 NICHT ONLINE'; }
+  else { st.innerHTML='<span class="err">❔ '+esc(g.name||code)+': Amazon-Status unbekannt. Bitte erst Status setzen/importieren.</span>'; el('er-scan').select(); return; }
+  const verf = await erBestandAuf(g.artnr, erSession.quelle);
+  try {
+    if (menge <= verf) {
+      const { error } = await client.rpc('umlagern', { p_artikelnummer:g.artnr, p_von:erSession.quelle, p_nach:ziel, p_menge:menge });
+      if (error) { st.innerHTML='<span class="err">❌ '+error.message+'</span>'; el('er-scan').select(); return; }
+    } else {
+      const surplus = menge - verf;
+      if (!confirm(`Auf „${erSession.quelle}" sind nur ${verf} Stk von „${g.name||g.artnr}" gebucht — du räumst ${menge} ein.\n\nDie ${surplus} zusätzlichen als Inventur-Zugang in Karton ${ziel} buchen?`)) { st.innerHTML='<span class="err">Abgebrochen.</span>'; el('er-scan').select(); return; }
+      if (verf > 0) { const r1 = await client.rpc('umlagern', { p_artikelnummer:g.artnr, p_von:erSession.quelle, p_nach:ziel, p_menge:verf }); if (r1.error){ st.innerHTML='<span class="err">❌ '+r1.error.message+'</span>'; return; } }
+      const r2 = await client.rpc('buchen', { p_artikelnummer:g.artnr, p_lagerplatz:ziel, p_typ:'ein', p_menge:surplus, p_kommentar:'Inventur-Zugang (Einräumen)' });
+      if (r2.error){ st.innerHTML='<span class="err">❌ '+r2.error.message+'</span>'; return; }
+    }
+    const extra = menge > verf ? ` (davon ${menge-verf} als Inventur-Zugang)` : '';
+    st.innerHTML = `<span class="ok">${label} → Karton ${esc(ziel)}<br>${menge}× ${esc(g.name||'')} (${esc(g.artnr)})${extra}</span>`;
+    erSession.kartonStk[ziel] = (erSession.kartonStk[ziel]||0) + menge;
+    erSession.gebucht.push({artnr:g.artnr, name:g.name||'', menge, ziel});
+    erSession.stk += menge;
+    erRenderCtx(); erLogRender();
+    el('er-scan').value=''; el('er-scan').focus();
+  } catch(e) { st.innerHTML='<span class="err">Verbindungsfehler</span>'; }
+}
+function erLogRender() {
+  const g = erSession.gebucht;
+  if (!g.length) { el('er-log').textContent = 'Noch nichts eingeräumt.'; return; }
+  el('er-log').innerHTML = `<div style="margin-bottom:6px;">Eingeräumt: <b>${g.length}</b> Positionen · <b>${erSession.stk}</b> Stück</div>`
+    + '<table><tr><th>Karton</th><th>Artikel</th><th style="text-align:right;">Menge</th></tr>'
+    + g.slice().reverse().map(x=>`<tr><td>${esc(x.ziel)}</td><td>${esc(x.artnr)} · ${esc(x.name)}</td><td style="text-align:right;">${x.menge}</td></tr>`).join('') + '</table>';
+}
+async function erKartonVoll(channel) {
+  const name = channel==='online' ? erSession.aktivOnline : erSession.aktivOffline;
+  await kartonBlattDrucken(name);
+  erSession.counter += 1;
+  const neu = erKartonName(erSession.pal, erSession.counter);
+  await erSetKarton(neu, channel==='online' ? 1 : 2);
+  if (channel==='online') erSession.aktivOnline = neu; else erSession.aktivOffline = neu;
+  erRenderCtx(); el('er-scan').focus();
+}
+async function erFertig() {
+  if (erSession) {
+    for (const nm of [erSession.aktivOnline, erSession.aktivOffline]) {
+      if ((erSession.kartonStk[nm]||0) > 0) await kartonBlattDrucken(nm);
+    }
+    await client.rpc('einraeumen_rest_melden', { p_quelle: erSession.quelle, p_palette: erSession.pal });
+  }
+  initEinraeumen();
+}
+
+// ── Barcode (Code128) + Karton-Blatt drucken ────────────────────────────────
+const C128_PATTERNS = ["212222","222122","222221","121223","121322","131222","122213","122312","132212","221213","221312","231212","112232","122132","122231","113222","123122","123221","223211","221132","221231","213212","223112","312131","311222","321122","321221","312212","322112","322211","212123","212321","232121","111323","131123","131321","112313","132113","132311","211313","231113","231311","112133","112331","132131","113123","113321","133121","313121","211331","231131","213113","213311","213131","311123","311321","331121","312113","312311","332111","314111","221411","431111","111224","111422","121124","121421","141122","141221","112214","112412","122114","122411","142112","142211","241211","221114","413111","241112","134111","111242","121142","121241","114212","124112","124211","411212","421112","421211","212141","214121","412121","111143","111341","131141","114113","114311","411113","411311","113141","114131","311141","411131","211412","211214","211232","2331112"];
+function code128svg(text, unit, height) {
+  unit = unit || 2; height = height || 50;
+  const codes = [104]; let sum = 104;
+  for (let i=0;i<text.length;i++){ const v=text.charCodeAt(i)-32; if(v<0||v>95) return null; codes.push(v); sum+=v*(i+1); }
+  codes.push(sum % 103); codes.push(106);
+  const mods = codes.map(c=>C128_PATTERNS[c]).join('');
+  let x=0, bar=true, rects='', total=0;
+  for (const ch of mods) total += +ch;
+  for (const ch of mods){ const w=(+ch)*unit; if(bar) rects+=`<rect x="${x}" y="0" width="${w}" height="${height}"/>`; x+=w; bar=!bar; }
+  const W=total*unit;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${height}" viewBox="0 0 ${W} ${height}" fill="#000">${rects}</svg>`;
+}
+async function kartonBlattDrucken(name) {
+  const { data: arts } = await client.from('bestaende')
+    .select('artikelnummer, menge, artikel(artikelname,gtin,online)').eq('lagerplatz', name).gt('menge',0);
+  const { data: metaRows } = await client.from('v_lagerplaetze').select('palette,kanal').eq('name', name).limit(1);
+  const meta = (metaRows && metaRows[0]) || { palette:'', kanal:0 };
+  const rows = (arts||[]).map(r => ({ artnr:r.artikelnummer, name:(r.artikel&&r.artikel.artikelname)||'', gtin:(r.artikel&&r.artikel.gtin)||'', menge:r.menge, online:(r.artikel&&r.artikel.online)||0 }));
+  rows.sort((x,y)=>{ const n=(x.name||'').toLowerCase().localeCompare((y.name||'').toLowerCase()); if(n) return n; return (x.gtin||'').split('').reverse().join('').localeCompare((y.gtin||'').split('').reverse().join('')); });
+  const kanalTxt = meta.kanal===1?'🟢 online':(meta.kanal===2?'🔴 nicht online':'gemischt');
+  const onTxt = o => o===1?'ja':(o===2?'nein':'—');
+  const svg = code128svg(name, 2, 52);
+  const bc = svg ? `<div>${svg}</div><div style="font-size:9pt;letter-spacing:1px;">${esc(name)}</div>` : `<div style="font-weight:700;">${esc(name)}</div>`;
+  const body = rows.map(a => `<tr><td class="mono">${esc(a.gtin)}</td><td>${esc(a.name)}</td><td class="mono">${esc(a.artnr)}</td><td class="r">${a.menge}</td><td class="c">${onTxt(a.online)}</td></tr>`).join('')
+    || '<tr><td colspan="5" style="text-align:center;color:#888;padding:8mm;">(leer)</td></tr>';
+  const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${esc(name)}</title><style>
+    *{box-sizing:border-box;} body{margin:0;padding:12mm;font-family:Arial,sans-serif;color:#000;}
+    .kar{font-size:90pt;font-weight:800;line-height:1;letter-spacing:-1px;}
+    .hdr{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #000;padding-bottom:4mm;margin:2mm 0 5mm;}
+    .meta{font-size:14pt;} .pal{font-weight:700;}
+    table{width:100%;border-collapse:collapse;font-size:10.5pt;} th,td{border-bottom:1px solid #ccc;padding:2mm;text-align:left;}
+    th{border-bottom:1.5px solid #000;font-size:9pt;text-transform:uppercase;} .r{text-align:right;} .c{text-align:center;} .mono{font-family:'Courier New',monospace;}
+    .hint{margin-bottom:5mm;font-size:9pt;color:#666;} @media print{body{padding:0;}.hint{display:none;}@page{margin:12mm;}}
+  </style></head><body>
+    <div class="hint">Karton-Blatt. Druck startet automatisch — sonst Strg/Cmd+P.</div>
+    <div class="kar">${esc(name)}</div>
+    <div class="hdr"><div class="meta"><div class="pal">Palette: ${esc(meta.palette||'—')}</div><div>Kanal: ${kanalTxt}</div></div><div style="text-align:center;">${bc}</div></div>
+    <table><thead><tr><th>EAN</th><th>Artikelname</th><th>Art.-Nr.</th><th class="r">Menge</th><th class="c">Online</th></tr></thead><tbody>${body}</tbody></table>
+    <script>window.onload=function(){setTimeout(function(){window.print();},150);};<\/script>
+  </body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { alert('Bitte Pop-ups erlauben, damit das Karton-Blatt gedruckt werden kann.'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
+// ── Umlagern — DB-Funktion "umlagern" ────────────────────────────────────────
+// Nach Artikel-Eingabe: Von-Dropdown = nur Plätze mit Bestand; Nach-Dropdown = alle + neu.
+async function umlagernArtikelGeladen() {
+  const eingabe = el('u-artnr').value.trim();
+  const vsel = el('u-von'), nsel = el('u-nach'); el('u-nach-neu').style.display = 'none';
+  nsel.innerHTML = '<option value="">—</option>'
+    + allePlaetze.map(p => `<option value="${escAttr(p)}">${esc(p)}</option>`).join('')
+    + '<option value="__neu__">＋ neuer Lagerplatz…</option>';
+  if (!eingabe) { vsel.innerHTML = '<option value="">— erst Artikel eingeben —</option>'; el('u-artikel').textContent = ''; return; }
+  const g = await resolveArtikel(eingabe);
+  if (!g)          { el('u-artikel').innerHTML = '<span class="err">Artikel nicht gefunden</span>'; vsel.innerHTML = '<option value="">—</option>'; return; }
+  if (g.mehrdeutig){ el('u-artikel').innerHTML = '<span class="err">EAN mehrdeutig – Artikelnummer eingeben</span>'; vsel.innerHTML = '<option value="">—</option>'; return; }
+  el('u-artikel').textContent = g.name || g.artnr;
+  const stock = await artikelPlaetze(g.artnr);
+  vsel.innerHTML = stock.length
+    ? stock.map(s => `<option value="${escAttr(s.lagerplatz)}">${esc(s.lagerplatz)} (${s.menge})</option>`).join('')
+    : '<option value="">— kein Bestand —</option>';
+}
+async function umlagern() {
+  const eingabe = el('u-artnr').value.trim();
+  const von = el('u-von').value, nach = chosenLp('u-nach','u-nach-neu');
+  const menge = parseInt(el('u-menge').value, 10);
+  const st = el('u-status');
+  if (!eingabe || !von || !nach) { st.innerHTML = '<span class="err">Artikel, Von und Nach sind Pflicht.</span>'; return; }
+  if (von === nach) { st.innerHTML = '<span class="err">Quelle und Ziel sind identisch.</span>'; return; }
+  if (!Number.isInteger(menge) || menge < 1) { st.innerHTML = '<span class="err">Menge muss eine ganze Zahl ≥ 1 sein.</span>'; return; }
+  const g = await resolveArtikel(eingabe);
+  if (!g || g.mehrdeutig) { st.innerHTML = '<span class="err">Artikel nicht eindeutig/gefunden.</span>'; return; }
+  st.textContent = 'Lagere um…';
+  const { data, error } = await client.rpc('umlagern', { p_artikelnummer: g.artnr, p_von: von, p_nach: nach, p_menge: menge });
+  if (error) { st.innerHTML = '<span class="err">Fehler: ' + error.message + '</span>'; return; }
+  st.innerHTML = `<span class="ok">🔀 ${menge}× ${esc(data.artikelname||g.artnr)} umgelagert<br>`
+    + `${esc(von)}: <b>${data.von_nachher}</b> · ${esc(nach)}: <b>${data.nach_nachher}</b></span>`;
+  el('u-menge').value = 1;
+  umlagernArtikelGeladen();   // Plätze/Bestände aktualisieren
+}
+
+// Löst eine Eingabe (Artikelnummer ODER EAN) zur Artikelnummer auf.
+// Rückgabe: {artnr,name} | {mehrdeutig:[…]} | null
+async function resolveArtikel(code) {
+  let r1 = await client.from('artikel').select('artikelnummer,artikelname,online').eq('artikelnummer', code).limit(1);
+  if (r1.data && r1.data.length) return { artnr: r1.data[0].artikelnummer, name: r1.data[0].artikelname, online: r1.data[0].online };
+  let r2 = await client.from('artikel').select('artikelnummer,artikelname,online').eq('gtin', code);
+  if (r2.data && r2.data.length === 1) return { artnr: r2.data[0].artikelnummer, name: r2.data[0].artikelname, online: r2.data[0].online };
+  if (r2.data && r2.data.length > 1)  return { mehrdeutig: r2.data };
+  return null;
+}
+
+// ── Scanner (Schnellscan, wie alte App) ─────────────────────────────────────
+let ssMode = 'aus';   // 'aus' voreingestellt (wie Original)
+let ssLp   = null;    // gewählter Lagerplatz beim Einbuchen (bleibt aktiv)
+function ssInit() {
+  ssSetMode(ssMode);
+}
+function ssStatus(html, cls) {
+  el('ss-status').innerHTML = cls ? `<span class="${cls}">${html}</span>` : html;
+}
+function ssSetMode(m) {
+  ssMode = m;
+  el('ss-mode-aus').classList.toggle('active', m === 'aus');
+  el('ss-mode-ein').classList.toggle('active', m === 'ein');
+  el('ss-lp-section').style.display = m === 'ein' ? 'block' : 'none';
+  el('ss-pick-section').style.display = 'none';
+  el('ss-scan').value = '';
+  if (m === 'ein') {
+    ssBuildLpBtns();
+    ssStatus(ssLp ? `Lagerplatz: <b>${esc(ssLp)}</b> — bereit zum Scannen` : 'Lagerplatz wählen, dann scannen');
+  } else {
+    ssStatus('Artikel scannen — Lagerplatz wird danach gewählt');
+  }
+  el('ss-scan').focus();
+}
+function ssBuildLpBtns() {
+  el('ss-lp-btns').innerHTML = allePlaetze.map(lp =>
+    `<button class="ss-lp-btn${lp===ssLp?' active':''}" onclick="ssPickLp('${jsAttr(lp)}')">${esc(lp)}</button>`
+  ).join('') || '<span class="muted">Keine Lagerplätze — bitte erst anlegen.</span>';
+}
+function ssPickLp(lp) {
+  ssLp = (ssLp === lp) ? null : lp;
+  document.querySelectorAll('#ss-lp-btns .ss-lp-btn').forEach(b => b.classList.toggle('active', b.textContent === ssLp));
+  el('ss-lp-hint').style.display = ssLp ? 'none' : 'block';
+  ssStatus(ssLp ? `Lagerplatz: <b>${esc(ssLp)}</b> — bereit zum Scannen` : 'Lagerplatz wählen, dann scannen');
+  el('ss-scan').focus();
+}
+function ssMenge() {
+  const m = parseInt(el('ss-menge').value, 10);
+  if (!Number.isInteger(m) || m < 1) { ssStatus('Menge muss eine ganze Zahl ≥ 1 sein.', 'err'); return null; }
+  return m;
+}
+async function ssBook(artnr, lp, typ, menge, name) {
+  const { data, error } = await client.rpc('buchen', { p_artikelnummer: artnr, p_lagerplatz: lp, p_typ: typ, p_menge: menge, p_kommentar: '' });
+  if (error) { ssStatus('Fehler: ' + esc(error.message), 'err'); return null; }
+  const wort = typ === 'ein' ? '✚ Eingebucht' : '− Ausgebucht';
+  const wohin = typ === 'aus' ? ' von ' + esc(lp) : ' auf ' + esc(lp);
+  ssStatus(`${wort}: <b>${menge} Stk</b>${wohin} — ${esc(name||artnr)}<br>Bestand auf ${esc(lp)}: <b>${data.lp_bestand_neu}</b> · Gesamt: <b>${data.bestand_gesamt_neu}</b>`, 'ok');
+  el('ss-menge').value = 1;
+  await ladeAllePlaetze(); refreshUndo();
+  return data;
+}
+async function ssBookPick(artnr, lp, typ, name) {
+  const menge = ssMenge(); if (menge === null) return;
+  await ssBook(artnr, lp, typ, menge, name);
+  el('ss-pick-section').style.display = 'none';
+  el('ss-scan').focus();
+}
+async function ssScan() {
+  const code = el('ss-scan').value.trim();
+  el('ss-scan').value = '';
+  el('ss-pick-section').style.display = 'none';
+  if (!code) return;
+  const menge = ssMenge(); if (menge === null) { el('ss-scan').focus(); return; }
+  ssStatus('🔍 Suche: ' + esc(code) + '…');
+  const g = await resolveArtikel(code);
+  if (!g)            { ssStatus('❌ Nicht gefunden: ' + esc(code), 'err'); el('ss-scan').focus(); return; }
+  if (g.mehrdeutig)  { ssStatus('⚠️ EAN mehrdeutig — bitte die Artikelnummer eingeben.', 'err'); el('ss-scan').focus(); return; }
+
+  // ── Einbuchen ──
+  if (ssMode === 'ein') {
+    if (ssLp) { await ssBook(g.artnr, ssLp, 'ein', menge, g.name); el('ss-scan').focus(); return; }
+    // kein Lagerplatz gewählt → Buttons: Plätze mit Bestand zuerst, dann weitere
+    const stock = await artikelPlaetze(g.artnr);
+    const stockNamen = stock.map(s => s.lagerplatz);
+    const nm = jsAttr(g.name || '');
+    let html = stock.map(s => `<button class="ss-lp-btn" onclick="ssBookPick('${jsAttr(g.artnr)}','${jsAttr(s.lagerplatz)}','ein','${nm}')">${esc(s.lagerplatz)} <span class="muted">(${s.menge})</span></button>`).join('');
+    html += allePlaetze.filter(p => !stockNamen.includes(p)).map(p => `<button class="ss-lp-btn" onclick="ssBookPick('${jsAttr(g.artnr)}','${jsAttr(p)}','ein','${nm}')">${esc(p)}</button>`).join('');
+    ssStatus(`<b>${esc(g.name||g.artnr)}</b><br>⚠️ Lagerplatz zum Einbuchen wählen:`);
+    el('ss-pick-btns').innerHTML = html || '<span class="muted">Keine Lagerplätze.</span>';
+    el('ss-pick-section').style.display = 'block';
+    el('ss-scan').focus();
+    return;
+  }
+
+  // ── Ausbuchen: erst Artikel, dann Lagerplatz ──
+  const stock = await artikelPlaetze(g.artnr);
+  if (!stock.length) { ssStatus(`<b>${esc(g.name||g.artnr)}</b><br>⚠️ Aktuell kein Bestand vorhanden.`, 'err'); el('ss-scan').focus(); return; }
+  if (stock.length === 1) { await ssBook(g.artnr, stock[0].lagerplatz, 'aus', menge, g.name); el('ss-scan').focus(); return; }
+  const nm = jsAttr(g.name || '');
+  ssStatus(`<b>${esc(g.name||g.artnr)}</b> — von welchem Lagerplatz ausbuchen?`);
+  el('ss-pick-btns').innerHTML = stock.map(s => `<button class="ss-lp-btn" onclick="ssBookPick('${jsAttr(g.artnr)}','${jsAttr(s.lagerplatz)}','aus','${nm}')">${esc(s.lagerplatz)} <span class="muted">(${s.menge})</span></button>`).join('');
+  el('ss-pick-section').style.display = 'block';
+  el('ss-scan').focus();
+}
+
+// ── Kartons / Paletten ──────────────────────────────────────────────────────
+let vlpCache = [];
+const kartonKanalBadge = k => k===1 ? '<span class="badge b-on">online</span>'
+                            : k===2 ? '<span class="badge b-off">nicht online</span>'
+                            : '<span class="badge b-unk">gemischt</span>';
+async function kartonsLaden() {
+  const grid = el('kartons-grid'); grid.textContent = 'Wird geladen…';
+  el('kartons-detail').innerHTML = '';
+  const { data, error } = await client.from('v_lagerplaetze').select('*');
+  if (error) { grid.innerHTML = '<span class="err">Fehler: ' + error.message + '</span>'; return; }
+  vlpCache = data || [];
+  lpFillSelects();
+  const grp = {};
+  vlpCache.forEach(x => { const p = x.palette || ''; (grp[p] = grp[p] || []).push(x); });
+  const pnamen = Object.keys(grp).sort((a,b)=>{ if(a==='')return 1; if(b==='')return -1; return a.localeCompare(b); });
+  grid.innerHTML = pnamen.map(p => {
+    const ks = grp[p];
+    const stk = ks.reduce((s,x)=>s+(x.stueck||0), 0);
+    const key = p || '__leer__';
+    const titel = p ? '📦 ' + esc(p) : 'Ohne Palette';
+    return `<button class="lager-btn" onclick="kartonPaletteZeigen('${jsAttr(key)}',this)">
+      <span class="lager-btn-name">${titel}</span>
+      <span class="lager-btn-sub">${ks.length} Kartons</span>
+      <span class="lager-btn-sub">${stk} Stück</span></button>`;
+  }).join('') || '<span class="muted">Noch keine Kartons/Lagerplätze.</span>';
+}
+function kartonPaletteZeigen(key, btn) {
+  document.querySelectorAll('#kartons-grid .lager-btn').forEach(b=>b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  const p = key === '__leer__' ? '' : key;
+  const ks = vlpCache.filter(x => (x.palette||'') === p).slice().sort((a,b)=>a.name.localeCompare(b.name));
+  const stk = ks.reduce((s,x)=>s+(x.stueck||0), 0);
+  const titel = p ? 'Palette ' + esc(p) : 'Ohne Palette';
+  const rows = ks.map(x => `<tr><td>${esc(x.name)}</td><td>${kartonKanalBadge(x.kanal||0)}</td><td style="text-align:right;">${x.artikel}</td><td style="text-align:right;">${x.stueck}</td></tr>`).join('');
+  el('kartons-detail').innerHTML = `<div style="font-weight:700;color:#1a202c;margin-bottom:6px;">${titel} <span class="muted">— ${ks.length} Kartons · ${stk} Stück</span></div>
+    <table><tr><th>Karton</th><th>Kanal</th><th style="text-align:right;">SKUs</th><th style="text-align:right;">Stück</th></tr>${rows}</table>`;
+}
+
+// ── Protokoll ────────────────────────────────────────────────────────────────
+let allProt = [];
+function ptClass(t) {
+  return t==='Eingang'?'pt-ein':t==='Ausgang'?'pt-aus':t==='Umlagerung'?'pt-um'
+    :t==='Inventur'?'pt-inv':t==='Artikeländerung'?'pt-art':t==='Rückgängig'?'pt-undo'
+    :(t==='Lagerplatz angelegt'||t==='Lagerplatz gelöscht'||t==='Umbenennung'||t==='Zusammenlegung')?'pt-lp':'pt-csv';
+}
+async function protokollLaden() {
+  const box = el('protokoll-body'); box.textContent = 'Wird geladen…';
+  let q = client.from('buchungen')
+    .select('zeitstempel,typ,artikelnummer,artikelname,gtin,lagerplatz,menge,bestand_lp_vorher,bestand_lp_nachher,bestand_gesamt_vorher,bestand_gesamt_nachher,kommentar')
+    .order('id', { ascending: false }).limit(200);
+  const typ = el('prot-typ').value;
+  if (typ) q = q.eq('typ', typ);
+  const { data, error } = await q;
+  if (error) { box.innerHTML = '<span class="err">Fehler: ' + error.message + '</span>'; return; }
+  allProt = data || [];
+  renderProtokoll();
+}
+function protoFilterChanged() { renderProtokoll(); }
+function renderProtokoll() {
+  const box = el('protokoll-body'), cnt = el('prot-count');
+  const f = (el('prot-suche').value || '').toLowerCase().trim();
+  let data = allProt;
+  if (f) data = data.filter(b => ((b.artikelname||'')+' '+(b.artikelnummer||'')+' '+(b.gtin||'')+' '+(b.lagerplatz||'')).toLowerCase().includes(f));
+  cnt.textContent = data.length ? (data.length + ' Einträge' + (allProt.length>=200 ? ' · max. 200 geladen — Filter nutzen' : '')) : '';
+  if (!data.length) { box.innerHTML = '<span class="muted">Keine Einträge.</span>'; return; }
+  const pfeil = (v,n) => (v==null && n==null) ? '—'
+    : `<span class="muted">${v==null?'—':v}</span> → <b>${n==null?'—':n}</b>`;
+  box.innerHTML = '<table><tr><th>Zeit</th><th>Typ</th><th>Artikel</th><th>EAN</th><th>Platz</th>'
+    + '<th style="text-align:right;">Menge</th><th>LP-Best.</th><th>Gesamt</th><th>Kommentar</th></tr>'
+    + data.map(b => {
+        const z = (b.zeitstempel||'').replace('T',' ').slice(0,16);
+        const komm = (b.kommentar||'').replace(/\|.*$/s,'').slice(0,60);
+        return `<tr>
+          <td style="white-space:nowrap;">${esc(z)}</td>
+          <td><span class="pt ${ptClass(b.typ)}">${esc(b.typ||'')}</span></td>
+          <td>${esc((b.artikelnummer||'')+(b.artikelname?' · '+b.artikelname:''))}</td>
+          <td>${esc(b.gtin||'—')}</td>
+          <td>${esc(b.lagerplatz||'—')}</td>
+          <td style="text-align:right;">${b.menge==null?'—':b.menge}</td>
+          <td style="white-space:nowrap;">${pfeil(b.bestand_lp_vorher,b.bestand_lp_nachher)}</td>
+          <td style="white-space:nowrap;">${pfeil(b.bestand_gesamt_vorher,b.bestand_gesamt_nachher)}</td>
+          <td>${esc(komm)}</td></tr>`;
+      }).join('') + '</table>';
+}
+
+// ── Inventur ────────────────────────────────────────────────────────────────
+let invRows = [];
+async function invInit() {
+  invRows = []; el('inv-table').innerHTML = ''; el('inv-status').textContent = ''; el('inv-add').value = '';
+  const { data } = await client.from('v_lagerplaetze').select('name,stueck').gt('stueck',0);
+  const q = (data||[]).sort((a,b)=>a.name.localeCompare(b.name));
+  el('inv-lp').innerHTML = '<option value="">— Lagerplatz wählen —</option>'
+    + q.map(x=>`<option value="${escAttr(x.name)}">${esc(x.name)} (${x.stueck})</option>`).join('');
+}
+async function invLadePlatz() {
+  const lp = el('inv-lp').value;
+  invRows = [];
+  if (!lp) { el('inv-table').innerHTML = ''; return; }
+  const { data } = await client.from('bestaende')
+    .select('artikelnummer,menge,artikel(artikelname,gtin)').eq('lagerplatz', lp).gt('menge',0);
+  invRows = (data||[]).map(r => ({ artnr:r.artikelnummer, name:(r.artikel&&r.artikel.artikelname)||'', gtin:(r.artikel&&r.artikel.gtin)||'', soll:r.menge, ist:r.menge }))
+    .sort((a,b)=>a.name.localeCompare(b.name));
+  invRender();
+}
+function invRender() {
+  if (!invRows.length) { el('inv-table').innerHTML = '<div class="hint">Keine Artikel — Lagerplatz wählen oder Artikel ergänzen.</div>'; return; }
+  el('inv-table').innerHTML = '<table><tr><th>Artikel</th><th style="text-align:right;">Soll</th><th style="text-align:right;">Ist (gezählt)</th><th style="text-align:right;">Diff</th></tr>'
+    + invRows.map((r,i) => {
+        const diff = (Number(r.ist)||0) - r.soll;
+        const dc = diff===0?'#718096':(diff>0?'#276749':'#9b2c2c');
+        return `<tr><td>${esc(r.name)}<br><span class="muted mono">${esc(r.artnr)}</span></td>
+          <td style="text-align:right;">${r.soll}</td>
+          <td style="text-align:right;"><input type="number" min="0" value="${r.ist}" style="width:80px;text-align:right;" onchange="invSetIst(${i},this.value)"></td>
+          <td style="text-align:right;color:${dc};font-weight:700;">${diff>0?'+':''}${diff}</td></tr>`;
+      }).join('') + '</table>';
+}
+function invSetIst(i, val) { invRows[i].ist = val; invRender(); }
+async function invAddArtikel() {
+  const lp = el('inv-lp').value;
+  if (!lp) { el('inv-status').innerHTML = '<span class="err">Erst Lagerplatz wählen.</span>'; return; }
+  const code = el('inv-add').value.trim(); if (!code) return;
+  const g = await resolveArtikel(code);
+  if (!g) { el('inv-status').innerHTML = '<span class="err">Artikel nicht gefunden.</span>'; return; }
+  if (g.mehrdeutig) { el('inv-status').innerHTML = '<span class="err">EAN mehrdeutig – Artikelnummer eingeben.</span>'; return; }
+  if (invRows.some(r => r.artnr === g.artnr)) { el('inv-add').value=''; el('inv-status').textContent='Artikel ist bereits in der Liste.'; return; }
+  const soll = await erBestandAuf(g.artnr, lp);
+  invRows.push({ artnr:g.artnr, name:g.name||'', gtin:'', soll, ist:soll });
+  el('inv-add').value=''; el('inv-status').textContent=''; invRender();
+}
+async function invAbschliessen() {
+  const lp = el('inv-lp').value;
+  if (!lp) { el('inv-status').innerHTML = '<span class="err">Kein Lagerplatz.</span>'; return; }
+  const zaehl = {};
+  invRows.forEach(r => { const ist = parseInt(r.ist,10); if (Number.isInteger(ist) && ist >= 0 && ist !== r.soll) zaehl[r.artnr] = ist; });
+  if (!Object.keys(zaehl).length) { el('inv-status').textContent = 'Keine Änderungen.'; return; }
+  el('inv-status').textContent = 'Übernehme…';
+  const { data, error } = await client.rpc('inventur_anwenden', { p_lagerplatz: lp, p_zaehlungen: zaehl });
+  if (error) { el('inv-status').innerHTML = '<span class="err">Fehler: ' + error.message + '</span>'; return; }
+  el('inv-status').innerHTML = `<span class="ok">✓ ${data.anzahl_geaendert} Korrektur(en) übernommen.</span>`;
+  invLadePlatz();
+}
+
+// ── Lagerplatz-Operationen ──────────────────────────────────────────────────
+function lpFillSelects() {
+  const namen = vlpCache.map(x => x.name).sort((a,b)=>a.localeCompare(b));
+  const opts = namen.map(n => `<option value="${escAttr(n)}">${esc(n)}</option>`).join('');
+  ['lp-um-von','lp-del','karton-sel'].forEach(id => { const e=el(id); if(e) e.innerHTML = '<option value="">— wählen —</option>' + opts; });
+  const mq = el('lp-merge-q'); if (mq) mq.innerHTML = opts;
+  kartonSelChange();
+}
+function kartonSelChange() {
+  const name = el('karton-sel').value;
+  const m = vlpCache.find(x => x.name === name);
+  el('karton-pal').value = m ? (m.palette||'') : '';
+  el('karton-kanal').value = m ? String(m.kanal||0) : '0';
+}
+async function lpAfter(msg) {
+  el('lp-status').innerHTML = '<span class="ok">' + msg + '</span>';
+  await ladeAllePlaetze();
+  kartonsLaden();
+}
+async function lpNeu() {
+  const name = el('lp-neu').value.trim();
+  if (!name) return;
+  const { error } = await client.rpc('lagerplatz_neu', { p_name: name });
+  if (error) { el('lp-status').innerHTML = '<span class="err">' + error.message + '</span>'; return; }
+  el('lp-neu').value = ''; lpAfter('Lagerplatz „' + esc(name) + '" angelegt.');
+}
+async function lpUmbenennen() {
+  const von = el('lp-um-von').value, nach = el('lp-um-nach').value.trim();
+  if (!von || !nach) { el('lp-status').innerHTML = '<span class="err">Von-Platz und neuer Name nötig.</span>'; return; }
+  const { error } = await client.rpc('lagerplatz_umbenennen', { p_alt: von, p_neu: nach });
+  if (error) { el('lp-status').innerHTML = '<span class="err">' + error.message + '</span>'; return; }
+  el('lp-um-nach').value = ''; lpAfter('Umbenannt: ' + esc(von) + ' → ' + esc(nach));
+}
+async function lpLoeschen() {
+  const name = el('lp-del').value;
+  if (!name) return;
+  const meta = vlpCache.find(x => x.name === name);
+  const stk = meta ? (meta.stueck||0) : 0;
+  if (!confirm('Lagerplatz „' + name + '" löschen?' + (stk>0 ? '\n\nAchtung: darauf liegen noch ' + stk + ' Stück!' : ''))) return;
+  let res = await client.rpc('lagerplatz_loeschen', { p_name: name, p_mit_bestand: false });
+  if (res.error && res.error.message.indexOf('BESTAND_VORHANDEN') >= 0) {
+    if (!confirm('Es liegt noch Bestand darauf. Wirklich MIT Bestand löschen?')) return;
+    res = await client.rpc('lagerplatz_loeschen', { p_name: name, p_mit_bestand: true });
+  }
+  if (res.error) { el('lp-status').innerHTML = '<span class="err">' + res.error.message + '</span>'; return; }
+  lpAfter('Lagerplatz „' + esc(name) + '" gelöscht.');
+}
+async function lpZusammenlegen() {
+  const quellen = Array.from(el('lp-merge-q').selectedOptions).map(o => o.value);
+  const ziel = el('lp-merge-ziel').value.trim();
+  if (quellen.length < 2) { el('lp-status').innerHTML = '<span class="err">Mindestens zwei Quellen wählen.</span>'; return; }
+  if (!ziel) { el('lp-status').innerHTML = '<span class="err">Zielname nötig.</span>'; return; }
+  if (!confirm('Zusammenlegen:\n' + quellen.join(' + ') + '\n→ ' + ziel + ' ?')) return;
+  const { error } = await client.rpc('lagerplatz_zusammenlegen', { p_quellen: quellen, p_ziel: ziel });
+  if (error) { el('lp-status').innerHTML = '<span class="err">' + error.message + '</span>'; return; }
+  el('lp-merge-ziel').value = ''; lpAfter('Zusammengelegt → ' + esc(ziel));
+}
+async function kartonSetzen() {
+  const name = el('karton-sel').value;
+  if (!name) { el('lp-status').innerHTML = '<span class="err">Karton wählen.</span>'; return; }
+  const palette = el('karton-pal').value.trim();
+  const kanal = parseInt(el('karton-kanal').value, 10);
+  const { error } = await client.rpc('karton_setzen', { p_name: name, p_palette: palette, p_kanal: kanal });
+  if (error) { el('lp-status').innerHTML = '<span class="err">' + error.message + '</span>'; return; }
+  lpAfter('Karton „' + esc(name) + '" gespeichert.');
+}
+
+// ── Übersicht / Dashboard ───────────────────────────────────────────────────
+async function loadDashboard() {
+  const cards = el('dash-cards');
+  cards.innerHTML = '<span class="hint">Wird geladen…</span>';
+  const { data, error } = await client.from('v_dashboard').select('*').limit(1);
+  if (error) { cards.innerHTML = '<span class="err">Fehler: ' + error.message + '</span>'; return; }
+  const d = (data && data[0]) || {};
+  const kpi = (label, wert, farbe) => `<div style="flex:1 1 140px;min-width:140px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;">
+      <div style="font-size:1.6rem;font-weight:800;color:${farbe||'#2b6cb0'};line-height:1.1;">${wert}</div>
+      <div style="font-size:.78rem;color:#4a5568;margin-top:3px;">${label}</div></div>`;
+  cards.innerHTML =
+      kpi('Artikel gesamt', d.artikel_gesamt) +
+      kpi('Bestand (Stück)', d.bestand_gesamt) +
+      kpi('Lagerplätze', `${d.lp_gesamt} <span style="font-size:.7rem;color:#718096;">(${d.lp_mit_bestand} belegt)</span>`) +
+      kpi('Ohne Bestand', d.artikel_ohne_bestand, (d.artikel_ohne_bestand>0?'#B7791F':'#2b6cb0')) +
+      kpi('Offene Leermeldungen', d.leermeldungen_offen, (d.leermeldungen_offen>0?'#B7791F':'#2b6cb0')) +
+      kpi('Mehrdeutige EANs', d.gtin_mehrdeutig, (d.gtin_mehrdeutig>0?'#9b2c2c':'#2b6cb0')) +
+      kpi('Nicht online', d.nicht_online, (d.nicht_online>0?'#B7791F':'#2b6cb0')) +
+      kpi('Status unbekannt', d.online_unbekannt) +
+      kpi('Set-Artikel', d.set_artikel) +
+      kpi('Heute ein / aus', `${d.ein_heute} / ${d.aus_heute}`) +
+      kpi('Woche ein / aus', `${d.ein_woche} / ${d.aus_woche}`);
+  const { data: bew } = await client.from('buchungen')
+    .select('zeitstempel,typ,artikelnummer,artikelname,lagerplatz,menge').order('id',{ascending:false}).limit(8);
+  const box = el('dash-letzte');
+  if (!bew || !bew.length) { box.textContent = 'Keine Bewegungen'; return; }
+  box.innerHTML = '<table><tr><th>Zeit</th><th>Typ</th><th>Artikel</th><th>Platz</th><th style="text-align:right;">Menge</th></tr>'
+    + bew.map(b => { const z=(b.zeitstempel||'').replace('T',' ').slice(0,16);
+        return `<tr><td>${esc(z)}</td><td>${esc(b.typ||'')}</td><td>${esc((b.artikelnummer||'')+' · '+(b.artikelname||''))}</td><td>${esc(b.lagerplatz||'—')}</td><td style="text-align:right;">${b.menge==null?'—':b.menge}</td></tr>`;
+      }).join('') + '</table>';
+}
+
+// ── Glocke / Leermeldungen (Panel oben rechts) ──────────────────────────────
+async function refreshLeer() {
+  if (!client) return;
+  const { data, error } = await client.from('leermeldungen')
+    .select('zeitstempel,artikelnummer,artikelname,gtin,lagerplatz,hinweis').eq('gesehen',0).order('id',{ascending:false});
+  const zahl = el('glocke-zahl');
+  const n = (error || !data) ? 0 : data.length;
+  if (n > 0) { zahl.textContent = n; zahl.style.display = 'flex'; }
+  else { zahl.style.display = 'none'; }
+  renderLeerPanel(data || []);
+}
+function renderLeerPanel(data) {
+  const box = el('leer-panel-body');
+  if (!data.length) { box.innerHTML = '<div class="muted" style="padding:16px;text-align:center;">Keine offenen Leermeldungen.</div>'; return; }
+  box.innerHTML = data.map(l => {
+    const z = (l.zeitstempel||'').replace('T',' ').slice(0,16);
+    if (l.hinweis) return `<div class="art"><b>📦 Einräum-Hinweis</b><div class="muted">${esc(l.hinweis)}<br>${esc(z)}</div></div>`;
+    return `<div class="art"><b>${esc(l.artikelname || l.artikelnummer)}</b>
+      <div class="muted">${esc(l.artikelnummer)}${l.gtin?' · EAN '+esc(l.gtin):''} · <span class="lp">${esc(l.lagerplatz)}</span> leer — ${esc(z)}</div></div>`;
+  }).join('');
+}
+function toggleLeerPanel() {
+  const p = el('leer-panel');
+  if (p.style.display === 'flex') { p.style.display = 'none'; }
+  else { p.style.display = 'flex'; refreshLeer(); }
+}
+async function leerGesehen() {
+  if (!confirm('Alle offenen Leermeldungen als gesehen markieren?')) return;
+  const { error } = await client.from('leermeldungen').update({ gesehen: 1 }).eq('gesehen', 0);
+  if (error) { alert('Fehler: ' + error.message); return; }
+  refreshLeer();
+}
+
+// ── Artikel anlegen / bearbeiten ────────────────────────────────────────────
+function jsAttr(s){ return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function openNeu() {
+  el('art-titel').textContent = 'Neuer Artikel';
+  el('art-nr').value = ''; el('art-nr').disabled = false;
+  el('art-name').value = ''; el('art-gtin').value = ''; el('art-set').checked = false; el('art-online').value = '0';
+  el('art-lp').value = ''; el('art-menge').value = '0';
+  el('art-neu-only').style.display = 'block'; el('art-err').textContent = ''; eanHint();
+  window._artEdit = null;
+  el('art-modal').style.display = 'flex'; el('art-nr').focus();
+}
+async function openEdit(artnr) {
+  const { data } = await client.from('artikel').select('artikelnummer,artikelname,gtin,ist_set,online').eq('artikelnummer', artnr).limit(1);
+  if (!data || !data.length) { alert('Artikel nicht gefunden'); return; }
+  const a = data[0];
+  el('art-titel').textContent = 'Artikel bearbeiten';
+  el('art-nr').value = a.artikelnummer; el('art-nr').disabled = true;
+  el('art-name').value = a.artikelname || ''; el('art-gtin').value = a.gtin || '';
+  el('art-set').checked = !!a.ist_set; el('art-online').value = String(a.online || 0);
+  el('art-neu-only').style.display = 'none'; el('art-err').textContent = ''; eanHint();
+  window._artEdit = a.artikelnummer;
+  el('art-modal').style.display = 'flex'; el('art-name').focus();
+}
+async function saveArtikel() {
+  const err = el('art-err'); err.textContent = '';
+  const name = el('art-name').value.trim(), gtin = el('art-gtin').value.trim();
+  const set = el('art-set').checked ? 1 : 0, online = parseInt(el('art-online').value, 10);
+  if (!name) { err.textContent = 'Artikelname ist Pflicht.'; return; }
+  let res;
+  if (window._artEdit) {
+    res = await client.rpc('artikel_bearbeiten', { p_artikelnummer: window._artEdit, p_artikelname: name, p_gtin: gtin, p_ist_set: set, p_online: online });
+  } else {
+    const nr = el('art-nr').value.trim();
+    if (!nr) { err.textContent = 'Artikelnummer ist Pflicht.'; return; }
+    const lp = el('art-lp').value.trim(); const menge = parseInt(el('art-menge').value, 10) || 0;
+    res = await client.rpc('artikel_neu', { p_artikelnummer: nr, p_artikelname: name, p_gtin: gtin, p_ist_set: set, p_online: online, p_lagerplatz: lp, p_menge: menge });
+  }
+  if (res.error) { err.textContent = res.error.message; return; }
+  el('art-modal').style.display = 'none';
+  await ladeAllePlaetze();
+  if (el('suche').value.trim().length >= 2) suchen();
+}
+function eanGueltig(code) {
+  code = String(code||'').trim();
+  if (code === '' || !/^\d+$/.test(code)) return null;
+  if (![8,12,13].includes(code.length)) return false;
+  const d = code.split('').map(Number); const check = d.pop();
+  let sum = 0; d.reverse().forEach((n,i) => { sum += n * ((i%2===0) ? 3 : 1); });
+  return ((10 - (sum % 10)) % 10) === check;
+}
+function eanHint() {
+  const g = eanGueltig(el('art-gtin').value);
+  el('art-ean-hint').innerHTML = g === null ? '' : (g ? '<span class="ok">✓ gültige EAN</span>' : '<span class="err">⚠ Prüfziffer stimmt nicht</span>');
+}
+
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+window.addEventListener('load', () => {
+  const u = localStorage.getItem('lp_url'), k = localStorage.getItem('lp_key');
+  if (u) el('url').value = u; if (k) el('key').value = k;
+  if (u && k) verbinden();
+});
+</script>
+
+<div class="modal-bg" id="art-modal">
+  <div class="modal-box">
+    <h2 id="art-titel" style="margin-top:0;font-size:1.1rem;">Neuer Artikel</h2>
+    <label>Artikelnummer</label>
+    <input id="art-nr" placeholder="eindeutige Nummer">
+    <label>Artikelname *</label>
+    <input id="art-name">
+    <label>GTIN / EAN</label>
+    <input id="art-gtin" oninput="eanHint()" placeholder="optional">
+    <div id="art-ean-hint" class="hint" style="margin-top:3px;"></div>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:10px;"><input type="checkbox" id="art-set" style="width:auto;"> Set-Artikel</label>
+    <label>Amazon-Status</label>
+    <select id="art-online"><option value="0">unbekannt</option><option value="1">online</option><option value="2">nicht online</option></select>
+    <div id="art-neu-only">
+      <label>Lagerplatz (optional)</label><input id="art-lp">
+      <label>Anfangsbestand</label><input id="art-menge" type="number" min="0" value="0">
+    </div>
+    <div id="art-err" class="err" style="margin-top:8px;"></div>
+    <div class="row" style="margin-top:14px;justify-content:flex-end;">
+      <button class="sec" onclick="el('art-modal').style.display='none'">Abbrechen</button>
+      <button onclick="saveArtikel()">Speichern</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>
