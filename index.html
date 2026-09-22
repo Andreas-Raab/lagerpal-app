@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LagerPal (Web)</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 :root{--ink:#16243a;--ink-2:#1f3350;--blue:#2563a8;--blue-bright:#3b82d4;--blue-tint:#eef4fb;--amber:#d97316;--amber-soft:#fff4e6;--green:#15803d;--red:#c0392f;--paper:#f6f7f9;--card:#fff;--line:#e5e8ec;--line-soft:#eef0f3;--zebra:#f7f9fb;--text:#1a2433;--text-2:#5a6678;--text-3:#97a1b0;--field-h:38px;--shadow-sm:0 1px 2px rgba(20,36,58,.06),0 1px 3px rgba(20,36,58,.08);--shadow-lg:0 12px 40px rgba(20,36,58,.18);--font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;}
@@ -131,6 +133,7 @@ tbody tr:hover td{background:#eef4fb;}
     <button class="tab" data-t="inventur" onclick="showTab('inventur')">🧮 Inventur</button>
     <button class="tab" data-t="kartons" onclick="showTab('kartons')">📦 Kartons</button>
     <button class="tab" data-t="protokoll" onclick="showTab('protokoll')">📋 Protokoll</button>
+    <button class="tab" data-t="import" onclick="showTab('import')">🔄 Import/Export</button>
     <button class="tab" data-t="uebersicht" onclick="showTab('uebersicht')">📊 Übersicht</button>
   </div>
   <div class="container">
@@ -141,8 +144,21 @@ tbody tr:hover td{background:#eef4fb;}
         <button onclick="openNeu()">＋ Neuer Artikel</button></div>
       <div class="lp-btn-label" style="margin-top:10px;">Paletten — anklicken zeigt die Artikel darauf:</div>
       <div id="such-paletten" class="lp-btn-row"></div>
-      <label style="margin-top:12px;">Artikel suchen (Nummer, Name oder EAN)</label>
-      <input id="suche" placeholder="mind. 2 Zeichen…" oninput="sucheDebounced()">
+      <div class="row" style="margin-top:12px;align-items:flex-end;gap:10px;">
+        <div style="flex:1;min-width:200px;">
+          <label>Artikel suchen (Nummer, Name oder EAN)</label>
+          <input id="suche" placeholder="mind. 2 Zeichen…" oninput="sucheDebounced()">
+        </div>
+        <div>
+          <label>Amazon-Status</label>
+          <select id="such-online-filter" onchange="sucheOderPalette()" style="width:170px;">
+            <option value="">alle</option>
+            <option value="1">nur online</option>
+            <option value="2">nur nicht online</option>
+            <option value="0">nur unbekannt</option>
+          </select>
+        </div>
+      </div>
       <div id="such-status" class="hint" style="margin-top:6px;"></div>
       <div id="ergebnisse"></div>
     </div>
@@ -262,7 +278,10 @@ tbody tr:hover td{background:#eef4fb;}
     </div>
     <div class="card" style="margin-top:12px;">
       <div class="row" style="justify-content:space-between;"><b>Paletten — anklicken zeigt die Kartons</b>
-        <button class="sec" onclick="kartonsLaden()">↻ Aktualisieren</button></div>
+        <span class="row" style="gap:8px;">
+          <button class="sec" onclick="etikettenDrucken(vlpCache.map(x=>x.name))">🏷️ Etiketten aller Lagerplätze</button>
+          <button class="sec" onclick="kartonsLaden()">↻ Aktualisieren</button>
+        </span></div>
       <div id="kartons-grid" class="lager-grid" style="margin-top:10px;">Wird geladen…</div>
       <div id="kartons-detail" style="margin-top:14px;"></div>
     </div>
@@ -280,12 +299,75 @@ tbody tr:hover td{background:#eef4fb;}
             <option>Inventur</option><option>Artikeländerung</option>
             <option>Lagerplatz angelegt</option><option>Lagerplatz gelöscht</option>
             <option>Umbenennung</option><option>Zusammenlegung</option><option>Rückgängig</option>
+            <option>CSV-Import</option>
           </select>
+          <span class="hint" style="margin:0;">von</span>
+          <input type="date" id="prot-von" onchange="protokollLaden()" style="width:150px;">
+          <span class="hint" style="margin:0;">bis</span>
+          <input type="date" id="prot-bis" onchange="protokollLaden()" style="width:150px;">
+          <button class="sec" onclick="protoReset()">Zurücksetzen</button>
           <button class="sec" onclick="protokollLaden()">↻</button>
         </div>
       </div>
       <div id="prot-count" class="hint" style="margin-top:8px;"></div>
       <div id="protokoll-body" style="margin-top:8px;overflow-x:auto;">Wird geladen…</div>
+    </div>
+  </div>
+
+  <div id="tab-import" class="tabpanel" style="display:none;">
+    <div class="card">
+      <b>⬆️ Bestände per CSV/Excel importieren (JTL-kompatibel)</b>
+      <div class="hint" style="margin-top:6px;">Die Datei muss die Spalten <b>Artikelnummer</b>, <b>Lagerplatz</b> und <b>Bestand/Menge</b> enthalten (optional: Artikelname, GTIN, Set).
+        CSV (Trennzeichen/Kodierung automatisch erkannt) und Excel (.xlsx) werden unterstützt.</div>
+      <div class="hint" style="margin-top:6px;color:#7c4a12;">⚠️ Ein CSV-Import lässt sich <b>nicht</b> per „Rückgängig" aufheben — nur einzeln über das Protokoll korrigieren.</div>
+      <div class="ss-mode-toggle" style="margin-top:12px;">
+        <button id="bimp-mode-teil" class="ss-mode active" onclick="setBestandModus('teil')">Teil-Import</button>
+        <button id="bimp-mode-komplett" class="ss-mode" onclick="setBestandModus('komplett')">Komplett-Import</button>
+      </div>
+      <div class="hint" id="bimp-modus-hint" style="margin-top:6px;">Nur Artikel in der Datei werden aktualisiert. Alle anderen bleiben unverändert.</div>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:10px;">
+        <input type="checkbox" id="bimp-anlegen" style="width:auto;"> Unbekannte Artikel neu anlegen (Name/GTIN aus der Datei, falls vorhanden)
+      </label>
+      <label style="margin-top:12px;">Datei wählen</label>
+      <input type="file" id="bimp-file" accept=".csv,.txt,.xlsx" onchange="handleBestandFile(this.files[0])">
+      <div id="bimp-result" style="margin-top:14px;"></div>
+    </div>
+    <div class="card" style="margin-top:12px;">
+      <b>🛒 Amazon-Status importieren</b>
+      <div class="hint" style="margin-top:6px;">Datei (CSV oder Excel) mit <b>Artikelnummer</b> hochladen — optional mit Status-Spalte (online/nicht online).
+        Ohne Status-Spalte gilt: jeder Artikel in der Datei ist <b>online</b>. Erst Vorschau, dann Bestätigen.</div>
+      <div class="ss-mode-toggle" style="margin-top:12px;">
+        <button id="imp-mode-nur" class="ss-mode active" onclick="setImportModus('nur')">Nur genannte setzen</button>
+        <button id="imp-mode-voll" class="ss-mode" onclick="setImportModus('voll')">Vollabgleich</button>
+      </div>
+      <div class="hint" id="imp-modus-hint" style="margin-top:6px;">Nur Artikel aus der Datei bekommen einen Status. Alle anderen bleiben unverändert.</div>
+      <label style="margin-top:12px;">Datei wählen</label>
+      <input type="file" id="imp-file" accept=".csv,.txt,.xlsx" onchange="handleImportFile(this.files[0])">
+      <div id="imp-result" style="margin-top:14px;"></div>
+    </div>
+    <div class="card" style="margin-top:12px;">
+      <b>⬇️ Exportieren</b>
+      <div class="hint" style="margin-top:6px;">Aktuelle Daten als CSV-Datei herunterladen.</div>
+      <div class="row" style="margin-top:10px;flex-wrap:wrap;gap:8px;">
+        <button onclick="exportArtikelCsv()">📄 Artikel (mit Bestand)</button>
+        <button onclick="exportProtokollCsv()">📋 Protokoll</button>
+        <button onclick="exportLagerplaetzeCsv()">📦 Lagerplätze/Kartons</button>
+      </div>
+      <div class="hint" style="margin-top:14px;">JTL-Format (direkt wieder importierbar):</div>
+      <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:8px;">
+        <button onclick="exportJtlLagerbestandCsv()">⬇️ Lagerbestand (JTL)</button>
+        <button onclick="exportJtlKommentarCsv()">💬 Lagerbestandskommentar (JTL)</button>
+      </div>
+    </div>
+    <div class="card" style="margin-top:12px;">
+      <b>🛟 Datensicherung</b>
+      <div class="hint" style="margin-top:6px;">
+        Der kostenlose Supabase-Plan legt <b>keine</b> automatischen Backups an (erst ab dem kostenpflichtigen Pro-Plan).
+        Diese Sicherung lädt eine vollständige Kopie aller Daten (Artikel, Bestände, Lagerplätze, Protokoll, Leermeldungen)
+        als JSON-Datei auf deinen Rechner herunter — bewahre sie an einem sicheren Ort auf (z. B. Dropbox-Ordner).
+      </div>
+      <div class="row" style="margin-top:10px;"><button onclick="datenbankSichern()">🛟 Sicherung jetzt herunterladen</button></div>
+      <div id="backup-status" style="margin-top:10px;"></div>
     </div>
   </div>
 
@@ -407,6 +489,11 @@ function chosenLp(selId, neuId){ const s = el(selId); return s.value === '__neu_
 let suchTimer = null;
 function sucheDebounced() { clearTimeout(suchTimer); suchTimer = setTimeout(suchen, 250); }
 
+function sucheOderPalette() {
+  // Filter geändert: laufenden Modus (Text- oder Paletten-Suche) mit neuem Filter neu ausführen
+  if (selectedPaletten.size) suchePaletten();
+  else suchen();
+}
 async function suchen() {
   document.querySelectorAll('#such-paletten .ss-lp-btn').forEach(b=>b.classList.remove('active'));
   selectedPaletten.clear();
@@ -415,11 +502,13 @@ async function suchen() {
   const box = el('ergebnisse'), st = el('such-status');
   if (q.length < 2) { box.innerHTML = ''; st.textContent = ''; return; }
   st.textContent = 'Suche…';
+  const onlineFilter = el('such-online-filter').value;
   // 1) passende Artikel
-  const { data: arts, error } = await client.from('artikel')
+  let query = client.from('artikel')
     .select('artikelnummer,artikelname,gtin,online')
-    .or(`artikelnummer.ilike.%${q}%,artikelname.ilike.%${q}%,gtin.ilike.%${q}%`)
-    .order('artikelname').limit(50);
+    .or(`artikelnummer.ilike.%${q}%,artikelname.ilike.%${q}%,gtin.ilike.%${q}%`);
+  if (onlineFilter !== '') query = query.eq('online', parseInt(onlineFilter, 10));
+  const { data: arts, error } = await query.order('artikelname').limit(50);
   if (error) { st.innerHTML = '<span class="err">Fehler: ' + error.message + '</span>'; return; }
   if (!arts.length) { st.textContent = 'Keine Treffer.'; box.innerHTML = ''; return; }
   // 2) Bestände dieser Artikel holen
@@ -441,7 +530,10 @@ function artikelKarte(a, plaetze) {
               : '<span class="badge b-unk">?</span>';
   return `<div class="art">
     <div class="art-name">${esc(a.artikelname||'')}${badge}
-      <button class="sec" style="padding:2px 8px;float:right;" onclick="openEdit('${jsAttr(a.artikelnummer)}')">✏️ Bearbeiten</button></div>
+      <span style="float:right;display:flex;gap:6px;">
+        <button class="sec" style="padding:2px 8px;" onclick="openEtikettModal('${jsAttr(a.artikelnummer)}','${jsAttr(a.artikelname||'')}','${jsAttr(a.gtin||'')}')">🏷️ Etikett</button>
+        <button class="sec" style="padding:2px 8px;" onclick="openEdit('${jsAttr(a.artikelnummer)}')">✏️ Bearbeiten</button>
+      </span></div>
     <div class="art-meta">${esc(a.artikelnummer)}${a.gtin?' · EAN '+esc(a.gtin):''} · Gesamt <b>${gesamt}</b></div>
     <div style="margin-top:4px;">${lps}</div>
   </div>`;
@@ -478,17 +570,20 @@ async function suchePaletten() {
   const { data: best } = await client.from('bestaende').select('artikelnummer,lagerplatz,menge').in('lagerplatz', namen).gt('menge', 0);
   if (!best || !best.length) { st.textContent = labels.join(', ') + ': keine Artikel mit Bestand.'; box.innerHTML = ''; return; }
   const nummern = [...new Set(best.map(b=>b.artikelnummer))];
-  const { data: arts } = await client.from('artikel').select('artikelnummer,artikelname,gtin,online').in('artikelnummer', nummern);
+  const onlineFilter = el('such-online-filter').value;
+  let aq = client.from('artikel').select('artikelnummer,artikelname,gtin,online').in('artikelnummer', nummern);
+  if (onlineFilter !== '') aq = aq.eq('online', parseInt(onlineFilter, 10));
+  const { data: arts } = await aq;
   const amap = {}; (arts||[]).forEach(a=>amap[a.artikelnummer]=a);
   const bmap = {}; best.forEach(b=>{(bmap[b.artikelnummer]=bmap[b.artikelnummer]||[]).push(b);});
   const liste = nummern.map(n=>amap[n]).filter(Boolean).sort((a,b)=>(a.artikelname||'').localeCompare(b.artikelname||''));
-  st.textContent = labels.join(', ') + ': ' + liste.length + ' Artikel · ' + best.reduce((s,b)=>s+b.menge,0) + ' Stück';
+  st.textContent = labels.join(', ') + ': ' + liste.length + ' Artikel · ' + best.reduce((s,b)=>s+b.menge,0) + ' Stück' + (onlineFilter!==''?' (gefiltert)':'');
   box.innerHTML = liste.map(a => artikelKarte(a, (bmap[a.artikelnummer]||[]).slice().sort((x,y)=>x.lagerplatz.localeCompare(y.lagerplatz)))).join('');
 }
 
 // ── Reiter ──────────────────────────────────────────────────────────────────
 function showTab(name) {
-  ['suche','buchen','umlagern','einraeumen','inventur','kartons','protokoll','uebersicht'].forEach(t => {
+  ['suche','buchen','umlagern','einraeumen','inventur','kartons','protokoll','import','uebersicht'].forEach(t => {
     document.querySelector(`.tab[data-t="${t}"]`).classList.toggle('active', t === name);
     el('tab-'+t).style.display = t === name ? 'block' : 'none';
   });
@@ -666,6 +761,112 @@ async function kartonBlattDrucken(name) {
   w.document.open(); w.document.write(html); w.document.close();
 }
 
+// Öffnet eine Druckseite mit je einem kleinen Etikett (Name + Barcode) pro Lagerplatz
+function etikettenDrucken(namen) {
+  namen = (namen||[]).filter(Boolean);
+  if (!namen.length) { alert('Keine Lagerplätze vorhanden.'); return; }
+  if (namen.length > 30 && !confirm('Es werden Etiketten für ALLE ' + namen.length + ' Lagerplätze erzeugt. Fortfahren?')) return;
+  const labels = namen.map(n => {
+    const svg = code128svg(n, 2, 46);
+    const bc = svg ? `<div class="bc">${svg}</div><div class="code">${esc(n)}</div>`
+                    : `<div class="bc-fehlt">Barcode nicht möglich<br>(Sonderzeichen)</div>`;
+    return `<div class="label"><div class="name">${esc(n)}</div>${bc}</div>`;
+  }).join('');
+  const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>Lagerplatz-Etiketten</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 8mm; font-family: Arial,sans-serif; background:#fff; color:#000; }
+  .sheet { display: flex; flex-wrap: wrap; gap: 4mm; }
+  .label { width: 55mm; height: 30mm; border: 1px dashed #bbb; border-radius: 2mm;
+           padding: 2mm; display: flex; flex-direction: column; align-items: center;
+           justify-content: center; text-align: center; page-break-inside: avoid; }
+  .name { font-size: 14pt; font-weight: 800; letter-spacing: 0.5px; margin-bottom: 1.5mm; }
+  .bc svg { max-width: 100%; height: auto; }
+  .code { font-size: 8pt; letter-spacing: 1px; margin-top: 0.5mm; }
+  .bc-fehlt { font-size: 8pt; color: #c00; }
+  .hinweis { margin-bottom: 6mm; font-size: 10pt; color:#555; }
+  @media print { body{padding:0;} .label{border:1px dashed #ddd;} .hinweis{display:none;} @page{margin:8mm;} }
+</style></head><body>
+<div class="hinweis">${namen.length} Etikett(en). Druck startet automatisch — sonst Strg/Cmd+P.</div>
+<div class="sheet">${labels}</div>
+<script>window.onload=function(){setTimeout(function(){window.print();},150);};<\/script>
+</body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { alert('Bitte Pop-ups erlauben, damit die Etiketten gedruckt werden können.'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
+// ── Artikel-Etiketten (EAN-13 wenn gültig, sonst Code128) ───────────────────
+const EAN_L = {'0':'0001101','1':'0011001','2':'0010011','3':'0111101','4':'0100011','5':'0110001','6':'0101111','7':'0111011','8':'0110111','9':'0001011'};
+const EAN_G = {'0':'0100111','1':'0110011','2':'0011011','3':'0100001','4':'0011101','5':'0111001','6':'0000101','7':'0010001','8':'0001001','9':'0010111'};
+const EAN_R = {'0':'1110010','1':'1100110','2':'1101100','3':'1000010','4':'1011100','5':'1001110','6':'1010000','7':'1000100','8':'1001000','9':'1110100'};
+const EAN_PAR = {'0':'LLLLLL','1':'LLGLGG','2':'LLGGLG','3':'LLGGGL','4':'LGLLGG','5':'LGGLLG','6':'LGGGLL','7':'LGLGLG','8':'LGLGGL','9':'LGGLGL'};
+function ean13svg(s, unit, h) {
+  unit = unit || 2; h = h || 50;
+  const par = EAN_PAR[s[0]];
+  let bits = '101';
+  for (let i = 0; i < 6; i++) bits += (par[i] === 'L' ? EAN_L[s[1+i]] : EAN_G[s[1+i]]);
+  bits += '01010';
+  for (let i = 0; i < 6; i++) bits += EAN_R[s[7+i]];
+  bits += '101';
+  let x = 0, rects = '';
+  for (const b of bits) { if (b === '1') rects += `<rect x="${x}" y="0" width="${unit}" height="${h}"/>`; x += unit; }
+  const W = bits.length * unit;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${h}" viewBox="0 0 ${W} ${h}" fill="#000" preserveAspectRatio="xMidYMid meet">${rects}</svg>`;
+}
+// Wählt den passenden Barcode: echte EAN-13, wenn gültig, sonst Code128 (GTIN oder Artikelnummer)
+function artikelBarcode(gtin, artnr) {
+  const g = (gtin || '').trim();
+  if (/^\d{13}$/.test(g) && eanGueltig(g) === true) return { svg: ean13svg(g, 2, 50), typ: 'EAN-13' };
+  const code = g || artnr;
+  const svg = code128svg(code, 2, 50);
+  return { svg, typ: svg ? 'Code 128' : null };
+}
+function artikelLabelHtml(a) {
+  const bc = artikelBarcode(a.gtin, a.artikelnummer);
+  const svg = bc.svg ? bc.svg.replace('fill="#000"', 'fill="#000" style="width:92%;height:14mm;"')
+                     : '<span style="color:#c00;font-size:8pt;">Kein Barcode möglich</span>';
+  return `<div style="width:60mm;height:35mm;border:1px dashed #bbb;border-radius:2mm;padding:2mm;`
+    + `display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;`
+    + `background:#fff;color:#000;overflow:hidden;box-sizing:border-box;font-family:Arial,sans-serif;">`
+    + `<div style="font-size:10pt;font-weight:600;line-height:1.1;margin-bottom:1mm;max-width:100%;overflow:hidden;">${esc(a.artikelname || '')}</div>`
+    + `<div style="width:100%;display:flex;justify-content:center;">${svg}</div>`
+    + `<div style="font-size:9pt;letter-spacing:2px;margin-top:1mm;">${esc(a.gtin || '—')}</div>`
+    + `<div style="font-size:8pt;letter-spacing:1px;color:#222;">${esc(a.artikelnummer)}</div>`
+    + `</div>`;
+}
+let etikettArtikel = null;
+function openEtikettModal(artnr, name, gtin) {
+  etikettArtikel = { artikelnummer: artnr, artikelname: name, gtin: gtin };
+  const bc = artikelBarcode(gtin, artnr);
+  el('etikett-info').innerHTML = `<div class="hint" style="margin-bottom:8px;">Vorschau (so wird gedruckt):</div>
+    <div style="display:flex;justify-content:center;">${artikelLabelHtml(etikettArtikel)}</div>`;
+  el('etikett-anzahl').value = 1;
+  el('etikett-hinweis').textContent = bc.typ === 'EAN-13' ? 'Echter EAN-13-Barcode (aus der EAN).'
+    : (bc.typ ? 'Keine gültige EAN-13 — Barcode aus der vorhandenen Nummer (Code 128).'
+              : 'Für diesen Artikel ist kein Barcode möglich (keine geeignete Nummer).');
+  el('etikett-modal').style.display = 'flex';
+}
+function etikettDrucken() {
+  if (!etikettArtikel) return;
+  let n = parseInt(el('etikett-anzahl').value || 1, 10);
+  if (isNaN(n) || n < 1) n = 1; if (n > 200) n = 200;
+  const one = artikelLabelHtml(etikettArtikel);
+  const labels = Array(n).fill(one).join('');
+  const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>Etikett — ${esc(etikettArtikel.artikelnummer)}</title>
+<style>*{box-sizing:border-box;} body{margin:0;padding:8mm;font-family:Arial,sans-serif;background:#fff;}
+.sheet{display:flex;flex-wrap:wrap;gap:4mm;} .hinweis{margin-bottom:6mm;font-size:10pt;color:#555;}
+@media print{body{padding:0;}.hinweis{display:none;}@page{margin:8mm;}}</style></head><body>
+<div class="hinweis">${n} Etikett(en). Druck startet automatisch — sonst Strg/Cmd+P.</div>
+<div class="sheet">${labels}</div>
+<script>window.onload=function(){setTimeout(function(){window.print();},150);};<\/script>
+</body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { alert('Bitte Pop-ups erlauben, damit die Etiketten gedruckt werden können.'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+  el('etikett-modal').style.display = 'none';
+}
+
 // ── Umlagern — DB-Funktion "umlagern" ────────────────────────────────────────
 // Nach Artikel-Eingabe: Von-Dropdown = nur Plätze mit Bestand; Nach-Dropdown = alle + neu.
 async function umlagernArtikelGeladen() {
@@ -706,10 +907,10 @@ async function umlagern() {
 // Löst eine Eingabe (Artikelnummer ODER EAN) zur Artikelnummer auf.
 // Rückgabe: {artnr,name} | {mehrdeutig:[…]} | null
 async function resolveArtikel(code) {
-  let r1 = await client.from('artikel').select('artikelnummer,artikelname,online').eq('artikelnummer', code).limit(1);
-  if (r1.data && r1.data.length) return { artnr: r1.data[0].artikelnummer, name: r1.data[0].artikelname, online: r1.data[0].online };
-  let r2 = await client.from('artikel').select('artikelnummer,artikelname,online').eq('gtin', code);
-  if (r2.data && r2.data.length === 1) return { artnr: r2.data[0].artikelnummer, name: r2.data[0].artikelname, online: r2.data[0].online };
+  let r1 = await client.from('artikel').select('artikelnummer,artikelname,online,ist_set').eq('artikelnummer', code).limit(1);
+  if (r1.data && r1.data.length) return { artnr: r1.data[0].artikelnummer, name: r1.data[0].artikelname, online: r1.data[0].online, istSet: !!r1.data[0].ist_set };
+  let r2 = await client.from('artikel').select('artikelnummer,artikelname,online,ist_set').eq('gtin', code);
+  if (r2.data && r2.data.length === 1) return { artnr: r2.data[0].artikelnummer, name: r2.data[0].artikelname, online: r2.data[0].online, istSet: !!r2.data[0].ist_set };
   if (r2.data && r2.data.length > 1)  return { mehrdeutig: r2.data };
   return null;
 }
@@ -781,6 +982,10 @@ async function ssScan() {
   const g = await resolveArtikel(code);
   if (!g)            { ssStatus('❌ Nicht gefunden: ' + esc(code), 'err'); el('ss-scan').focus(); return; }
   if (g.mehrdeutig)  { ssStatus('⚠️ EAN mehrdeutig — bitte die Artikelnummer eingeben.', 'err'); el('ss-scan').focus(); return; }
+  if (g.istSet) {
+    const hinweis = ssMode === 'ein' ? 'mehrere Einheiten = 1 Stück' : 'mehrere Einheiten ins Paket legen!';
+    if (!confirm('⚠️ SET-ARTIKEL\n\n' + (g.name||g.artnr) + '\n\n' + hinweis + '\n\nFortfahren?')) { ssStatus('Abgebrochen (Set-Artikel).'); el('ss-scan').focus(); return; }
+  }
 
   // ── Einbuchen ──
   if (ssMode === 'ein') {
@@ -835,16 +1040,321 @@ async function kartonsLaden() {
       <span class="lager-btn-sub">${stk} Stück</span></button>`;
   }).join('') || '<span class="muted">Noch keine Kartons/Lagerplätze.</span>';
 }
+let kartonsAktuelleListe = [];
 function kartonPaletteZeigen(key, btn) {
   document.querySelectorAll('#kartons-grid .lager-btn').forEach(b=>b.classList.remove('active'));
   if (btn) btn.classList.add('active');
   const p = key === '__leer__' ? '' : key;
   const ks = vlpCache.filter(x => (x.palette||'') === p).slice().sort((a,b)=>a.name.localeCompare(b.name));
+  kartonsAktuelleListe = ks.map(x=>x.name);
   const stk = ks.reduce((s,x)=>s+(x.stueck||0), 0);
   const titel = p ? 'Palette ' + esc(p) : 'Ohne Palette';
-  const rows = ks.map(x => `<tr><td>${esc(x.name)}</td><td>${kartonKanalBadge(x.kanal||0)}</td><td style="text-align:right;">${x.artikel}</td><td style="text-align:right;">${x.stueck}</td></tr>`).join('');
-  el('kartons-detail').innerHTML = `<div style="font-weight:700;color:#1a202c;margin-bottom:6px;">${titel} <span class="muted">— ${ks.length} Kartons · ${stk} Stück</span></div>
-    <table><tr><th>Karton</th><th>Kanal</th><th style="text-align:right;">SKUs</th><th style="text-align:right;">Stück</th></tr>${rows}</table>`;
+  const rows = ks.map(x => `<tr><td>${esc(x.name)}</td><td>${kartonKanalBadge(x.kanal||0)}</td><td style="text-align:right;">${x.artikel}</td><td style="text-align:right;">${x.stueck}</td><td><button class="sec" style="padding:2px 10px;" onclick="kartonBlattDrucken('${jsAttr(x.name)}')">🖨️ Nachdruck</button></td></tr>`).join('');
+  el('kartons-detail').innerHTML = `<div style="font-weight:700;color:#1a202c;margin-bottom:6px;">${titel} <span class="muted">— ${ks.length} Kartons · ${stk} Stück</span>
+    <button class="sec" style="margin-left:10px;padding:2px 10px;" onclick="etikettenDrucken(kartonsAktuelleListe)">🏷️ Etiketten dieser Palette</button></div>
+    <table><tr><th>Karton</th><th>Kanal</th><th style="text-align:right;">SKUs</th><th style="text-align:right;">Stück</th><th></th></tr>${rows}</table>`;
+}
+
+// ── Import/Export ────────────────────────────────────────────────────────────
+// Datei (CSV oder Excel) in Zeilen-Objekte umwandeln — erkennt Excel an der
+// "PK"-Signatur, sonst CSV (Papaparse erkennt Trennzeichen/Kopfzeile automatisch).
+async function parseFileRows(file) {
+  const buf = await file.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  if (bytes[0] === 0x50 && bytes[1] === 0x4B) {           // 'PK' → Excel (.xlsx)
+    const wb = XLSX.read(buf, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(ws, { defval: '' });
+  }
+  let text;
+  try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+  catch (e) { text = new TextDecoder('windows-1252').decode(buf); }
+  const res = Papa.parse(text, { header: true, skipEmptyLines: true });
+  return res.data;
+}
+function spalteFinden(rows, kandidaten) {
+  if (!rows.length) return null;
+  const keys = Object.keys(rows[0]);
+  for (const c of kandidaten) for (const k of keys) if (k && k.trim().toLowerCase() === c) return k;
+  return null;
+}
+function statusAusWert(v) {
+  const s = String(v ?? '').trim().toLowerCase();
+  if (['1','online','ja','j','aktiv','active','x','true','wahr','yes','y','gelistet'].includes(s)) return 1;
+  if (['0','offline','nein','n','nicht online','nicht-online','inaktiv','inactive','false','falsch','no','ungelistet'].includes(s)) return 2;
+  return null;
+}
+async function amazonStatusAusDatei(file) {
+  const rows = await parseFileRows(file);
+  if (!rows.length) throw new Error('Datei leer oder keine Daten gefunden.');
+  const colSku = spalteFinden(rows, ['artikelnummer','sku','artnr','artikel_nr','nr','merchant-sku','seller-sku','msku','artikel']);
+  if (!colSku) throw new Error('Spalte mit Artikelnummer nicht gefunden. Gefunden: ' + Object.keys(rows[0]).join(', '));
+  const colStatus = spalteFinden(rows, ['online','status','amazon','amazon-status','gelistet','aktiv','listing','zustand','state']);
+  const mapping = {};
+  for (const row of rows) {
+    const sku = String(row[colSku] ?? '').trim().replace(/^"|"$/g, '');
+    if (!sku) continue;
+    let st = 1;
+    if (colStatus) { const erk = statusAusWert(row[colStatus]); if (erk !== null) st = erk; }
+    mapping[sku] = st;
+  }
+  return { mapping, colStatus };
+}
+
+// ── Bestände per CSV/Excel importieren (JTL-artig) ──────────────────────────
+function setflagAusWert(v) {
+  const s = String(v ?? '').trim().toLowerCase().replace(',', '.');
+  if (['1','ja','j','x','true','wahr','yes','y','set'].includes(s)) return 1;
+  if (!isNaN(parseFloat(s)) && isFinite(s) && parseFloat(s) > 0) return 1;
+  return 0;
+}
+async function bestandZeilenAusDatei(file) {
+  const rows = await parseFileRows(file);
+  if (!rows.length) throw new Error('Datei leer oder keine Daten gefunden.');
+  const colArtnr = spalteFinden(rows, ['artikelnummer','artnr','artikel_nr','nr']);
+  const colLp = spalteFinden(rows, ['lagerplatz','lager','standort']);
+  const colBestand = spalteFinden(rows, ['bestand','menge','einzubuchende menge','stock','anzahl']);
+  const colName = spalteFinden(rows, ['artikelname','name','bezeichnung']);
+  const colGtin = spalteFinden(rows, ['gtin','ean','barcode']);
+  const colSet = spalteFinden(rows, ['set','setartikel','set-artikel','set artikel','ist_set','bundle']);
+  if (!colArtnr || !colBestand) throw new Error('Spalten nicht gefunden. Gefunden: ' + Object.keys(rows[0]).join(', '));
+  const zeilen = [];
+  for (const row of rows) {
+    const artikelnummer = String(row[colArtnr] ?? '').trim().replace(/^"|"$/g, '');
+    const bStr = String(row[colBestand] ?? '').trim().replace(/^"|"$/g, '').replace(',', '.');
+    if (!artikelnummer || bStr === '') continue;
+    const bestand = parseInt(parseFloat(bStr), 10);
+    if (isNaN(bestand)) continue;
+    zeilen.push({
+      artikelnummer, bestand,
+      lagerplatz: colLp ? String(row[colLp] ?? '').trim() : '',
+      artikelname: colName ? String(row[colName] ?? '').trim() : '',
+      gtin: colGtin ? String(row[colGtin] ?? '').trim() : '',
+      set_flag: colSet ? setflagAusWert(row[colSet]) : null
+    });
+  }
+  return zeilen;
+}
+let bestandModus = 'teil';
+let bestandFile = null;
+function setBestandModus(m) {
+  bestandModus = m;
+  el('bimp-mode-teil').classList.toggle('active', m === 'teil');
+  el('bimp-mode-komplett').classList.toggle('active', m === 'komplett');
+  el('bimp-modus-hint').innerHTML = m === 'komplett'
+    ? '<span class="err">⚠️ Artikel in der Datei werden aktualisiert, alle anderen (bzw. deren nicht genannte Plätze) werden auf 0 gesetzt!</span>'
+    : 'Nur Artikel in der Datei werden aktualisiert. Alle anderen bleiben unverändert.';
+}
+async function handleBestandFile(file) {
+  if (!file) return;
+  bestandFile = file;
+  const rd = el('bimp-result');
+  if (bestandModus === 'komplett') {
+    rd.innerHTML = `<div style="background:#fff5f5;border:2px solid #9b2c2c;border-radius:8px;padding:12px 14px;color:#9b2c2c;">
+      <div style="font-weight:700;">⚠️ Komplett-Import: Alle nicht in der Datei enthaltenen Plätze werden auf 0 gesetzt!</div>
+      <div class="row" style="margin-top:10px;">
+        <button style="background:#9b2c2c;" onclick="bestandImportieren()">Ja, fortfahren</button>
+        <button class="sec" onclick="el('bimp-result').innerHTML=''">Abbrechen</button>
+      </div></div>`;
+    return;
+  }
+  await bestandImportieren();
+}
+async function bestandImportieren() {
+  if (!bestandFile) return;
+  const rd = el('bimp-result');
+  rd.innerHTML = '<span class="hint">⏳ Wird importiert…</span>';
+  try {
+    const zeilen = await bestandZeilenAusDatei(bestandFile);
+    const anlegen = el('bimp-anlegen').checked;
+    const { data, error } = await client.rpc('bestand_csv_import', { p_zeilen: zeilen, p_modus: bestandModus, p_anlegen: anlegen });
+    if (error) throw error;
+    rd.innerHTML = `<div style="background:#C6F6D5;border-radius:8px;padding:12px 14px;color:#276749;">
+      <div style="font-weight:700;">✅ Import erfolgreich (${bestandModus === 'komplett' ? 'Komplett' : 'Teil'}-Import)</div>
+      <div style="margin-top:6px;">Aktualisiert: <b>${data.aktualisiert}</b> Zeilen</div>
+      ${data.neu_angelegt > 0 ? `<div style="margin-top:4px;">Neu angelegt: <b>${data.neu_angelegt}</b> Artikel</div>` : ''}
+      ${data.auf_null_gesetzt > 0 ? `<div style="margin-top:4px;color:#7c4a12;">Auf 0 gesetzt: <b>${data.auf_null_gesetzt}</b> Artikel</div>` : ''}
+      ${data.nicht_gefunden > 0 ? `<div style="margin-top:4px;color:#7c4a12;">Übersprungen (unbekannt): ${data.nicht_gefunden}${data.beispiele_nicht_gefunden?.length ? ' (z.B. ' + esc(data.beispiele_nicht_gefunden.join(', ')) + ')' : ''}</div>` : ''}
+    </div>`;
+    bestandFile = null; el('bimp-file').value = '';
+    await ladeAllePlaetze(); refreshLeer();
+  } catch (e) { rd.innerHTML = '<span class="err">❌ ' + esc(e.message || String(e)) + '</span>'; }
+}
+async function exportJtlLagerbestandCsv() {
+  try {
+    const rows = await fetchAll('bestaende', 'artikelnummer,lagerplatz,menge', { order: { col: 'artikelnummer', asc: true } });
+    const head = ['Artikelnummer','Lagerplatz','Einzubuchende Menge'];
+    const data = rows.map(r => [r.artikelnummer, r.lagerplatz, r.menge]);
+    csvDownload('Lagerbestand.csv', [head, ...data]);
+  } catch (e) { alert('Fehler beim Export: ' + (e.message || e)); }
+}
+async function exportJtlKommentarCsv() {
+  try {
+    const rows = await fetchAll('bestaende', 'artikelnummer,lagerplatz,menge', { order: { col: 'artikelnummer', asc: true } });
+    const grp = {};
+    rows.filter(r => r.menge > 0).forEach(r => { (grp[r.artikelnummer] = grp[r.artikelnummer] || []).push(r.lagerplatz + ' (' + r.menge + ')'); });
+    const head = ['Artikelnummer','Kommentar'];
+    const data = Object.keys(grp).sort().map(artnr => [artnr, grp[artnr].join(', ')]);
+    csvDownload('Lagerbestandskommentar.csv', [head, ...data]);
+  } catch (e) { alert('Fehler beim Export: ' + (e.message || e)); }
+}
+// Vollständige Sicherung aller Tabellen als JSON-Datei (Supabase Free-Tier hat keine automatischen Backups)
+async function datenbankSichern() {
+  const st = el('backup-status');
+  st.innerHTML = '<span class="hint">⏳ Sicherung wird erstellt…</span>';
+  try {
+    const [artikel, bestaende, lagerplaetze, buchungen, leermeldungen] = await Promise.all([
+      fetchAll('artikel', '*'),
+      fetchAll('bestaende', '*'),
+      fetchAll('lagerplaetze', '*'),
+      fetchAll('buchungen', '*'),
+      fetchAll('leermeldungen', '*')
+    ]);
+    const snapshot = { erstellt: new Date().toISOString(), quelle: 'LagerPal Web-App', artikel, bestaende, lagerplaetze, buchungen, leermeldungen };
+    const blob = new Blob([JSON.stringify(snapshot)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const stempel = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    const a = document.createElement('a'); a.href = url; a.download = 'lagerpal_backup_' + stempel + '.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    st.innerHTML = `<span class="ok">✓ Sicherung heruntergeladen: ${artikel.length} Artikel, ${bestaende.length} Bestände, ${lagerplaetze.length} Lagerplätze, ${buchungen.length} Protokoll-Einträge, ${leermeldungen.length} Leermeldungen.</span>`;
+  } catch (e) { st.innerHTML = '<span class="err">Fehler: ' + esc(e.message || String(e)) + '</span>'; }
+}
+
+let importModus = 'nur';
+let importFile = null;
+function setImportModus(m) {
+  importModus = m;
+  el('imp-mode-nur').classList.toggle('active', m === 'nur');
+  el('imp-mode-voll').classList.toggle('active', m === 'voll');
+  el('imp-modus-hint').textContent = m === 'voll'
+    ? 'Datei = Liste der Online-Artikel. Alle anderen werden auf „nicht online" gesetzt.'
+    : 'Nur Artikel aus der Datei bekommen einen Status. Alle anderen bleiben unverändert.';
+  if (importFile) importVorschau();
+}
+async function handleImportFile(file) {
+  if (!file) return;
+  importFile = file;
+  await importVorschau();
+}
+async function importVorschau() {
+  const rd = el('imp-result');
+  rd.innerHTML = '<span class="hint">⏳ Vorschau…</span>';
+  try {
+    const { mapping, colStatus } = await amazonStatusAusDatei(importFile);
+    const aktRows = await fetchAll('artikel', 'artikelnummer,online');
+    const aktuell = {}; aktRows.forEach(r => aktuell[r.artikelnummer] = r.online || 0);
+    let zuOnline = 0, zuOffline = 0, unveraendert = 0, nichtGefunden = 0; const beispieleNf = [];
+    for (const artnr in aktuell) {
+      let ziel;
+      if (artnr in mapping) ziel = mapping[artnr];
+      else if (importModus === 'voll') ziel = 2;
+      else continue;
+      const akt = aktuell[artnr];
+      if (ziel === akt) unveraendert++;
+      else if (ziel === 1) zuOnline++;
+      else if (ziel === 2) zuOffline++;
+    }
+    for (const sku in mapping) if (!(sku in aktuell)) { nichtGefunden++; if (beispieleNf.length < 5) beispieleNf.push(sku); }
+    rd.innerHTML = `
+      <div style="background:var(--blue-tint);border-radius:8px;padding:12px 14px;">
+        <div style="font-weight:700;">Vorschau — ${importModus === 'voll' ? 'Vollabgleich' : 'nur genannte Artikel'}</div>
+        <div style="margin-top:6px;">Positionen in der Datei: <b>${Object.keys(mapping).length}</b>${colStatus ? ' · mit Status-Spalte' : ' · ohne Status-Spalte (alle = online)'}</div>
+        <div style="margin-top:6px;">→ auf <b style="color:#276749;">online</b>: ${zuOnline} &nbsp;·&nbsp; → auf <b style="color:#9b2c2c;">nicht online</b>: ${zuOffline} &nbsp;·&nbsp; unverändert: ${unveraendert}</div>
+        ${nichtGefunden ? `<div style="margin-top:6px;color:#7c4a12;">Nicht gefunden (SKU ohne passenden Artikel): ${nichtGefunden}${beispieleNf.length ? ' (z.B. ' + esc(beispieleNf.join(', ')) + ')' : ''}</div>` : ''}
+      </div>
+      <div class="row" style="margin-top:12px;">
+        <button onclick="importAnwenden()">✓ Status übernehmen</button>
+        <button class="sec" onclick="importReset()">Abbrechen</button>
+      </div>`;
+  } catch (e) { rd.innerHTML = '<span class="err">❌ ' + esc(e.message || String(e)) + '</span>'; }
+}
+async function importAnwenden() {
+  if (!importFile) return;
+  const warn = importModus === 'voll' ? '\n\nVollabgleich: Alle Artikel, die NICHT in der Datei stehen, werden auf „nicht online" gesetzt.' : '';
+  if (!confirm('Amazon-Status übernehmen? Das lässt sich nicht per Rückgängig aufheben.' + warn)) return;
+  const rd = el('imp-result');
+  rd.innerHTML = '<span class="hint">⏳ Wird übernommen…</span>';
+  try {
+    const { mapping } = await amazonStatusAusDatei(importFile);
+    const arr = Object.entries(mapping).map(([artikelnummer, online]) => ({ artikelnummer, online }));
+    const { data, error } = await client.rpc('amazon_status_setzen', { p_mapping: arr, p_modus: importModus });
+    if (error) throw error;
+    rd.innerHTML = `<div style="background:#C6F6D5;border-radius:8px;padding:12px 14px;color:#276749;">
+      <div style="font-weight:700;">✅ Amazon-Status übernommen</div>
+      <div style="margin-top:6px;">geändert: <b>${data.geaendert}</b> · online: <b>${data.online_gesamt}</b> · nicht online: <b>${data.offline_gesamt}</b> · unbekannt: <b>${data.unbekannt_gesamt}</b></div>
+    </div>`;
+    importFile = null; el('imp-file').value = '';
+  } catch (e) { rd.innerHTML = '<span class="err">❌ ' + esc(e.message || String(e)) + '</span>'; }
+}
+function importReset() { importFile = null; el('imp-file').value = ''; el('imp-result').innerHTML = ''; }
+
+// Alle Zeilen einer Tabelle holen (überwindet das 1000-Zeilen-API-Limit)
+async function fetchAll(table, select, opts) {
+  opts = opts || {};
+  let all = [], from = 0; const pageSize = 1000;
+  while (true) {
+    let q = client.from(table).select(select).range(from, from + pageSize - 1);
+    if (opts.eq) for (const k in opts.eq) q = q.eq(k, opts.eq[k]);
+    if (opts.build) q = opts.build(q);
+    if (opts.order) q = q.order(opts.order.col, { ascending: opts.order.asc });
+    const { data, error } = await q;
+    if (error) throw error;
+    all = all.concat(data || []);
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+function csvZelle(v) { v = v == null ? '' : String(v); if (/[";\n]/.test(v)) v = '"' + v.replace(/"/g, '""') + '"'; return v; }
+function csvDownload(dateiname, zeilen) {
+  const csv = zeilen.map(r => r.map(csvZelle).join(';')).join('\r\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = dateiname;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+async function exportProtokollCsv() {
+  try {
+    const typ = el('prot-typ') ? el('prot-typ').value : '';
+    const von = el('prot-von') ? el('prot-von').value : '';
+    const bis = el('prot-bis') ? el('prot-bis').value : '';
+    const rows = await fetchAll('buchungen',
+      'zeitstempel,typ,artikelnummer,artikelname,gtin,lagerplatz,menge,bestand_lp_vorher,bestand_lp_nachher,bestand_gesamt_vorher,bestand_gesamt_nachher,kommentar',
+      { eq: typ ? { typ } : {}, order: { col: 'id', asc: false },
+        build: q => { if (von) q = q.gte('zeitstempel', von+'T00:00:00'); if (bis) q = q.lte('zeitstempel', bis+'T23:59:59'); return q; } });
+    const head = ['Zeit','Typ','Artikelnummer','Artikelname','EAN','Lagerplatz','Menge','LP vorher','LP nachher','Gesamt vorher','Gesamt nachher','Kommentar'];
+    const data = rows.map(b => [b.zeitstempel, b.typ, b.artikelnummer, b.artikelname, b.gtin, b.lagerplatz, b.menge, b.bestand_lp_vorher, b.bestand_lp_nachher, b.bestand_gesamt_vorher, b.bestand_gesamt_nachher, b.kommentar]);
+    csvDownload('protokoll.csv', [head, ...data]);
+  } catch (e) { alert('Fehler beim Export: ' + (e.message || e)); }
+}
+async function exportLagerplaetzeCsv() {
+  try {
+    const rows = await fetchAll('v_lagerplaetze', 'name,palette,kanal,artikel,stueck', { order: { col: 'name', asc: true } });
+    const kanalTxt = k => k === 1 ? 'online' : k === 2 ? 'nicht online' : 'gemischt';
+    const head = ['Lagerplatz/Karton','Palette','Kanal','Artikel (SKUs)','Stück'];
+    const data = rows.map(r => [r.name, r.palette, kanalTxt(r.kanal || 0), r.artikel, r.stueck]);
+    csvDownload('lagerplaetze.csv', [head, ...data]);
+  } catch (e) { alert('Fehler beim Export: ' + (e.message || e)); }
+}
+async function exportArtikelCsv() {
+  try {
+    const [arts, best] = await Promise.all([
+      fetchAll('artikel', 'artikelnummer,artikelname,gtin,ist_set,online', { order: { col: 'artikelnummer', asc: true } }),
+      fetchAll('bestaende', 'artikelnummer,lagerplatz,menge', {})
+    ]);
+    const bmap = {};
+    best.filter(b => b.menge > 0).forEach(b => { (bmap[b.artikelnummer] = bmap[b.artikelnummer] || []).push(b.lagerplatz + ':' + b.menge); });
+    const onlineTxt = o => o === 1 ? 'online' : o === 2 ? 'nicht online' : 'unbekannt';
+    const head = ['Artikelnummer','Artikelname','GTIN','Set-Artikel','Amazon-Status','Gesamtbestand','Lagerplätze'];
+    const data = arts.map(a => {
+      const lps = bmap[a.artikelnummer] || [];
+      const gesamt = lps.reduce((s, x) => s + parseInt(x.split(':')[1], 10), 0);
+      return [a.artikelnummer, a.artikelname, a.gtin, a.ist_set ? 'ja' : 'nein', onlineTxt(a.online || 0), gesamt, lps.join(', ')];
+    });
+    csvDownload('artikel.csv', [head, ...data]);
+  } catch (e) { alert('Fehler beim Export: ' + (e.message || e)); }
 }
 
 // ── Protokoll ────────────────────────────────────────────────────────────────
@@ -861,10 +1371,17 @@ async function protokollLaden() {
     .order('id', { ascending: false }).limit(200);
   const typ = el('prot-typ').value;
   if (typ) q = q.eq('typ', typ);
+  const von = el('prot-von').value, bis = el('prot-bis').value;
+  if (von) q = q.gte('zeitstempel', von + 'T00:00:00');
+  if (bis) q = q.lte('zeitstempel', bis + 'T23:59:59');
   const { data, error } = await q;
   if (error) { box.innerHTML = '<span class="err">Fehler: ' + error.message + '</span>'; return; }
   allProt = data || [];
   renderProtokoll();
+}
+function protoReset() {
+  el('prot-suche').value = ''; el('prot-typ').value = ''; el('prot-von').value = ''; el('prot-bis').value = '';
+  protokollLaden();
 }
 function protoFilterChanged() { renderProtokoll(); }
 function renderProtokoll() {
@@ -1168,6 +1685,20 @@ window.addEventListener('load', () => {
     <div class="row" style="margin-top:14px;justify-content:flex-end;">
       <button class="sec" onclick="el('art-modal').style.display='none'">Abbrechen</button>
       <button onclick="saveArtikel()">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="etikett-modal">
+  <div class="modal-box">
+    <h2 style="margin-top:0;font-size:1.1rem;">🏷️ Artikel-Etikett</h2>
+    <div id="etikett-info" style="margin-bottom:10px;"></div>
+    <label>Anzahl</label>
+    <input id="etikett-anzahl" type="number" min="1" max="200" value="1">
+    <div id="etikett-hinweis" class="hint" style="margin-top:6px;"></div>
+    <div class="row" style="margin-top:14px;justify-content:flex-end;">
+      <button class="sec" onclick="el('etikett-modal').style.display='none'">Abbrechen</button>
+      <button onclick="etikettDrucken()">🖨️ Drucken</button>
     </div>
   </div>
 </div>
