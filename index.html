@@ -117,6 +117,7 @@ tbody tr:hover td{background:#eef4fb;}
       onkeydown="if(event.key==='Enter')anmelden()">
     <div class="row" style="margin-top:10px;"><button onclick="anmelden()">Anmelden</button>
       <span id="login-status" class="hint"></span></div>
+    <div style="margin-top:10px;"><a href="#" class="hint" onclick="resetVerbindung();return false;">⚙️ Verbindung ändern (falsche URL/Schlüssel eingegeben?)</a></div>
   </div>
 </div></div>
 
@@ -311,15 +312,24 @@ let client = null;
 const el = id => document.getElementById(id);
 
 function verbinden() {
-  const url = el('url').value.trim(), key = el('key').value.trim();
+  let url = el('url').value.trim();
+  const key = el('key').value.trim();
+  // versehentlich mitkopierte Pfade (z.B. "/rest/v1/") abschneiden — nur https://xxxx.supabase.co behalten
+  const m = url.match(/^https:\/\/[a-z0-9-]+\.supabase\.co/i);
+  if (m) url = m[0];
   if (!url || !key) { el('login-status').innerHTML = '<span class="err">URL und Schlüssel eingeben.</span>'; return; }
   try {
     client = supabase.createClient(url, key);
     localStorage.setItem('lp_url', url); localStorage.setItem('lp_key', key);
+    el('url').value = url;
     el('cfg-block').style.display = 'none';
     el('login-block').style.display = 'block';
     pruefeSession();
   } catch(e) { alert('Fehler: ' + e.message); }
+}
+function resetVerbindung() {
+  localStorage.removeItem('lp_url'); localStorage.removeItem('lp_key');
+  location.reload();
 }
 
 async function pruefeSession() {
