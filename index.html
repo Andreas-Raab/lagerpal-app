@@ -1470,7 +1470,8 @@ async function amazonStatusAusDatei(file) {
 // ── Bestände per CSV/Excel importieren (JTL-artig) ──────────────────────────
 function setflagAusWert(v) {
   const s = String(v ?? '').trim().toLowerCase().replace(',', '.');
-  if (['1','ja','j','x','true','wahr','yes','y','set'].includes(s)) return 1;
+  const norm = s.replace(/[-_\s]/g, ''); // "SET-Artikel", "Set Artikel" etc. → "setartikel"
+  if (['1','ja','j','x','true','wahr','yes','y','set','setartikel','bundle'].includes(norm)) return 1;
   if (!isNaN(parseFloat(s)) && isFinite(s) && parseFloat(s) > 0) return 1;
   return 0;
 }
