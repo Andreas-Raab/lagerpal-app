@@ -413,6 +413,20 @@ tbody tr:hover td{background:#eef4fb;}
       <div class="row" style="margin-top:10px;"><button onclick="datenbankSichern()">🛟 Sicherung jetzt herunterladen</button></div>
       <div id="backup-status" style="margin-top:10px;"></div>
     </div>
+    <div class="card" style="margin-top:12px;border:2px solid var(--red);">
+      <b style="color:var(--red);">☢️ Kompletter Reset — alle Daten löschen</b>
+      <div class="hint" style="margin-top:6px;">
+        Löscht <b>unwiderruflich</b>: alle Artikel, Bestände, Lagerplätze/Kartons (inkl. Paletten-/Kanal-Zuordnung), das
+        gesamte Protokoll und alle Leermeldungen. Danach ist die Datenbank komplett leer — ideal, um tagesaktuelle Daten
+        neu einzuspielen. Vor dem Löschen wird automatisch eine Sicherung als JSON-Datei heruntergeladen.
+      </div>
+      <label style="margin-top:12px;">Zum Bestätigen exakt <span style="font-family:monospace;font-weight:800;">ALLES LOESCHEN</span> eingeben</label>
+      <input id="reset-phrase" placeholder="ALLES LOESCHEN" oninput="resetPhraseCheck()">
+      <div class="row" style="margin-top:12px;">
+        <button id="reset-btn" style="background:var(--red);" disabled onclick="allesLoeschen()">☢️ Jetzt alles löschen</button>
+      </div>
+      <div id="reset-status" style="margin-top:12px;"></div>
+    </div>
   </div>
 
   <div id="tab-uebersicht" class="tabpanel" style="display:none;">
@@ -1556,7 +1570,37 @@ async function datenbankSichern() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 5000);
     st.innerHTML = `<span class="ok">✓ Sicherung heruntergeladen: ${artikel.length} Artikel, ${bestaende.length} Bestände, ${lagerplaetze.length} Lagerplätze, ${buchungen.length} Protokoll-Einträge, ${leermeldungen.length} Leermeldungen.</span>`;
-  } catch (e) { st.innerHTML = '<span class="err">Fehler: ' + esc(e.message || String(e)) + '</span>'; }
+    return true;
+  } catch (e) { st.innerHTML = '<span class="err">Fehler: ' + esc(e.message || String(e)) + '</span>'; return false; }
+}
+
+// ── Kompletter Reset (alle Daten löschen) ───────────────────────────────────
+const RESET_PHRASE = 'ALLES LOESCHEN';
+function resetPhraseCheck() {
+  el('reset-btn').disabled = el('reset-phrase').value.trim() !== RESET_PHRASE;
+}
+async function allesLoeschen() {
+  if (el('reset-phrase').value.trim() !== RESET_PHRASE) return;
+  if (!confirm('Wirklich ALLES löschen?\n\nArtikel, Bestände, Lagerplätze/Paletten-Zuordnung, Protokoll und Leermeldungen werden unwiderruflich gelöscht.\n\nEs wird zuerst automatisch eine Sicherung heruntergeladen — diese Datei sicher aufbewahren.')) return;
+  const st = el('reset-status');
+  el('reset-btn').disabled = true;
+  st.innerHTML = '<span class="hint">⏳ Sicherung wird erstellt…</span>';
+  const okBackup = await datenbankSichern();
+  if (!okBackup) {
+    if (!confirm('Die Sicherung ist fehlgeschlagen. Trotzdem ohne Backup fortfahren? (nicht empfohlen)')) {
+      el('reset-btn').disabled = false; return;
+    }
+  }
+  st.innerHTML = '<span class="hint">⏳ Lösche alle Daten…</span>';
+  const { data, error } = await client.rpc('alles_loeschen', { p_bestaetigung: RESET_PHRASE });
+  if (error) { st.innerHTML = '<span class="err">❌ ' + esc(error.message) + '</span>'; el('reset-btn').disabled = false; return; }
+  const g = data.geloescht;
+  st.innerHTML = `<span class="ok">✓ Gelöscht: ${g.artikel} Artikel, ${g.bestaende} Bestände, ${g.lagerplaetze} Lagerplätze, ${g.buchungen} Protokoll-Einträge, ${g.leermeldungen} Leermeldungen.</span>
+    <div class="hint" style="margin-top:8px;">Jetzt tagesaktuelle Daten einspielen: oben bei „⬆️ Bestände per CSV/Excel importieren" → <b>Komplett-Import</b> wählen, „Unbekannte Artikel neu anlegen" aktivieren, Datei wählen. Danach ggf. den Amazon-Status importieren und Paletten/Kanäle bei den Lagerplätzen neu zuordnen (die Zuordnung wurde mit gelöscht).</div>`;
+  el('reset-phrase').value = '';
+  await ladeAllePlaetze();
+  refreshLeer(); refreshUndo();
+  if (typeof loadDashboard === 'function') loadDashboard();
 }
 
 let importModus = 'nur';
