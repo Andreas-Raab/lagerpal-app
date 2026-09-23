@@ -62,6 +62,10 @@ button:not(.tab):not(#glocke):not(#hdr-logout):not(.sec):not(.lager-btn):not(.ss
 .lager-btn.active .lager-btn-sub{color:rgba(255,255,255,.85);}
 table{width:100%;border-collapse:collapse;font-size:.86rem;}
 thead th{background:var(--blue-tint);padding:8px 10px;text-align:left;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-2);}
+th.sortable{cursor:pointer;user-select:none;white-space:nowrap;}
+th.sortable:hover{background:#dfeaf7;}
+th.sortable .arrow{display:inline-block;margin-left:3px;opacity:.55;font-size:.65rem;}
+th.sortable.sorted .arrow{opacity:1;}
 tbody td{padding:7px 10px;border-bottom:1px solid var(--line-soft);color:var(--text);}
 tbody tr:nth-child(even) td{background:var(--zebra);}
 tbody tr:hover td{background:#eef4fb;}
@@ -88,6 +92,12 @@ tbody tr:hover td{background:#eef4fb;}
 .pt-um{background:#bee3f8;color:#2a4e7c;}.pt-inv{background:#e9d8fd;color:#553c9a;}
 .pt-lp{background:#feebc8;color:#7c4a12;}.pt-undo{background:#e2e8f0;color:#4a5568;}
 .pt-csv{background:#d6f0ef;color:#285e61;}.pt-art{background:#fefcbf;color:#744210;}
+.er-flash{font-size:1.7rem;font-weight:800;text-align:center;padding:20px 12px;border-radius:10px;margin-top:14px;color:#fff;letter-spacing:.02em;}
+.er-flash .sub{display:block;font-size:.85rem;font-weight:600;margin-top:6px;letter-spacing:0;}
+.er-flash.online{background:var(--green);}
+.er-flash.offline{background:var(--red);}
+@keyframes erPulse{0%{transform:scale(1.06);}100%{transform:scale(1);}}
+.er-flash.pulse{animation:erPulse .32s ease;}
 .login-wrap{max-width:460px;margin:24px auto;padding:0 16px;}
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-start;justify-content:center;padding:16px;z-index:50;overflow:auto;}
 .modal-box{background:#fff;border-radius:12px;padding:18px;max-width:460px;width:100%;margin-top:5vh;}
@@ -129,12 +139,12 @@ tbody tr:hover td{background:#eef4fb;}
     <button class="tab active" data-t="suche" onclick="showTab('suche')">🔎 Suche</button>
     <button class="tab" data-t="buchen" onclick="showTab('buchen')">📟 Scanner</button>
     <button class="tab" data-t="umlagern" onclick="showTab('umlagern')">🔀 Umlagern</button>
-    <button class="tab" data-t="einraeumen" onclick="showTab('einraeumen')">🧺 Einräumen</button>
     <button class="tab" data-t="inventur" onclick="showTab('inventur')">🧮 Inventur</button>
-    <button class="tab" data-t="kartons" onclick="showTab('kartons')">📦 Kartons</button>
+    <button class="tab" data-t="kartons" onclick="showTab('kartons')">📦 Lagerplätze</button>
     <button class="tab" data-t="protokoll" onclick="showTab('protokoll')">📋 Protokoll</button>
     <button class="tab" data-t="import" onclick="showTab('import')">🔄 Import/Export</button>
     <button class="tab" data-t="uebersicht" onclick="showTab('uebersicht')">📊 Übersicht</button>
+    <button class="tab" data-t="einraeumen" onclick="showTab('einraeumen')">🧺 Palette sortieren</button>
   </div>
   <div class="container">
 
@@ -147,20 +157,27 @@ tbody tr:hover td{background:#eef4fb;}
       <div class="row" style="margin-top:12px;align-items:flex-end;gap:10px;">
         <div style="flex:1;min-width:200px;">
           <label>Artikel suchen (Nummer, Name oder EAN)</label>
-          <input id="suche" placeholder="mind. 2 Zeichen…" oninput="sucheDebounced()">
+          <input id="suche" placeholder="Name, Nummer oder EAN…" oninput="sucheDebounced()">
+        </div>
+        <div>
+          <label>Karton / Lagerplatz</label>
+          <select id="such-karton-filter" onchange="sucheKartonChanged()" style="width:180px;">
+            <option value="">alle</option>
+          </select>
         </div>
         <div>
           <label>Amazon-Status</label>
-          <select id="such-online-filter" onchange="sucheOderPalette()" style="width:170px;">
+          <select id="such-online-filter" onchange="sucheRender()" style="width:150px;">
             <option value="">alle</option>
-            <option value="1">nur online</option>
-            <option value="2">nur nicht online</option>
-            <option value="0">nur unbekannt</option>
+            <option value="1">online</option>
+            <option value="2">nicht online</option>
+            <option value="0">unbekannt</option>
           </select>
         </div>
+        <div><button class="sec" onclick="sucheFilterReset()">Zurücksetzen</button></div>
       </div>
       <div id="such-status" class="hint" style="margin-top:6px;"></div>
-      <div id="ergebnisse"></div>
+      <div id="such-tabelle" style="margin-top:8px;overflow-x:auto;"></div>
     </div>
   </div>
 
@@ -224,7 +241,12 @@ tbody tr:hover td{background:#eef4fb;}
         <div class="row" style="margin-top:12px;"><button onclick="erStart()">▶︎ Starten</button></div>
       </div>
       <div id="er-run" style="display:none;">
-        <div id="er-ctx" style="margin-bottom:10px;"></div>
+        <div class="row" style="justify-content:space-between;align-items:flex-start;">
+          <div id="er-ctx" style="margin-bottom:10px;flex:1;"></div>
+          <label style="display:flex;gap:6px;align-items:center;margin:0;text-transform:none;font-weight:600;letter-spacing:0;color:var(--text-2);">
+            <input type="checkbox" id="er-voice" checked style="width:auto;height:auto;"> 🔊 Sprachansage
+          </label>
+        </div>
         <label>Artikel scannen (Nummer/EAN)</label>
         <input id="er-scan" placeholder="scannen…" onkeydown="if(event.key==='Enter'){event.preventDefault();erScan();}">
         <label>Menge</label>
@@ -233,6 +255,7 @@ tbody tr:hover td{background:#eef4fb;}
           <button onclick="erScan()">Buchen</button>
           <button class="sec" onclick="erFertig()">✓ Palette fertig</button>
         </div>
+        <div id="er-flash" class="er-flash" style="display:none;"></div>
         <div id="er-status" style="margin-top:12px;"></div>
       </div>
     </div>
@@ -437,7 +460,7 @@ async function zeigeApp(email) {
   el('glocke').style.display = 'inline-block';
   el('hdr-logout').style.display = 'inline-block';
   await ladeAllePlaetze();
-  ladeSuchPaletten();
+  ladeSucheDaten();
   refreshLeer(); refreshUndo();
   if (!refreshTimer) refreshTimer = setInterval(() => { refreshLeer(); refreshUndo(); }, 15000);
   el('suche').focus();
@@ -468,7 +491,7 @@ async function rueckgaengigJetzt() {
   if (error) { alert('Fehler: ' + error.message); return; }
   await ladeAllePlaetze();
   refreshUndo(); refreshLeer();
-  if (el('suche').value.trim().length >= 2) suchen();
+  sucheRefresh();
 }
 
 // alle bekannten Lagerplätze (für die Dropdowns)
@@ -486,104 +509,170 @@ function escAttr(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;
 function toggleNeu(selId, neuId){ el(neuId).style.display = el(selId).value === '__neu__' ? 'block' : 'none'; }
 function chosenLp(selId, neuId){ const s = el(selId); return s.value === '__neu__' ? el(neuId).value.trim() : s.value; }
 
+// ── Suche: Daten-Cache + sortierbare Tabelle ────────────────────────────────
 let suchTimer = null;
-function sucheDebounced() { clearTimeout(suchTimer); suchTimer = setTimeout(suchen, 250); }
+function sucheDebounced() { clearTimeout(suchTimer); suchTimer = setTimeout(sucheRender, 200); }
 
-function sucheOderPalette() {
-  // Filter geändert: laufenden Modus (Text- oder Paletten-Suche) mit neuem Filter neu ausführen
-  if (selectedPaletten.size) suchePaletten();
-  else suchen();
-}
-async function suchen() {
-  document.querySelectorAll('#such-paletten .ss-lp-btn').forEach(b=>b.classList.remove('active'));
-  selectedPaletten.clear();
-  const raw = el('suche').value.trim();
-  const q = raw.replace(/[,()%]/g, ' ').trim();   // Sonderzeichen entschärfen
-  const box = el('ergebnisse'), st = el('such-status');
-  if (q.length < 2) { box.innerHTML = ''; st.textContent = ''; return; }
-  st.textContent = 'Suche…';
-  const onlineFilter = el('such-online-filter').value;
-  // 1) passende Artikel
-  let query = client.from('artikel')
-    .select('artikelnummer,artikelname,gtin,online')
-    .or(`artikelnummer.ilike.%${q}%,artikelname.ilike.%${q}%,gtin.ilike.%${q}%`);
-  if (onlineFilter !== '') query = query.eq('online', parseInt(onlineFilter, 10));
-  const { data: arts, error } = await query.order('artikelname').limit(50);
-  if (error) { st.innerHTML = '<span class="err">Fehler: ' + error.message + '</span>'; return; }
-  if (!arts.length) { st.textContent = 'Keine Treffer.'; box.innerHTML = ''; return; }
-  // 2) Bestände dieser Artikel holen
-  const nummern = arts.map(a => a.artikelnummer);
-  const { data: best } = await client.from('bestaende')
-    .select('artikelnummer,lagerplatz,menge').in('artikelnummer', nummern).gt('menge', 0);
-  const bmap = {};
-  (best || []).forEach(b => { (bmap[b.artikelnummer] = bmap[b.artikelnummer] || []).push(b); });
-  st.textContent = arts.length + ' Treffer' + (arts.length === 50 ? ' (max. 50 angezeigt — Suche verfeinern)' : '');
-  box.innerHTML = arts.map(a => artikelKarte(a, (bmap[a.artikelnummer] || []).sort((x,y)=>x.lagerplatz.localeCompare(y.lagerplatz)))).join('');
+let sucheArtikelCache = [];      // [{artikelnummer,artikelname,gtin,online}]
+let sucheBestandCache = [];      // [{artikelnummer,lagerplatz,menge}] (nur menge>0)
+let sucheLagerplaetzeCache = []; // [{name,palette}]
+let selectedPaletten = new Set(); // Werte: Palettenname, oder '' für „Ohne Palette"
+let sucheKarton = '';             // gewählter einzelner Karton/Lagerplatz ('' = alle)
+let sucheSortCol = 'name';
+let sucheSortDir = 1;
+
+function amaBadge(online) {
+  if (online === 1) return '<span class="badge b-on">AMA</span>';
+  if (online === 2) return '<span class="badge b-off" style="text-decoration:line-through;">AMA</span>';
+  return '<span class="badge b-unk">AMA ?</span>';
 }
 
-// eine Artikel-Karte (geteilt von Suche + Paletten-Ansicht)
-function artikelKarte(a, plaetze) {
-  const gesamt = plaetze.reduce((s,p)=>s+p.menge, 0);
-  const lps = plaetze.map(p => `<span class="lp">${esc(p.lagerplatz)}: ${p.menge}</span>`).join('') || '<span class="muted">kein Bestand</span>';
-  const badge = a.online===1 ? '<span class="badge b-on">online</span>'
-              : a.online===2 ? '<span class="badge b-off">nicht online</span>'
-              : '<span class="badge b-unk">?</span>';
-  return `<div class="art">
-    <div class="art-name">${esc(a.artikelname||'')}${badge}
-      <span style="float:right;display:flex;gap:6px;">
-        <button class="sec" style="padding:2px 8px;" onclick="openEtikettModal('${jsAttr(a.artikelnummer)}','${jsAttr(a.artikelname||'')}','${jsAttr(a.gtin||'')}')">🏷️ Etikett</button>
-        <button class="sec" style="padding:2px 8px;" onclick="openEdit('${jsAttr(a.artikelnummer)}')">✏️ Bearbeiten</button>
-      </span></div>
-    <div class="art-meta">${esc(a.artikelnummer)}${a.gtin?' · EAN '+esc(a.gtin):''} · Gesamt <b>${gesamt}</b></div>
-    <div style="margin-top:4px;">${lps}</div>
-  </div>`;
+async function ladeSucheDaten() {
+  const box = el('such-tabelle');
+  if (box) box.innerHTML = '<span class="hint">Wird geladen…</span>';
+  const [arts, best, lps] = await Promise.all([
+    fetchAll('artikel', 'artikelnummer,artikelname,gtin,online', { order: { col: 'artikelname', asc: true } }),
+    fetchAll('bestaende', 'artikelnummer,lagerplatz,menge', { build: q => q.gt('menge', 0) }),
+    fetchAll('v_lagerplaetze', 'name,palette')
+  ]);
+  sucheArtikelCache = arts;
+  sucheBestandCache = best;
+  sucheLagerplaetzeCache = lps;
+  sucheBuildFilterUI();
+  sucheRender();
 }
+// öffentlicher Refresh-Punkt nach Schreibaktionen (Bearbeiten/Löschen/Rückgängig)
+function sucheRefresh() { ladeSucheDaten(); }
 
-// Paletten-Buttons oben in der Suche — Mehrfachauswahl, plus "Ohne Palette"
-let selectedPaletten = new Set();   // Werte: Palettenname, oder '' für „Ohne Palette"
-async function ladeSuchPaletten() {
+function sucheBuildFilterUI() {
+  // Paletten-Buttons
   const box = el('such-paletten');
-  if (!box) return;
-  const { data } = await client.from('v_lagerplaetze').select('name,palette');
-  const rows = data || [];
-  const pals = [...new Set(rows.map(x=>x.palette).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
-  const hatOhne = rows.some(x => !x.palette);
-  if (!pals.length && !hatOhne) { box.innerHTML = '<span class="muted">Noch keine Lagerplätze angelegt.</span>'; return; }
-  let html = pals.map(p => `<button class="ss-lp-btn" onclick="togglePalette('${jsAttr(p)}',this)">📦 ${esc(p)}</button>`).join('');
-  if (hatOhne) html += `<button class="ss-lp-btn" onclick="togglePalette('',this)">🚫 Ohne Palette</button>`;
-  box.innerHTML = html;
+  if (box) {
+    const pals = [...new Set(sucheLagerplaetzeCache.map(x=>x.palette).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    const hatOhne = sucheLagerplaetzeCache.some(x => !x.palette);
+    if (!pals.length && !hatOhne) {
+      box.innerHTML = '<span class="muted">Noch keine Lagerplätze angelegt.</span>';
+    } else {
+      let html = pals.map(p => `<button class="ss-lp-btn${selectedPaletten.has(p)?' active':''}" onclick="togglePalette('${jsAttr(p)}',this)">📦 ${esc(p)}</button>`).join('');
+      if (hatOhne) html += `<button class="ss-lp-btn${selectedPaletten.has('')?' active':''}" onclick="togglePalette('',this)">🚫 Ohne Palette</button>`;
+      box.innerHTML = html;
+    }
+  }
+  // Karton-Dropdown
+  const sel = el('such-karton-filter');
+  if (sel) {
+    const namen = sucheLagerplaetzeCache.map(x=>x.name).sort((a,b)=>a.localeCompare(b));
+    const cur = sucheKarton;
+    sel.innerHTML = '<option value="">alle</option>' + namen.map(n=>`<option value="${escAttr(n)}">${esc(n)}</option>`).join('');
+    sel.value = namen.includes(cur) ? cur : '';
+  }
 }
 function togglePalette(key, btn) {
   btn.classList.toggle('active');
   if (selectedPaletten.has(key)) selectedPaletten.delete(key); else selectedPaletten.add(key);
-  el('suche').value = '';
-  suchePaletten();
+  // Karton-Auswahl und Paletten-Auswahl schließen sich gegenseitig aus
+  if (selectedPaletten.size) { sucheKarton = ''; const sel = el('such-karton-filter'); if (sel) sel.value = ''; }
+  sucheRender();
 }
-async function suchePaletten() {
-  const st = el('such-status'), box = el('ergebnisse');
-  if (!selectedPaletten.size) { st.textContent = ''; box.innerHTML = ''; return; }
-  const labels = [...selectedPaletten].map(k => k === '' ? 'Ohne Palette' : 'Palette ' + k);
-  st.textContent = 'Lade ' + labels.join(', ') + '…';
-  const { data: lps } = await client.from('v_lagerplaetze').select('name,palette');
-  const namen = (lps||[]).filter(x => selectedPaletten.has(x.palette || '')).map(x=>x.name);
-  if (!namen.length) { st.textContent = 'Keine Kartons in dieser Auswahl.'; box.innerHTML = ''; return; }
-  const { data: best } = await client.from('bestaende').select('artikelnummer,lagerplatz,menge').in('lagerplatz', namen).gt('menge', 0);
-  if (!best || !best.length) { st.textContent = labels.join(', ') + ': keine Artikel mit Bestand.'; box.innerHTML = ''; return; }
-  const nummern = [...new Set(best.map(b=>b.artikelnummer))];
+function sucheKartonChanged() {
+  sucheKarton = el('such-karton-filter').value;
+  if (sucheKarton) {
+    selectedPaletten.clear();
+    document.querySelectorAll('#such-paletten .ss-lp-btn').forEach(b=>b.classList.remove('active'));
+  }
+  sucheRender();
+}
+function sucheFilterReset() {
+  el('suche').value = '';
+  el('such-online-filter').value = '';
+  sucheKarton = '';
+  selectedPaletten.clear();
+  sucheBuildFilterUI();
+  sucheSortCol = 'name'; sucheSortDir = 1;
+  sucheRender();
+}
+function sucheSortBy(col) {
+  if (sucheSortCol === col) sucheSortDir = -sucheSortDir;
+  else { sucheSortCol = col; sucheSortDir = (col === 'menge' || col === 'online') ? -1 : 1; }
+  sucheRender();
+}
+
+function sucheRender() {
+  const box = el('such-tabelle'), st = el('such-status');
+  if (!box) return;
+  const raw = el('suche').value.trim().toLowerCase();
   const onlineFilter = el('such-online-filter').value;
-  let aq = client.from('artikel').select('artikelnummer,artikelname,gtin,online').in('artikelnummer', nummern);
-  if (onlineFilter !== '') aq = aq.eq('online', parseInt(onlineFilter, 10));
-  const { data: arts } = await aq;
-  const amap = {}; (arts||[]).forEach(a=>amap[a.artikelnummer]=a);
-  const bmap = {}; best.forEach(b=>{(bmap[b.artikelnummer]=bmap[b.artikelnummer]||[]).push(b);});
-  const liste = nummern.map(n=>amap[n]).filter(Boolean).sort((a,b)=>(a.artikelname||'').localeCompare(b.artikelname||''));
-  st.textContent = labels.join(', ') + ': ' + liste.length + ' Artikel · ' + best.reduce((s,b)=>s+b.menge,0) + ' Stück' + (onlineFilter!==''?' (gefiltert)':'');
-  box.innerHTML = liste.map(a => artikelKarte(a, (bmap[a.artikelnummer]||[]).slice().sort((x,y)=>x.lagerplatz.localeCompare(y.lagerplatz)))).join('');
+
+  // Bestand je Artikel im aktuellen Scope (alle Lagerplätze, oder eine Karton-/Paletten-Auswahl)
+  const bmap = {}; // artikelnummer -> {menge, plaetze:[...]}
+  let scopeLabel = '';
+  let relevantRows = sucheBestandCache;
+  if (sucheKarton) {
+    relevantRows = sucheBestandCache.filter(b => b.lagerplatz === sucheKarton);
+    scopeLabel = 'Karton „' + sucheKarton + '"';
+  } else if (selectedPaletten.size) {
+    const namenSet = new Set(sucheLagerplaetzeCache.filter(x => selectedPaletten.has(x.palette || '')).map(x=>x.name));
+    relevantRows = sucheBestandCache.filter(b => namenSet.has(b.lagerplatz));
+    scopeLabel = [...selectedPaletten].map(k => k === '' ? 'Ohne Palette' : 'Palette ' + k).join(', ');
+  }
+  relevantRows.forEach(b => {
+    const e = (bmap[b.artikelnummer] = bmap[b.artikelnummer] || { menge: 0, plaetze: [] });
+    e.menge += b.menge; e.plaetze.push(b.lagerplatz);
+  });
+
+  let liste = sucheArtikelCache;
+  if (sucheKarton || selectedPaletten.size) liste = liste.filter(a => bmap[a.artikelnummer]);
+  if (onlineFilter !== '') liste = liste.filter(a => a.online === parseInt(onlineFilter, 10));
+  if (raw) {
+    const q = raw.replace(/[,()%]/g, ' ').trim();
+    liste = liste.filter(a =>
+      (a.artikelnummer||'').toLowerCase().includes(q) ||
+      (a.artikelname||'').toLowerCase().includes(q) ||
+      (a.gtin||'').toLowerCase().includes(q));
+  }
+  liste = liste.map(a => ({ ...a, menge: bmap[a.artikelnummer]?.menge || 0 }));
+
+  const cmp = {
+    name: (a,b) => (a.artikelname||'').localeCompare(b.artikelname||''),
+    nr:   (a,b) => (a.artikelnummer||'').localeCompare(b.artikelnummer||''),
+    ean:  (a,b) => (a.gtin||'').localeCompare(b.gtin||''),
+    menge:(a,b) => a.menge - b.menge,
+    online:(a,b) => a.online - b.online
+  }[sucheSortCol];
+  liste = liste.slice().sort((a,b) => sucheSortDir * cmp(a,b));
+
+  const gesamtStk = liste.reduce((s,a)=>s+a.menge,0);
+  st.textContent = (scopeLabel ? scopeLabel + ': ' : '') + liste.length + ' Artikel · ' + gesamtStk + ' Stück'
+    + (onlineFilter!==''||raw ? ' (gefiltert)' : '');
+
+  if (!liste.length) { box.innerHTML = '<div class="hint" style="padding:10px 0;">Keine Treffer.</div>'; return; }
+
+  const th = (col, label, align) => {
+    const active = sucheSortCol === col;
+    const arrow = active ? (sucheSortDir === 1 ? '▲' : '▼') : '▲';
+    return `<th class="sortable${active?' sorted':''}" style="${align?'text-align:right;':''}" onclick="sucheSortBy('${col}')">${esc(label)}<span class="arrow">${arrow}</span></th>`;
+  };
+  let html = '<table><thead><tr>'
+    + th('name','Name') + th('nr','Artikelnummer') + th('ean','EAN') + th('menge','Menge',true) + th('online','Status')
+    + '<th></th></tr></thead><tbody>';
+  html += liste.map(a => `<tr>
+      <td>${esc(a.artikelname||'')}</td>
+      <td class="mono">${esc(a.artikelnummer)}</td>
+      <td class="mono">${esc(a.gtin||'—')}</td>
+      <td style="text-align:right;">${a.menge}</td>
+      <td>${amaBadge(a.online)}</td>
+      <td style="white-space:nowrap;">
+        <button class="sec" style="padding:2px 8px;" onclick="openEtikettModal('${jsAttr(a.artikelnummer)}','${jsAttr(a.artikelname||'')}','${jsAttr(a.gtin||'')}')">🏷️</button>
+        <button class="sec" style="padding:2px 8px;" onclick="openEdit('${jsAttr(a.artikelnummer)}')">✏️</button>
+      </td>
+    </tr>`).join('');
+  html += '</tbody></table>';
+  box.innerHTML = html;
 }
 
 // ── Reiter ──────────────────────────────────────────────────────────────────
 function showTab(name) {
-  ['suche','buchen','umlagern','einraeumen','inventur','kartons','protokoll','import','uebersicht'].forEach(t => {
+  ['suche','buchen','umlagern','inventur','kartons','protokoll','import','uebersicht','einraeumen'].forEach(t => {
     document.querySelector(`.tab[data-t="${t}"]`).classList.toggle('active', t === name);
     el('tab-'+t).style.display = t === name ? 'block' : 'none';
   });
@@ -606,6 +695,7 @@ async function initEinraeumen() {
   el('er-setup').style.display = 'block';
   el('er-run').style.display = 'none';
   el('er-status').innerHTML = '';
+  erVersteckeFlash();
   el('er-log').textContent = 'Noch nichts eingeräumt.';
   // Palette P01..P40
   el('er-palette').innerHTML = '<option value="">— Palette wählen —</option>'
@@ -654,6 +744,29 @@ async function erBestandAuf(artnr, lp) {
   const { data } = await client.from('bestaende').select('menge').eq('artikelnummer',artnr).eq('lagerplatz',lp).limit(1);
   return (data && data.length) ? data[0].menge : 0;
 }
+// Sprachansage (Web Speech API) — an/aus über die Checkbox #er-voice
+function sprich(text) {
+  const cb = el('er-voice');
+  if (cb && !cb.checked) return;
+  if (!('speechSynthesis' in window)) return;
+  try {
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'de-DE'; u.rate = 1.05; u.pitch = 1;
+    window.speechSynthesis.speak(u);
+  } catch (e) {}
+}
+function erZeigeFlash(kanal, sub) {
+  const box = el('er-flash');
+  if (!box) return;
+  box.className = 'er-flash ' + kanal;
+  box.innerHTML = (kanal === 'online' ? '🟢 ONLINE' : '🔴 NICHT ONLINE') + (sub ? `<span class="sub">${esc(sub)}</span>` : '');
+  box.style.display = 'block';
+  box.style.animation = 'none';
+  void box.offsetWidth;
+  box.style.animation = 'erPulse .32s ease';
+}
+function erVersteckeFlash() { const box = el('er-flash'); if (box) box.style.display = 'none'; }
 async function erScan() {
   if (!erSession) return;
   const code = el('er-scan').value.trim(); const menge = parseInt(el('er-menge').value,10);
@@ -661,12 +774,12 @@ async function erScan() {
   if (!code) return;
   if (!Number.isInteger(menge) || menge < 1) { st.innerHTML='<span class="err">Menge ≥ 1</span>'; return; }
   const g = await resolveArtikel(code);
-  if (!g) { st.innerHTML='<span class="err">❌ Nicht gefunden: '+esc(code)+'</span>'; el('er-scan').select(); return; }
-  if (g.mehrdeutig) { st.innerHTML='<span class="err">EAN mehrdeutig – Artikelnummer eingeben</span>'; el('er-scan').select(); return; }
-  let ziel, farbe, label;
-  if (g.online === 1) { ziel = erSession.aktivOnline; farbe='#276749'; label='🟢 ONLINE'; }
-  else if (g.online === 2) { ziel = erSession.aktivOffline; farbe='#9b2c2c'; label='🔴 NICHT ONLINE'; }
-  else { st.innerHTML='<span class="err">❔ '+esc(g.name||code)+': Amazon-Status unbekannt. Bitte erst Status setzen/importieren.</span>'; el('er-scan').select(); return; }
+  if (!g) { st.innerHTML='<span class="err">❌ Nicht gefunden: '+esc(code)+'</span>'; erVersteckeFlash(); el('er-scan').select(); return; }
+  if (g.mehrdeutig) { st.innerHTML='<span class="err">EAN mehrdeutig – Artikelnummer eingeben</span>'; erVersteckeFlash(); el('er-scan').select(); return; }
+  let ziel, farbe, label, kanal;
+  if (g.online === 1) { ziel = erSession.aktivOnline; farbe='#276749'; label='🟢 ONLINE'; kanal='online'; }
+  else if (g.online === 2) { ziel = erSession.aktivOffline; farbe='#9b2c2c'; label='🔴 NICHT ONLINE'; kanal='offline'; }
+  else { st.innerHTML='<span class="err">❔ '+esc(g.name||code)+': Amazon-Status unbekannt. Bitte erst Status setzen/importieren.</span>'; erVersteckeFlash(); el('er-scan').select(); return; }
   const verf = await erBestandAuf(g.artnr, erSession.quelle);
   try {
     if (menge <= verf) {
@@ -680,6 +793,8 @@ async function erScan() {
       if (r2.error){ st.innerHTML='<span class="err">❌ '+r2.error.message+'</span>'; return; }
     }
     const extra = menge > verf ? ` (davon ${menge-verf} als Inventur-Zugang)` : '';
+    erZeigeFlash(kanal, (g.name||g.artnr) + ' → ' + ziel);
+    sprich(kanal === 'online' ? 'online' : 'offline');
     st.innerHTML = `<span class="ok">${label} → Karton ${esc(ziel)}<br>${menge}× ${esc(g.name||'')} (${esc(g.artnr)})${extra}</span>`;
     erSession.kartonStk[ziel] = (erSession.kartonStk[ziel]||0) + menge;
     erSession.gebucht.push({artnr:g.artnr, name:g.name||'', menge, ziel});
@@ -1649,7 +1764,7 @@ async function loescheArtikel() {
   el('art-modal').style.display = 'none';
   await ladeAllePlaetze();
   refreshUndo();
-  if (el('suche').value.trim().length >= 2) suchen();
+  sucheRefresh();
 }
 async function saveArtikel() {
   const err = el('art-err'); err.textContent = '';
@@ -1669,7 +1784,7 @@ async function saveArtikel() {
   el('art-modal').style.display = 'none';
   await ladeAllePlaetze();
   refreshUndo();
-  if (el('suche').value.trim().length >= 2) suchen();
+  sucheRefresh();
 }
 function eanGueltig(code) {
   code = String(code||'').trim();
