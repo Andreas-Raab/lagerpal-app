@@ -75,9 +75,9 @@ tbody tr:hover td{background:#eef4fb;}
 .set-badge{display:inline-block;margin-left:8px;padding:1px 6px;font-size:.66rem;font-weight:800;color:#fff;background:var(--red);border-radius:4px;}
 .lp-leer{background:#eef0f2;color:#8a94a0;border-color:#dfe3e8;}
 .such-sammel{display:flex;align-items:center;gap:10px;background:#eaf2fb;border:1px solid #cfe0f3;border-radius:8px;padding:8px 12px;margin-top:10px;flex-wrap:wrap;}
-.such-table{table-layout:fixed;font-size:.84rem;width:100%;}
-.such-table thead th{padding:7px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.such-table tbody td{padding:6px 8px;vertical-align:middle;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+.such-table{table-layout:auto;font-size:.84rem;width:100%;}
+.such-table thead th{padding:7px 8px;white-space:nowrap;}
+.such-table tbody td{padding:6px 8px;vertical-align:middle;white-space:nowrap;}
 .such-table tbody tr.grp-b td{background:var(--blue-tint);}
 .such-table td.col-cb{text-align:center;vertical-align:middle;}
 .such-table td.mono{font-size:.8rem;}
@@ -858,8 +858,8 @@ function sucheRender(behalteLimit) {
   });
 
   let html = '<table class="such-table"><colgroup>'
-    + '<col style="width:26px;"><col style="width:24%;"><col style="width:10%;"><col style="width:10%;">'
-    + '<col style="width:6%;"><col style="width:11%;"><col style="width:6%;"><col style="width:170px;">'
+    + '<col style="width:1%;"><col><col style="width:1%;"><col style="width:1%;">'
+    + '<col style="width:1%;"><col style="width:1%;"><col style="width:1%;"><col style="width:1%;">'
     + '</colgroup><thead><tr>'
     + `<th style="width:26px;">${kopfCb}</th>`
     + th('name','Name') + th('nr','Artikelnummer') + th('ean','EAN') + th('gesamt','Gesamt','num')
