@@ -1570,18 +1570,22 @@ async function loadDashboard() {
 // ── Glocke / Leermeldungen (Panel oben rechts) ──────────────────────────────
 async function refreshLeer() {
   if (!client) return;
-  const { data, error } = await client.from('leermeldungen')
-    .select('zeitstempel,artikelnummer,artikelname,gtin,lagerplatz,hinweis').eq('gesehen',0).order('id',{ascending:false});
+  // exakte Anzahl separat zählen (head:true → keine Zeilen übertragen, umgeht die 1000er-API-Grenze)
+  const { count } = await client.from('leermeldungen').select('*', { count: 'exact', head: true }).eq('gesehen', 0);
   const zahl = el('glocke-zahl');
-  const n = (error || !data) ? 0 : data.length;
+  const n = count || 0;
   if (n > 0) { zahl.textContent = n; zahl.style.display = 'flex'; }
   else { zahl.style.display = 'none'; }
-  renderLeerPanel(data || []);
+  const { data } = await client.from('leermeldungen')
+    .select('zeitstempel,artikelnummer,artikelname,gtin,lagerplatz,hinweis').eq('gesehen',0).order('id',{ascending:false}).limit(200);
+  renderLeerPanel(data || [], n);
 }
-function renderLeerPanel(data) {
+function renderLeerPanel(data, gesamt) {
   const box = el('leer-panel-body');
   if (!data.length) { box.innerHTML = '<div class="muted" style="padding:16px;text-align:center;">Keine offenen Leermeldungen.</div>'; return; }
-  box.innerHTML = data.map(l => {
+  const hinweis = (gesamt && gesamt > data.length)
+    ? `<div class="muted" style="padding:6px 4px;">Zeige ${data.length} von ${gesamt} — „Alle als gesehen markieren" leert die Glocke komplett.</div>` : '';
+  box.innerHTML = hinweis + data.map(l => {
     const z = (l.zeitstempel||'').replace('T',' ').slice(0,16);
     if (l.hinweis) return `<div class="art"><b>📦 Einräum-Hinweis</b><div class="muted">${esc(l.hinweis)}<br>${esc(z)}</div></div>`;
     return `<div class="art"><b>${esc(l.artikelname || l.artikelnummer)}</b>
