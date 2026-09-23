@@ -1610,12 +1610,23 @@ async function allesLoeschen() {
   const { data, error } = await client.rpc('alles_loeschen', { p_bestaetigung: RESET_PHRASE });
   if (error) { st.innerHTML = '<span class="err">❌ ' + esc(error.message) + '</span>'; el('reset-btn').disabled = false; return; }
   const g = data.geloescht;
+  // Gegenprobe: wirklich leer? (falls die Funktion "ok" meldet, aber z. B. eine
+  // veraltete Version ohne echtes Löschen im Editor liegt)
+  const probe = await client.from('artikel').select('artikelnummer', { count: 'exact', head: true });
+  const nochDa = probe.count || 0;
+  if (nochDa > 0) {
+    st.innerHTML = `<span class="err">⚠️ Die Funktion meldete Erfolg, aber es sind noch ${nochDa} Artikel vorhanden.
+      Bitte die aktuelle Version von „alles_loeschen.sql" erneut im Supabase SQL-Editor ausführen (überschreibt die alte Funktion) und danach nochmal versuchen.</span>`;
+    el('reset-btn').disabled = false;
+    return;
+  }
   st.innerHTML = `<span class="ok">✓ Gelöscht: ${g.artikel} Artikel, ${g.bestaende} Bestände, ${g.lagerplaetze} Lagerplätze, ${g.buchungen} Protokoll-Einträge, ${g.leermeldungen} Leermeldungen.</span>
     <div class="hint" style="margin-top:8px;">Jetzt tagesaktuelle Daten einspielen: oben bei „⬆️ Bestände per CSV/Excel importieren" → <b>Komplett-Import</b> wählen, „Unbekannte Artikel neu anlegen" aktivieren, Datei wählen. Danach ggf. den Amazon-Status importieren und Paletten/Kanäle bei den Lagerplätzen neu zuordnen (die Zuordnung wurde mit gelöscht).</div>`;
   el('reset-phrase').value = '';
   await ladeAllePlaetze();
   refreshLeer(); refreshUndo();
   if (typeof loadDashboard === 'function') loadDashboard();
+  if (typeof sucheRefresh === 'function') sucheRefresh();
 }
 
 let importModus = 'nur';
