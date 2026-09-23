@@ -195,6 +195,14 @@ tbody tr:hover td{background:#eef4fb;}
             <option value="0">unbekannt</option>
           </select>
         </div>
+        <div>
+          <label>Set-Artikel</label>
+          <select id="such-set-filter" onchange="sucheRender()" style="width:150px;">
+            <option value="">alle</option>
+            <option value="1">nur Set-Artikel</option>
+            <option value="0">ohne Set-Artikel</option>
+          </select>
+        </div>
         <div><button class="sec" onclick="sucheFilterReset()">Zurücksetzen</button></div>
       </div>
       <div id="such-status" class="hint" style="margin-top:6px;"></div>
@@ -630,6 +638,7 @@ function sucheKartonChanged() {
 function sucheFilterReset() {
   el('suche').value = '';
   el('such-online-filter').value = '';
+  el('such-set-filter').value = '';
   sucheKarton = '';
   selectedPaletten.clear();
   sucheBuildFilterUI();
@@ -744,6 +753,7 @@ function sucheRender(behalteLimit) {
   if (!behalteLimit) sucheLimit = SUCH_BLOCK;
   const raw = el('suche').value.trim().toLowerCase();
   const onlineFilter = el('such-online-filter').value;
+  const setFilter = el('such-set-filter').value;
 
   // Bestand je Artikel im aktuellen Scope (alle Lagerplätze, oder eine Karton-/Paletten-Auswahl)
   const bmapScope = {}; // artikelnummer -> menge im Scope (für Filter/Gesamt bei aktivem Scope)
@@ -762,6 +772,7 @@ function sucheRender(behalteLimit) {
   let liste = sucheArtikelCache;
   if (scopeRows) liste = liste.filter(a => bmapScope[a.artikelnummer]);
   if (onlineFilter !== '') liste = liste.filter(a => a.online === parseInt(onlineFilter, 10));
+  if (setFilter !== '') liste = liste.filter(a => (a.istSet ? 1 : 0) === parseInt(setFilter, 10));
   if (raw) {
     const q = raw.replace(/[,()%]/g, ' ').trim();
     liste = liste.filter(a =>
@@ -784,7 +795,7 @@ function sucheRender(behalteLimit) {
   const gesamtGefiltert = liste.length;
   const gesamtStk = liste.reduce((s,a)=>s+(gesamtCache[a.artikelnummer]||0),0);
   st.textContent = (scopeLabel ? scopeLabel + ': ' : '') + gesamtGefiltert + ' Artikel · ' + gesamtStk + ' Stück'
-    + (onlineFilter!==''||raw ? ' (gefiltert)' : '');
+    + (onlineFilter!==''||setFilter!==''||raw ? ' (gefiltert)' : '');
 
   if (!liste.length) { box.innerHTML = '<div class="hint" style="padding:10px 0;">Keine Treffer.</div>'; sucheSichtbar = []; sucheUpdateSammelbar(); return; }
 
