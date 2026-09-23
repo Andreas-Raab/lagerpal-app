@@ -684,7 +684,7 @@ async function erScan() {
     erSession.kartonStk[ziel] = (erSession.kartonStk[ziel]||0) + menge;
     erSession.gebucht.push({artnr:g.artnr, name:g.name||'', menge, ziel});
     erSession.stk += menge;
-    erRenderCtx(); erLogRender();
+    erRenderCtx(); erLogRender(); refreshUndo();
     el('er-scan').value=''; el('er-scan').focus();
   } catch(e) { st.innerHTML='<span class="err">Verbindungsfehler</span>'; }
 }
@@ -902,6 +902,7 @@ async function umlagern() {
     + `${esc(von)}: <b>${data.von_nachher}</b> · ${esc(nach)}: <b>${data.nach_nachher}</b></span>`;
   el('u-menge').value = 1;
   umlagernArtikelGeladen();   // Plätze/Bestände aktualisieren
+  refreshUndo();
 }
 
 // Löst eine Eingabe (Artikelnummer ODER EAN) zur Artikelnummer auf.
@@ -1486,6 +1487,7 @@ async function lpAfter(msg) {
   el('lp-status').innerHTML = '<span class="ok">' + msg + '</span>';
   await ladeAllePlaetze();
   kartonsLaden();
+  refreshUndo();
 }
 async function lpNeu() {
   const name = el('lp-neu').value.trim();
@@ -1644,6 +1646,7 @@ async function saveArtikel() {
   if (res.error) { err.textContent = res.error.message; return; }
   el('art-modal').style.display = 'none';
   await ladeAllePlaetze();
+  refreshUndo();
   if (el('suche').value.trim().length >= 2) suchen();
 }
 function eanGueltig(code) {
