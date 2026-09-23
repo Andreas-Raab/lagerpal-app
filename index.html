@@ -1634,21 +1634,22 @@ async function datenbankSichern() {
   const st = el('backup-status');
   st.innerHTML = '<span class="hint">⏳ Sicherung wird erstellt…</span>';
   try {
-    const [artikel, bestaende, lagerplaetze, buchungen, leermeldungen] = await Promise.all([
+    const [artikel, bestaende, lagerplaetze, buchungen, leermeldungen, paletten] = await Promise.all([
       fetchAll('artikel', '*'),
       fetchAll('bestaende', '*'),
       fetchAll('lagerplaetze', '*'),
       fetchAll('buchungen', '*'),
-      fetchAll('leermeldungen', '*')
+      fetchAll('leermeldungen', '*'),
+      fetchAll('paletten', '*')
     ]);
-    const snapshot = { erstellt: new Date().toISOString(), quelle: 'LagerPal Web-App', artikel, bestaende, lagerplaetze, buchungen, leermeldungen };
+    const snapshot = { erstellt: new Date().toISOString(), quelle: 'LagerPal Web-App', artikel, bestaende, lagerplaetze, buchungen, leermeldungen, paletten };
     const blob = new Blob([JSON.stringify(snapshot)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const stempel = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
     const a = document.createElement('a'); a.href = url; a.download = 'lagerpal_backup_' + stempel + '.json';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 5000);
-    st.innerHTML = `<span class="ok">✓ Sicherung heruntergeladen: ${artikel.length} Artikel, ${bestaende.length} Bestände, ${lagerplaetze.length} Lagerplätze, ${buchungen.length} Protokoll-Einträge, ${leermeldungen.length} Leermeldungen.</span>`;
+    st.innerHTML = `<span class="ok">✓ Sicherung heruntergeladen: ${artikel.length} Artikel, ${bestaende.length} Bestände, ${lagerplaetze.length} Lagerplätze, ${buchungen.length} Protokoll-Einträge, ${leermeldungen.length} Leermeldungen, ${paletten.length} Paletten.</span>`;
     return true;
   } catch (e) { st.innerHTML = '<span class="err">Fehler: ' + esc(e.message || String(e)) + '</span>'; return false; }
 }
@@ -1745,11 +1746,13 @@ async function backupEinspielen() {
   st.innerHTML = '<span class="hint">⏳ Backup wird eingespielt…</span>';
   const { data, error } = await client.rpc('backup_wiederherstellen', { p_daten: daten });
   if (error) { st.innerHTML = '<span class="err">❌ ' + esc(error.message) + '</span>'; el('restore-btn').disabled = false; return; }
-  st.innerHTML = `<span class="ok">✓ Eingespielt: ${data.artikel} Artikel, ${data.bestaende} Bestände, ${data.lagerplaetze} Lagerplätze, ${data.buchungen} Protokoll-Einträge, ${data.leermeldungen} Leermeldungen.</span>`;
+  const palTxt = data.paletten === null || typeof data.paletten === 'undefined' ? ' (Paletten-Liste unverändert, war nicht in dieser Sicherung enthalten)' : `, ${data.paletten} Paletten`;
+  st.innerHTML = `<span class="ok">✓ Eingespielt: ${data.artikel} Artikel, ${data.bestaende} Bestände, ${data.lagerplaetze} Lagerplätze, ${data.buchungen} Protokoll-Einträge, ${data.leermeldungen} Leermeldungen${palTxt}.</span>`;
   el('restore-phrase').value = '';
   el('restore-file').value = '';
   await ladeAllePlaetze();
   refreshLeer(); refreshUndo();
+  if (typeof palettenFuellen === 'function') palettenFuellen();
   if (typeof loadDashboard === 'function') loadDashboard();
   if (typeof sucheRefresh === 'function') sucheRefresh();
 }
