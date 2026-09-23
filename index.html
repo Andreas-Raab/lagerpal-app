@@ -495,6 +495,7 @@ async function zeigeApp(email) {
   el('app').style.display = 'block';
   el('glocke').style.display = 'inline-block';
   el('hdr-logout').style.display = 'inline-block';
+  el('main-container').classList.add('wide'); // Suche ist der Standard-Tab beim Start
   await ladeAllePlaetze();
   ladeSucheDaten();
   refreshLeer(); refreshUndo();
