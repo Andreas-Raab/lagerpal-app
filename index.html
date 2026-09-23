@@ -995,16 +995,14 @@ async function erScan() {
   else { st.innerHTML='<span class="err">❔ '+esc(g.name||code)+': Amazon-Status unbekannt. Bitte erst Status setzen/importieren.</span>'; erVersteckeFlash(); el('er-scan').select(); return; }
   const verf = await erBestandAuf(g.artnr, erSession.quelle);
   try {
-    if (menge <= verf) {
-      const { error } = await client.rpc('umlagern', { p_artikelnummer:g.artnr, p_von:erSession.quelle, p_nach:ziel, p_menge:menge });
-      if (error) { st.innerHTML='<span class="err">❌ '+error.message+'</span>'; el('er-scan').select(); return; }
-    } else {
+    if (menge > verf) {
       const surplus = menge - verf;
       if (!confirm(`Auf „${erSession.quelle}" sind nur ${verf} Stk von „${g.name||g.artnr}" gebucht — du räumst ${menge} ein.\n\nDie ${surplus} zusätzlichen als Inventur-Zugang in Karton ${ziel} buchen?`)) { st.innerHTML='<span class="err">Abgebrochen.</span>'; el('er-scan').select(); return; }
-      if (verf > 0) { const r1 = await client.rpc('umlagern', { p_artikelnummer:g.artnr, p_von:erSession.quelle, p_nach:ziel, p_menge:verf }); if (r1.error){ st.innerHTML='<span class="err">❌ '+r1.error.message+'</span>'; return; } }
-      const r2 = await client.rpc('buchen', { p_artikelnummer:g.artnr, p_lagerplatz:ziel, p_typ:'ein', p_menge:surplus, p_kommentar:'Inventur-Zugang (Einräumen)' });
-      if (r2.error){ st.innerHTML='<span class="err">❌ '+r2.error.message+'</span>'; return; }
     }
+    // ein einziger atomarer Aufruf statt zwei getrennter (umlagern + buchen) —
+    // damit bei Verbindungsabbruch nie ein halb fertiger Zustand entsteht
+    const { error } = await client.rpc('einraeumen_scan', { p_artikelnummer:g.artnr, p_quelle:erSession.quelle, p_ziel:ziel, p_menge:menge });
+    if (error) { st.innerHTML='<span class="err">❌ '+error.message+'</span>'; el('er-scan').select(); return; }
     const extra = menge > verf ? ` (davon ${menge-verf} als Inventur-Zugang)` : '';
     erZeigeFlash(kanal, (g.name||g.artnr) + ' → ' + ziel);
     sprich(kanal === 'online' ? 'online' : 'offline');
