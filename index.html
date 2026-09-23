@@ -299,7 +299,7 @@ tbody tr:hover td{background:#eef4fb;}
             <option>Inventur</option><option>Artikeländerung</option>
             <option>Lagerplatz angelegt</option><option>Lagerplatz gelöscht</option>
             <option>Umbenennung</option><option>Zusammenlegung</option><option>Rückgängig</option>
-            <option>CSV-Import</option>
+            <option>CSV-Import</option><option>Artikel gelöscht</option>
           </select>
           <span class="hint" style="margin:0;">von</span>
           <input type="date" id="prot-von" onchange="protokollLaden()" style="width:150px;">
@@ -1363,6 +1363,7 @@ let allProt = [];
 function ptClass(t) {
   return t==='Eingang'?'pt-ein':t==='Ausgang'?'pt-aus':t==='Umlagerung'?'pt-um'
     :t==='Inventur'?'pt-inv':t==='Artikeländerung'?'pt-art':t==='Rückgängig'?'pt-undo'
+    :t==='Artikel gelöscht'?'pt-art'
     :(t==='Lagerplatz angelegt'||t==='Lagerplatz gelöscht'||t==='Umbenennung'||t==='Zusammenlegung')?'pt-lp':'pt-csv';
 }
 async function protokollLaden() {
@@ -1614,6 +1615,7 @@ function openNeu() {
   el('art-name').value = ''; el('art-gtin').value = ''; el('art-set').checked = false; el('art-online').value = '0';
   el('art-lp').value = ''; el('art-menge').value = '0';
   el('art-neu-only').style.display = 'block'; el('art-err').textContent = ''; eanHint();
+  el('art-del-btn').style.display = 'none';
   window._artEdit = null;
   el('art-modal').style.display = 'flex'; el('art-nr').focus();
 }
@@ -1626,8 +1628,28 @@ async function openEdit(artnr) {
   el('art-name').value = a.artikelname || ''; el('art-gtin').value = a.gtin || '';
   el('art-set').checked = !!a.ist_set; el('art-online').value = String(a.online || 0);
   el('art-neu-only').style.display = 'none'; el('art-err').textContent = ''; eanHint();
+  el('art-del-btn').style.display = 'inline-block';
   window._artEdit = a.artikelnummer;
   el('art-modal').style.display = 'flex'; el('art-name').focus();
+}
+async function loescheArtikel() {
+  const artnr = window._artEdit;
+  if (!artnr) return;
+  const err = el('art-err'); err.textContent = '';
+  const { data: best } = await client.from('bestaende').select('menge').eq('artikelnummer', artnr).gt('menge', 0);
+  const stueck = (best || []).reduce((s, r) => s + (r.menge || 0), 0);
+  const zusatz = stueck > 0 ? `\n\n⚠️ Achtung: Es liegen noch ${stueck} Stück auf Lagerplätzen — diese werden mit gelöscht!` : '';
+  if (!confirm('Artikel „' + el('art-name').value + '" (' + artnr + ') wirklich endgültig löschen?' + zusatz)) return;
+  let res = await client.rpc('artikel_loeschen', { p_artikelnummer: artnr, p_erzwingen: false });
+  if (res.error && res.error.message.indexOf('BESTAND_VORHANDEN') >= 0) {
+    if (!confirm('Es liegt noch Bestand vor. Wirklich MIT Bestand löschen?')) return;
+    res = await client.rpc('artikel_loeschen', { p_artikelnummer: artnr, p_erzwingen: true });
+  }
+  if (res.error) { err.textContent = res.error.message; return; }
+  el('art-modal').style.display = 'none';
+  await ladeAllePlaetze();
+  refreshUndo();
+  if (el('suche').value.trim().length >= 2) suchen();
 }
 async function saveArtikel() {
   const err = el('art-err'); err.textContent = '';
@@ -1689,9 +1711,12 @@ window.addEventListener('load', () => {
       <label>Anfangsbestand</label><input id="art-menge" type="number" min="0" value="0">
     </div>
     <div id="art-err" class="err" style="margin-top:8px;"></div>
-    <div class="row" style="margin-top:14px;justify-content:flex-end;">
-      <button class="sec" onclick="el('art-modal').style.display='none'">Abbrechen</button>
-      <button onclick="saveArtikel()">Speichern</button>
+    <div class="row" style="margin-top:14px;justify-content:space-between;">
+      <button id="art-del-btn" class="sec" style="display:none;color:#9b2c2c;border-color:#9b2c2c;" onclick="loescheArtikel()">🗑️ Löschen</button>
+      <div class="row" style="gap:8px;">
+        <button class="sec" onclick="el('art-modal').style.display='none'">Abbrechen</button>
+        <button onclick="saveArtikel()">Speichern</button>
+      </div>
     </div>
   </div>
 </div>
