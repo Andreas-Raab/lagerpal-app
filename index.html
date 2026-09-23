@@ -74,7 +74,23 @@ tbody tr:hover td{background:#eef4fb;}
 .set-badge{display:inline-block;margin-left:8px;padding:1px 6px;font-size:.66rem;font-weight:800;color:#fff;background:var(--red);border-radius:4px;}
 .lp-leer{background:#eef0f2;color:#8a94a0;border-color:#dfe3e8;}
 .such-sammel{display:flex;align-items:center;gap:10px;background:#eaf2fb;border:1px solid #cfe0f3;border-radius:8px;padding:8px 12px;margin-top:10px;flex-wrap:wrap;}
-.col-name{min-width:220px;}
+.such-table{table-layout:fixed;font-size:.8rem;}
+.such-table thead th{padding:6px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.such-table tbody td{padding:5px 7px;vertical-align:middle;overflow:hidden;}
+.such-table td.col-cb{text-align:center;vertical-align:middle;}
+.such-table td.mono{font-size:.76rem;overflow-wrap:break-word;}
+.such-table td.num, .such-table th.num{text-align:right;}
+.such-table td.col-name{overflow:visible;}
+.such-name-row{display:flex;align-items:center;gap:5px;flex-wrap:wrap;line-height:1.3;}
+.such-name-text{font-weight:600;}
+.such-name-actions{display:inline-flex;gap:3px;margin-left:auto;flex-shrink:0;}
+.such-table .icon-btn{padding:1px 5px !important;font-size:.72rem;line-height:1.6;}
+.such-table .buchen-cell{display:flex;align-items:center;gap:4px;flex-wrap:nowrap;overflow:visible;}
+.such-table .buchen-cell input[type=number]{width:40px;height:25px;padding:0 3px;font-size:.76rem;text-align:center;}
+.such-table .buchen-cell button{height:25px;width:25px;padding:0;font-size:.85rem;font-weight:800;line-height:1;border-radius:5px;flex-shrink:0;}
+.such-table .bk-ein{background:var(--green);}
+.such-table .bk-aus{background:var(--red);}
+.such-table .lp{margin:0;font-size:.72rem;padding:1px 6px;}
 .art{border-bottom:1px solid var(--line-soft);padding:10px 2px;}
 .art-name{font-weight:700;}
 .art-meta{font-size:.82rem;color:var(--text-2);margin-top:2px;}
@@ -759,10 +775,10 @@ function sucheRender(behalteLimit) {
   sucheSichtbar = hits.map(a => a.artikelnummer);
   sucheUpdateSammelbar();
 
-  const th = (col, label) => {
+  const th = (col, label, cls) => {
     const active = sucheSortCol === col;
     const arrow = active ? (sucheSortDir === 1 ? '▲' : '▼') : '↕';
-    return `<th class="sortable${active?' sorted':''}" onclick="sucheSortBy('${col}')">${esc(label)}<span class="arrow">${arrow}</span></th>`;
+    return `<th class="sortable${active?' sorted':''}${cls?' '+cls:''}" onclick="sucheSortBy('${col}')">${esc(label)}<span class="arrow">${arrow}</span></th>`;
   };
   const alleGewaehlt = sucheSichtbar.length > 0 && sucheSichtbar.every(nr => sucheSelektion.has(nr));
   const kopfCb = `<input type="checkbox" onclick="event.stopPropagation()" onchange="sucheToggleAlleSichtbar(this.checked)" ${alleGewaehlt?'checked':''}>`;
@@ -770,9 +786,13 @@ function sucheRender(behalteLimit) {
   const rows = hits.flatMap(a => {
     const cb = `<input type="checkbox" onclick="event.stopPropagation()" onchange="sucheToggleSelect('${jsAttr(a.artikelnummer)}',this.checked)" ${sucheSelektion.has(a.artikelnummer)?'checked':''}>`;
     const setBadge = a.istSet ? '<span class="set-badge">SET</span>' : '';
-    const nameHtml = `${cb} ${esc(a.artikelname||'')}${setBadge}${amaBadge(a.online)}
-      <button class="sec" style="padding:2px 6px;margin-left:6px;" onclick="openEtikettModal('${jsAttr(a.artikelnummer)}','${jsAttr(a.artikelname||'')}','${jsAttr(a.gtin||'')}')">🏷️</button>
-      <button class="sec" style="padding:2px 6px;" onclick="openEdit('${jsAttr(a.artikelnummer)}')">✏️</button>`;
+    const nameHtml = `<div class="such-name-row">
+        <span class="such-name-text">${esc(a.artikelname||'')}</span>${setBadge}${amaBadge(a.online)}
+        <span class="such-name-actions">
+          <button class="sec icon-btn" title="Etikett" onclick="openEtikettModal('${jsAttr(a.artikelnummer)}','${jsAttr(a.artikelname||'')}','${jsAttr(a.gtin||'')}')">🏷️</button>
+          <button class="sec icon-btn" title="Bearbeiten" onclick="openEdit('${jsAttr(a.artikelnummer)}')">✏️</button>
+        </span>
+      </div>`;
     let plaetze = sucheKarton || selectedPaletten.size
       ? sucheBestandCache.filter(b => b.artikelnummer === a.artikelnummer && b.menge > 0 &&
           (sucheKarton ? b.lagerplatz === sucheKarton : true) &&
@@ -780,19 +800,21 @@ function sucheRender(behalteLimit) {
       : sucheBestandCache.filter(b => b.artikelnummer === a.artikelnummer);
     plaetze = plaetze.slice().sort((x,y) => (y.menge>0)-(x.menge>0) || x.lagerplatz.localeCompare(y.lagerplatz));
     const gesamt = gesamtCache[a.artikelnummer] || 0;
+    const cbCell = (rs) => `<td class="col-cb"${rs>1?` rowspan="${rs}"`:''}>${cb}</td>`;
 
     if (!plaetze.length) {
       const uid = sucheUid(a.artikelnummer, '—');
       return [`<tr>
+        ${cbCell(1)}
         <td class="col-name">${nameHtml}</td>
         <td class="mono">${esc(a.artikelnummer)}</td>
         <td class="mono">${esc(a.gtin||'—')}</td>
-        <td style="text-align:right;">${gesamt}</td>
+        <td class="num">${gesamt}</td>
         <td><span class="lp lp-leer">—</span></td>
-        <td style="text-align:right;">0</td>
-        <td style="white-space:nowrap;">
-          <input type="number" id="bk-m-${uid}" value="1" min="1" style="width:56px;height:30px;padding:0 6px;">
-          <button style="background:var(--green);height:30px;padding:0 10px;" onclick="sucheBuchen('${jsAttr(a.artikelnummer)}','—','ein')">+ Ein</button>
+        <td class="num">0</td>
+        <td class="buchen-cell">
+          <input type="number" id="bk-m-${uid}" value="1" min="1">
+          <button class="bk-ein" title="Einbuchen" onclick="sucheBuchen('${jsAttr(a.artikelnummer)}','—','ein')">＋</button>
         </td>
       </tr>`];
     }
@@ -801,25 +823,29 @@ function sucheRender(behalteLimit) {
       const uid = sucheUid(a.artikelnummer, p.lagerplatz);
       const rs = plaetze.length;
       return `<tr>
+        ${i===0 ? cbCell(rs) : ''}
         ${i===0 ? `<td class="col-name" rowspan="${rs}">${nameHtml}</td>` : ''}
         ${i===0 ? `<td class="mono" rowspan="${rs}">${esc(a.artikelnummer)}</td>` : ''}
         ${i===0 ? `<td class="mono" rowspan="${rs}">${esc(a.gtin||'—')}</td>` : ''}
-        ${i===0 ? `<td style="text-align:right;" rowspan="${rs}">${gesamt}</td>` : ''}
+        ${i===0 ? `<td class="num" rowspan="${rs}">${gesamt}</td>` : ''}
         <td><span class="lp${leer?' lp-leer':''}" title="${leer?'Früherer Lagerort (leer)':''}">${esc(p.lagerplatz)}</span></td>
-        <td style="text-align:right;${leer?'color:var(--text-3);':''}">${p.menge}</td>
-        <td style="white-space:nowrap;">
-          <input type="number" id="bk-m-${uid}" value="1" min="1" style="width:56px;height:30px;padding:0 6px;">
-          <button style="background:var(--green);height:30px;padding:0 10px;" onclick="sucheBuchen('${jsAttr(a.artikelnummer)}','${jsAttr(p.lagerplatz)}','ein')">+ Ein</button>
-          ${leer ? '' : `<button style="background:var(--red);height:30px;padding:0 10px;" onclick="sucheBuchen('${jsAttr(a.artikelnummer)}','${jsAttr(p.lagerplatz)}','aus')">− Aus</button>`}
+        <td class="num"${leer?' style="color:var(--text-3);"':''}>${p.menge}</td>
+        <td class="buchen-cell">
+          <input type="number" id="bk-m-${uid}" value="1" min="1">
+          <button class="bk-ein" title="Einbuchen" onclick="sucheBuchen('${jsAttr(a.artikelnummer)}','${jsAttr(p.lagerplatz)}','ein')">＋</button>
+          ${leer ? '' : `<button class="bk-aus" title="Ausbuchen" onclick="sucheBuchen('${jsAttr(a.artikelnummer)}','${jsAttr(p.lagerplatz)}','aus')">－</button>`}
         </td>
       </tr>`;
     });
   });
 
-  let html = '<table><thead><tr>'
+  let html = '<table class="such-table"><colgroup>'
+    + '<col style="width:26px;"><col style="width:26%;"><col style="width:11%;"><col style="width:11%;">'
+    + '<col style="width:6%;"><col style="width:11%;"><col style="width:6%;"><col style="width:130px;">'
+    + '</colgroup><thead><tr>'
     + `<th style="width:26px;">${kopfCb}</th>`
-    + th('name','Name') + th('nr','Artikelnummer') + th('ean','EAN') + th('gesamt','Gesamt')
-    + '<th>Lagerplatz</th><th style="text-align:right;">Menge</th><th>Buchen</th>'
+    + th('name','Name') + th('nr','Artikelnummer') + th('ean','EAN') + th('gesamt','Gesamt','num')
+    + '<th>Lagerplatz</th><th class="num">Menge</th><th>Buchen</th>'
     + '</tr></thead><tbody>' + rows.join('') + '</tbody></table>';
   if (gesamtGefiltert > hits.length) {
     html += `<div class="hint" style="padding:10px 4px;">${hits.length} von ${gesamtGefiltert} Artikeln — <a href="#" onclick="sucheMehrLaden();return false;">weitere ${Math.min(SUCH_BLOCK, gesamtGefiltert-hits.length)} laden</a></div>`;
@@ -883,7 +909,7 @@ async function erStart() {
   await erSetKarton(erSession.aktivOffline, 2);
   el('er-setup').style.display = 'none';
   el('er-run').style.display = 'block';
-  erRenderCtx();
+  erRenderCtx(); erLogRender();
   setTimeout(()=>el('er-scan').focus(), 50);
 }
 function erRenderCtx() {
@@ -954,18 +980,46 @@ async function erScan() {
     sprich(kanal === 'online' ? 'online' : 'offline');
     st.innerHTML = `<span class="ok">${label} → Karton ${esc(ziel)}<br>${menge}× ${esc(g.name||'')} (${esc(g.artnr)})${extra}</span>`;
     erSession.kartonStk[ziel] = (erSession.kartonStk[ziel]||0) + menge;
-    erSession.gebucht.push({artnr:g.artnr, name:g.name||'', menge, ziel});
+    erSession.gebucht.push({artnr:g.artnr, name:g.name||'', gtin:g.gtin||'', menge, ziel});
     erSession.stk += menge;
     erRenderCtx(); erLogRender(); refreshUndo();
     el('er-scan').value=''; el('er-scan').focus();
   } catch(e) { st.innerHTML='<span class="err">Verbindungsfehler</span>'; }
 }
+function erAggListe(ziel) {
+  const map = {};
+  erSession.gebucht.filter(x => x.ziel === ziel).forEach(x => {
+    const e = (map[x.artnr] = map[x.artnr] || { artnr:x.artnr, name:x.name, gtin:x.gtin||'', menge:0 });
+    e.menge += x.menge;
+  });
+  return Object.values(map).sort((a,b)=>a.name.localeCompare(b.name));
+}
+function erKartonSpalte(farbe, titel, ziel) {
+  const liste = erAggListe(ziel);
+  const stk = erSession.kartonStk[ziel] || 0;
+  const rows = liste.length
+    ? liste.map(x=>`<tr><td class="mono">${esc(x.gtin||'—')}</td><td>${esc(x.name||x.artnr)}</td><td style="text-align:right;">${x.menge}</td></tr>`).join('')
+    : `<tr><td colspan="3" class="hint" style="padding:6px 0;">Noch nichts in diesem Karton.</td></tr>`;
+  return `<div style="flex:1 1 300px;min-width:260px;">
+      <div style="font-weight:800;color:${farbe};margin-bottom:4px;">${titel} — Karton ${esc(ziel)} <span class="muted" style="font-weight:600;">(${stk} Stk)</span></div>
+      <table><thead><tr><th>EAN</th><th>Artikel</th><th style="text-align:right;">Menge</th></tr></thead><tbody>${rows}</tbody></table>
+    </div>`;
+}
 function erLogRender() {
   const g = erSession.gebucht;
-  if (!g.length) { el('er-log').textContent = 'Noch nichts eingeräumt.'; return; }
-  el('er-log').innerHTML = `<div style="margin-bottom:6px;">Eingeräumt: <b>${g.length}</b> Positionen · <b>${erSession.stk}</b> Stück</div>`
-    + '<table><tr><th>Karton</th><th>Artikel</th><th style="text-align:right;">Menge</th></tr>'
-    + g.slice().reverse().map(x=>`<tr><td>${esc(x.ziel)}</td><td>${esc(x.artnr)} · ${esc(x.name)}</td><td style="text-align:right;">${x.menge}</td></tr>`).join('') + '</table>';
+  const s = erSession;
+  let html = `<div style="margin-bottom:10px;">Eingeräumt gesamt: <b>${g.length}</b> Positionen · <b>${s.stk}</b> Stück</div>`;
+  html += `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:${g.length?'14px':'0'};">`
+    + erKartonSpalte('#276749','🟢 Online', s.aktivOnline)
+    + erKartonSpalte('#9b2c2c','🔴 Nicht online', s.aktivOffline)
+    + '</div>';
+  if (g.length) {
+    html += `<details><summary class="muted" style="cursor:pointer;">Gesamter Verlauf dieser Sitzung (${g.length})</summary>`
+      + '<table style="margin-top:6px;"><tr><th>Karton</th><th>Artikel</th><th style="text-align:right;">Menge</th></tr>'
+      + g.slice().reverse().map(x=>`<tr><td>${esc(x.ziel)}</td><td>${esc(x.artnr)} · ${esc(x.name)}</td><td style="text-align:right;">${x.menge}</td></tr>`).join('')
+      + '</table></details>';
+  }
+  el('er-log').innerHTML = html;
 }
 async function erKartonVoll(channel) {
   const name = channel==='online' ? erSession.aktivOnline : erSession.aktivOffline;
@@ -974,7 +1028,7 @@ async function erKartonVoll(channel) {
   const neu = erKartonName(erSession.pal, erSession.counter);
   await erSetKarton(neu, channel==='online' ? 1 : 2);
   if (channel==='online') erSession.aktivOnline = neu; else erSession.aktivOffline = neu;
-  erRenderCtx(); el('er-scan').focus();
+  erRenderCtx(); erLogRender(); el('er-scan').focus();
 }
 async function erFertig() {
   if (erSession) {
@@ -1180,10 +1234,10 @@ async function umlagern() {
 // Löst eine Eingabe (Artikelnummer ODER EAN) zur Artikelnummer auf.
 // Rückgabe: {artnr,name} | {mehrdeutig:[…]} | null
 async function resolveArtikel(code) {
-  let r1 = await client.from('artikel').select('artikelnummer,artikelname,online,ist_set').eq('artikelnummer', code).limit(1);
-  if (r1.data && r1.data.length) return { artnr: r1.data[0].artikelnummer, name: r1.data[0].artikelname, online: r1.data[0].online, istSet: !!r1.data[0].ist_set };
-  let r2 = await client.from('artikel').select('artikelnummer,artikelname,online,ist_set').eq('gtin', code);
-  if (r2.data && r2.data.length === 1) return { artnr: r2.data[0].artikelnummer, name: r2.data[0].artikelname, online: r2.data[0].online, istSet: !!r2.data[0].ist_set };
+  let r1 = await client.from('artikel').select('artikelnummer,artikelname,gtin,online,ist_set').eq('artikelnummer', code).limit(1);
+  if (r1.data && r1.data.length) return { artnr: r1.data[0].artikelnummer, name: r1.data[0].artikelname, gtin: r1.data[0].gtin||'', online: r1.data[0].online, istSet: !!r1.data[0].ist_set };
+  let r2 = await client.from('artikel').select('artikelnummer,artikelname,gtin,online,ist_set').eq('gtin', code);
+  if (r2.data && r2.data.length === 1) return { artnr: r2.data[0].artikelnummer, name: r2.data[0].artikelname, gtin: r2.data[0].gtin||'', online: r2.data[0].online, istSet: !!r2.data[0].ist_set };
   if (r2.data && r2.data.length > 1)  return { mehrdeutig: r2.data };
   return null;
 }
