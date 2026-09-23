@@ -330,6 +330,17 @@ tbody tr:hover td{background:#eef4fb;}
       <div id="lp-status" class="hint" style="margin-top:8px;"></div>
     </div>
     <div class="card" style="margin-top:12px;">
+      <b>🎨 Paletten verwalten</b>
+      <div class="hint" style="margin-top:6px;">Diese Liste steuert, welche Paletten bei „Palette sortieren" zur Auswahl stehen.</div>
+      <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:10px;">
+        <div><label>Neue Palette</label>
+          <div class="row"><input id="pal-neu" placeholder="z. B. P41"><button onclick="paletteNeu()">Anlegen</button></div></div>
+        <div><label>Umbenennen (verschiebt alle zugehörigen Kartons mit)</label>
+          <div class="row"><select id="pal-um-von"></select><input id="pal-um-nach" placeholder="neuer Name"><button onclick="paletteUmbenennen()">→</button></div></div>
+      </div>
+      <div id="pal-status" class="hint" style="margin-top:8px;"></div>
+    </div>
+    <div class="card" style="margin-top:12px;">
       <div class="row" style="justify-content:space-between;"><b>Paletten — anklicken zeigt die Kartons</b>
         <span class="row" style="gap:8px;">
           <button class="sec" onclick="etikettenDrucken(vlpCache.map(x=>x.name))">🏷️ Etiketten aller Lagerplätze</button>
@@ -435,6 +446,28 @@ tbody tr:hover td{background:#eef4fb;}
         <button id="reset-btn" style="background:var(--red);" disabled onclick="allesLoeschen()">☢️ Jetzt alles löschen</button>
       </div>
       <div id="reset-status" style="margin-top:12px;"></div>
+    </div>
+    <div class="card" style="margin-top:12px;border:2px solid var(--red);">
+      <b style="color:var(--red);">📥 Einspielen der JSON Backdatei (tägliche Sicherung)</b>
+      <div class="hint" style="margin-top:6px;">
+        Spielt eine zuvor heruntergeladene bzw. aus Dropbox geladene Sicherungsdatei
+        (<span style="font-family:monospace;">.json.gz</span> vom täglichen Auto-Backup, oder die ungepackte
+        <span style="font-family:monospace;">.json</span> von „🛟 Sicherung jetzt herunterladen") wieder ein.
+      </div>
+      <div class="hint" style="margin-top:8px;color:var(--red);font-weight:700;">
+        ⚠️ ACHTUNG: alles wird überschrieben und zurückgesetzt auf den Stand dieser Datei. Alle aktuellen Artikel,
+        Bestände, Lagerplätze, das Protokoll und alle Leermeldungen werden unwiderruflich gelöscht und durch den
+        Inhalt der Datei ersetzt. Es wird vorher automatisch eine Sicherung des aktuellen Stands heruntergeladen.
+      </div>
+      <div class="row" style="margin-top:12px;">
+        <input type="file" id="restore-file" accept=".gz,.json,application/gzip,application/json">
+      </div>
+      <label style="margin-top:12px;">Zum Bestätigen exakt <span style="font-family:monospace;font-weight:800;">BACKUP EINSPIELEN</span> eingeben</label>
+      <input id="restore-phrase" placeholder="BACKUP EINSPIELEN" oninput="restorePhraseCheck()">
+      <div class="row" style="margin-top:12px;">
+        <button id="restore-btn" style="background:var(--red);" disabled onclick="backupEinspielen()">📥 Backup jetzt einspielen</button>
+      </div>
+      <div id="restore-status" style="margin-top:12px;"></div>
     </div>
   </div>
 
@@ -910,9 +943,12 @@ async function initEinraeumen() {
   el('er-status').innerHTML = '';
   erVersteckeFlash();
   el('er-log').textContent = 'Noch nichts eingeräumt.';
-  // Palette P01..P40
-  el('er-palette').innerHTML = '<option value="">— Palette wählen —</option>'
-    + Array.from({length:40}, (_,i)=>{ const p='P'+String(i+1).padStart(2,'0'); return `<option value="${p}">${p}</option>`; }).join('');
+  // Paletten aus der verwaltbaren Liste (Tab „Lagerplätze" → „Paletten verwalten")
+  {
+    const { data: palRows } = await client.from('paletten').select('name').order('name', { ascending: true });
+    el('er-palette').innerHTML = '<option value="">— Palette wählen —</option>'
+      + (palRows || []).map(x => `<option value="${escAttr(x.name)}">${esc(x.name)}</option>`).join('');
+  }
   // Quelle = Plätze mit Bestand
   await ladeAllePlaetze();
   const { data } = await client.from('v_lagerplaetze').select('name,artikel,stueck').gt('stueck',0);
@@ -1390,6 +1426,7 @@ async function kartonsLaden() {
   if (error) { grid.innerHTML = '<span class="err">Fehler: ' + error.message + '</span>'; return; }
   vlpCache = data || [];
   lpFillSelects();
+  palettenFuellen();
   const grp = {};
   vlpCache.forEach(x => { const p = x.palette || ''; (grp[p] = grp[p] || []).push(x); });
   const pnamen = Object.keys(grp).sort((a,b)=>{ if(a==='')return 1; if(b==='')return -1; return a.localeCompare(b); });
@@ -1417,6 +1454,35 @@ function kartonPaletteZeigen(key, btn) {
   el('kartons-detail').innerHTML = `<div style="font-weight:700;color:#1a202c;margin-bottom:6px;">${titel} <span class="muted">— ${ks.length} Kartons · ${stk} Stück</span>
     <button class="sec" style="margin-left:10px;padding:2px 10px;" onclick="etikettenDrucken(kartonsAktuelleListe)">🏷️ Etiketten dieser Palette</button></div>
     <table><tr><th>Karton</th><th>Kanal</th><th style="text-align:right;">SKUs</th><th style="text-align:right;">Stück</th><th></th></tr>${rows}</table>`;
+}
+
+// ── Paletten verwalten ───────────────────────────────────────────────────────
+let palettenCache = [];
+async function palettenFuellen() {
+  const { data, error } = await client.from('paletten').select('name').order('name', { ascending: true });
+  if (error) { el('pal-status').innerHTML = '<span class="err">' + error.message + '</span>'; return; }
+  palettenCache = (data || []).map(x => x.name);
+  const opts = palettenCache.map(n => `<option value="${escAttr(n)}">${esc(n)}</option>`).join('');
+  const sel = el('pal-um-von'); if (sel) sel.innerHTML = '<option value="">— wählen —</option>' + opts;
+}
+async function paletteNeu() {
+  const name = el('pal-neu').value.trim();
+  if (!name) return;
+  const { error } = await client.rpc('palette_neu', { p_name: name });
+  if (error) { el('pal-status').innerHTML = '<span class="err">' + esc(error.message) + '</span>'; return; }
+  el('pal-neu').value = '';
+  el('pal-status').innerHTML = '<span class="ok">Palette „' + esc(name) + '" angelegt.</span>';
+  await palettenFuellen();
+}
+async function paletteUmbenennen() {
+  const alt = el('pal-um-von').value, neu = el('pal-um-nach').value.trim();
+  if (!alt || !neu) return;
+  const { data, error } = await client.rpc('palette_umbenennen', { p_alt: alt, p_neu: neu });
+  if (error) { el('pal-status').innerHTML = '<span class="err">' + esc(error.message) + '</span>'; return; }
+  el('pal-um-nach').value = '';
+  el('pal-status').innerHTML = `<span class="ok">✓ Palette „${esc(alt)}" → „${esc(neu)}" (${data.kartons_umgezogen} Karton(s) umgezogen).</span>`;
+  await palettenFuellen();
+  kartonsLaden();
 }
 
 // ── Import/Export ────────────────────────────────────────────────────────────
@@ -1621,6 +1687,67 @@ async function allesLoeschen() {
   st.innerHTML = `<span class="ok">✓ Gelöscht: ${g.artikel} Artikel, ${g.bestaende} Bestände, ${g.lagerplaetze} Lagerplätze, ${g.buchungen} Protokoll-Einträge, ${g.leermeldungen} Leermeldungen.</span>
     <div class="hint" style="margin-top:8px;">Jetzt tagesaktuelle Daten einspielen: oben bei „⬆️ Bestände per CSV/Excel importieren" → <b>Komplett-Import</b> wählen, „Unbekannte Artikel neu anlegen" aktivieren, Datei wählen. Danach ggf. den Amazon-Status importieren und Paletten/Kanäle bei den Lagerplätzen neu zuordnen (die Zuordnung wurde mit gelöscht).</div>`;
   el('reset-phrase').value = '';
+  await ladeAllePlaetze();
+  refreshLeer(); refreshUndo();
+  if (typeof loadDashboard === 'function') loadDashboard();
+  if (typeof sucheRefresh === 'function') sucheRefresh();
+}
+
+// ── Backup wiederherstellen (JSON/.gz einspielen) ───────────────────────────
+const RESTORE_PHRASE = 'BACKUP EINSPIELEN';
+function restorePhraseCheck() {
+  el('restore-btn').disabled = el('restore-phrase').value.trim() !== RESTORE_PHRASE;
+}
+// Liest eine Datei ein; entpackt sie mit DecompressionStream('gzip'), falls sie
+// gzip-komprimiert ist (Dateiendung .gz ODER gzip-Magic-Bytes 1F 8B), sonst wird
+// sie als reiner JSON-Text gelesen (für die ungepackte "Sicherung jetzt
+// herunterladen"-Datei).
+async function gunzipJson(file) {
+  const buf = await file.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  const isGzip = bytes.length > 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+  if (!isGzip) {
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }
+  const ds = new DecompressionStream('gzip');
+  const stream = new Blob([bytes]).stream().pipeThrough(ds);
+  const text = await new Response(stream).text();
+  return JSON.parse(text);
+}
+async function backupEinspielen() {
+  if (el('restore-phrase').value.trim() !== RESTORE_PHRASE) return;
+  const file = el('restore-file').files[0];
+  const st = el('restore-status');
+  if (!file) { st.innerHTML = '<span class="err">Bitte zuerst eine Sicherungsdatei auswählen.</span>'; return; }
+  if (!confirm('Wirklich das komplette Backup einspielen?\n\nAlle aktuellen Artikel, Bestände, Lagerplätze, das Protokoll und alle Leermeldungen werden gelöscht und durch den Inhalt von "' + file.name + '" ersetzt.\n\nEs wird zuerst automatisch eine Sicherung des jetzigen Stands heruntergeladen.')) return;
+  el('restore-btn').disabled = true;
+  st.innerHTML = '<span class="hint">⏳ Sicherung des aktuellen Stands wird erstellt…</span>';
+  const okBackup = await datenbankSichern();
+  if (!okBackup) {
+    if (!confirm('Die Sicherung des aktuellen Stands ist fehlgeschlagen. Trotzdem ohne dieses Sicherheitsnetz fortfahren? (nicht empfohlen)')) {
+      el('restore-btn').disabled = false; return;
+    }
+  }
+  let daten;
+  try {
+    st.innerHTML = '<span class="hint">⏳ Datei wird gelesen und entpackt…</span>';
+    daten = await gunzipJson(file);
+  } catch (e) {
+    st.innerHTML = '<span class="err">❌ Datei konnte nicht gelesen werden: ' + esc(e.message || String(e)) + '</span>';
+    el('restore-btn').disabled = false;
+    return;
+  }
+  if (!daten || !Array.isArray(daten.artikel) || !Array.isArray(daten.bestaende)) {
+    st.innerHTML = '<span class="err">❌ Diese Datei sieht nicht wie eine LagerPal-Sicherung aus (erwartete Felder fehlen).</span>';
+    el('restore-btn').disabled = false;
+    return;
+  }
+  st.innerHTML = '<span class="hint">⏳ Backup wird eingespielt…</span>';
+  const { data, error } = await client.rpc('backup_wiederherstellen', { p_daten: daten });
+  if (error) { st.innerHTML = '<span class="err">❌ ' + esc(error.message) + '</span>'; el('restore-btn').disabled = false; return; }
+  st.innerHTML = `<span class="ok">✓ Eingespielt: ${data.artikel} Artikel, ${data.bestaende} Bestände, ${data.lagerplaetze} Lagerplätze, ${data.buchungen} Protokoll-Einträge, ${data.leermeldungen} Leermeldungen.</span>`;
+  el('restore-phrase').value = '';
+  el('restore-file').value = '';
   await ladeAllePlaetze();
   refreshLeer(); refreshUndo();
   if (typeof loadDashboard === 'function') loadDashboard();
