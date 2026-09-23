@@ -330,6 +330,17 @@ tbody tr:hover td{background:#eef4fb;}
       <div id="lp-status" class="hint" style="margin-top:8px;"></div>
     </div>
     <div class="card" style="margin-top:12px;">
+      <b>🎨 Paletten verwalten</b>
+      <div class="hint" style="margin-top:6px;">Diese Liste steuert, welche Paletten bei „Palette sortieren" zur Auswahl stehen.</div>
+      <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:10px;">
+        <div><label>Neue Palette</label>
+          <div class="row"><input id="pal-neu" placeholder="z. B. P41"><button onclick="paletteNeu()">Anlegen</button></div></div>
+        <div><label>Umbenennen (verschiebt alle zugehörigen Kartons mit)</label>
+          <div class="row"><select id="pal-um-von"></select><input id="pal-um-nach" placeholder="neuer Name"><button onclick="paletteUmbenennen()">→</button></div></div>
+      </div>
+      <div id="pal-status" class="hint" style="margin-top:8px;"></div>
+    </div>
+    <div class="card" style="margin-top:12px;">
       <div class="row" style="justify-content:space-between;"><b>Paletten — anklicken zeigt die Kartons</b>
         <span class="row" style="gap:8px;">
           <button class="sec" onclick="etikettenDrucken(vlpCache.map(x=>x.name))">🏷️ Etiketten aller Lagerplätze</button>
@@ -932,9 +943,12 @@ async function initEinraeumen() {
   el('er-status').innerHTML = '';
   erVersteckeFlash();
   el('er-log').textContent = 'Noch nichts eingeräumt.';
-  // Palette P01..P40
-  el('er-palette').innerHTML = '<option value="">— Palette wählen —</option>'
-    + Array.from({length:40}, (_,i)=>{ const p='P'+String(i+1).padStart(2,'0'); return `<option value="${p}">${p}</option>`; }).join('');
+  // Paletten aus der verwaltbaren Liste (Tab „Lagerplätze" → „Paletten verwalten")
+  {
+    const { data: palRows } = await client.from('paletten').select('name').order('name', { ascending: true });
+    el('er-palette').innerHTML = '<option value="">— Palette wählen —</option>'
+      + (palRows || []).map(x => `<option value="${escAttr(x.name)}">${esc(x.name)}</option>`).join('');
+  }
   // Quelle = Plätze mit Bestand
   await ladeAllePlaetze();
   const { data } = await client.from('v_lagerplaetze').select('name,artikel,stueck').gt('stueck',0);
@@ -1412,6 +1426,7 @@ async function kartonsLaden() {
   if (error) { grid.innerHTML = '<span class="err">Fehler: ' + error.message + '</span>'; return; }
   vlpCache = data || [];
   lpFillSelects();
+  palettenFuellen();
   const grp = {};
   vlpCache.forEach(x => { const p = x.palette || ''; (grp[p] = grp[p] || []).push(x); });
   const pnamen = Object.keys(grp).sort((a,b)=>{ if(a==='')return 1; if(b==='')return -1; return a.localeCompare(b); });
@@ -1439,6 +1454,35 @@ function kartonPaletteZeigen(key, btn) {
   el('kartons-detail').innerHTML = `<div style="font-weight:700;color:#1a202c;margin-bottom:6px;">${titel} <span class="muted">— ${ks.length} Kartons · ${stk} Stück</span>
     <button class="sec" style="margin-left:10px;padding:2px 10px;" onclick="etikettenDrucken(kartonsAktuelleListe)">🏷️ Etiketten dieser Palette</button></div>
     <table><tr><th>Karton</th><th>Kanal</th><th style="text-align:right;">SKUs</th><th style="text-align:right;">Stück</th><th></th></tr>${rows}</table>`;
+}
+
+// ── Paletten verwalten ───────────────────────────────────────────────────────
+let palettenCache = [];
+async function palettenFuellen() {
+  const { data, error } = await client.from('paletten').select('name').order('name', { ascending: true });
+  if (error) { el('pal-status').innerHTML = '<span class="err">' + error.message + '</span>'; return; }
+  palettenCache = (data || []).map(x => x.name);
+  const opts = palettenCache.map(n => `<option value="${escAttr(n)}">${esc(n)}</option>`).join('');
+  const sel = el('pal-um-von'); if (sel) sel.innerHTML = '<option value="">— wählen —</option>' + opts;
+}
+async function paletteNeu() {
+  const name = el('pal-neu').value.trim();
+  if (!name) return;
+  const { error } = await client.rpc('palette_neu', { p_name: name });
+  if (error) { el('pal-status').innerHTML = '<span class="err">' + esc(error.message) + '</span>'; return; }
+  el('pal-neu').value = '';
+  el('pal-status').innerHTML = '<span class="ok">Palette „' + esc(name) + '" angelegt.</span>';
+  await palettenFuellen();
+}
+async function paletteUmbenennen() {
+  const alt = el('pal-um-von').value, neu = el('pal-um-nach').value.trim();
+  if (!alt || !neu) return;
+  const { data, error } = await client.rpc('palette_umbenennen', { p_alt: alt, p_neu: neu });
+  if (error) { el('pal-status').innerHTML = '<span class="err">' + esc(error.message) + '</span>'; return; }
+  el('pal-um-nach').value = '';
+  el('pal-status').innerHTML = `<span class="ok">✓ Palette „${esc(alt)}" → „${esc(neu)}" (${data.kartons_umgezogen} Karton(s) umgezogen).</span>`;
+  await palettenFuellen();
+  kartonsLaden();
 }
 
 // ── Import/Export ────────────────────────────────────────────────────────────
