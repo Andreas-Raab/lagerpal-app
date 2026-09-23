@@ -72,6 +72,9 @@ tbody tr:hover td{background:#eef4fb;}
 .badge{display:inline-block;font-size:.66rem;font-weight:700;padding:1px 6px;border-radius:4px;margin-left:6px;vertical-align:middle;}
 .b-on{background:#C6F6D5;color:#276749;}.b-off{background:#fed7d7;color:#9b2c2c;}.b-unk{background:#e2e8f0;color:#4a5568;}
 .set-badge{display:inline-block;margin-left:8px;padding:1px 6px;font-size:.66rem;font-weight:800;color:#fff;background:var(--red);border-radius:4px;}
+.lp-leer{background:#eef0f2;color:#8a94a0;border-color:#dfe3e8;}
+.such-sammel{display:flex;align-items:center;gap:10px;background:#eaf2fb;border:1px solid #cfe0f3;border-radius:8px;padding:8px 12px;margin-top:10px;flex-wrap:wrap;}
+.col-name{min-width:220px;}
 .art{border-bottom:1px solid var(--line-soft);padding:10px 2px;}
 .art-name{font-weight:700;}
 .art-meta{font-size:.82rem;color:var(--text-2);margin-top:2px;}
@@ -177,6 +180,7 @@ tbody tr:hover td{background:#eef4fb;}
         <div><button class="sec" onclick="sucheFilterReset()">Zurücksetzen</button></div>
       </div>
       <div id="such-status" class="hint" style="margin-top:6px;"></div>
+      <div id="such-sammel" class="such-sammel" style="display:none;"></div>
       <div id="such-tabelle" style="margin-top:8px;overflow-x:auto;"></div>
     </div>
   </div>
@@ -184,7 +188,7 @@ tbody tr:hover td{background:#eef4fb;}
   <div id="tab-buchen" class="tabpanel" style="display:none;">
     <div class="card">
       <div class="ss-mode-toggle">
-        <button id="ss-mode-aus" class="ss-mode active" onclick="ssSetMode('aus')">− Ausbuchen</button>
+        <button id="ss-mode-aus" class="ss-mode" onclick="ssSetMode('aus')">− Ausbuchen</button>
         <button id="ss-mode-ein" class="ss-mode" onclick="ssSetMode('ein')">＋ Einbuchen</button>
       </div>
 
@@ -494,11 +498,17 @@ async function rueckgaengigJetzt() {
   sucheRefresh();
 }
 
-// alle bekannten Lagerplätze (für die Dropdowns)
+// alle bekannten Lagerplätze (für die Dropdowns) — inkl. leerer/historischer
+// Plätze (Bestand einmal >0, jetzt 0), damit man schnell wieder dorthin buchen kann.
 let allePlaetze = [];
 async function ladeAllePlaetze() {
-  const { data } = await client.from('v_lagerplaetze').select('name');
-  allePlaetze = (data || []).map(x => x.name).sort((a,b) => a.localeCompare(b));
+  const [lpData, bestNamen] = await Promise.all([
+    client.from('v_lagerplaetze').select('name'),
+    fetchAll('bestaende', 'lagerplatz')
+  ]);
+  const namen = new Set((lpData.data || []).map(x => x.name));
+  bestNamen.forEach(b => namen.add(b.lagerplatz));
+  allePlaetze = [...namen].sort((a,b) => a.localeCompare(b));
 }
 // Plätze, auf denen ein Artikel aktuell liegt (Bestand > 0)
 async function artikelPlaetze(artnr) {
@@ -509,43 +519,47 @@ function escAttr(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;
 function toggleNeu(selId, neuId){ el(neuId).style.display = el(selId).value === '__neu__' ? 'block' : 'none'; }
 function chosenLp(selId, neuId){ const s = el(selId); return s.value === '__neu__' ? el(neuId).value.trim() : s.value; }
 
-// ── Suche: Daten-Cache + sortierbare Tabelle ────────────────────────────────
+// ── Suche: Daten-Cache + Tabelle (eine Zeile je Artikel×Lagerplatz) ─────────
 let suchTimer = null;
-function sucheDebounced() { clearTimeout(suchTimer); suchTimer = setTimeout(sucheRender, 200); }
+function sucheDebounced() { clearTimeout(suchTimer); suchTimer = setTimeout(() => sucheRender(), 200); }
 
-let sucheArtikelCache = [];      // [{artikelnummer,artikelname,gtin,online}]
-let sucheBestandCache = [];      // [{artikelnummer,lagerplatz,menge}] (nur menge>0)
+let sucheArtikelCache = [];      // [{artikelnummer,artikelname,gtin,online,istSet}]
+let sucheBestandCache = [];      // [{artikelnummer,lagerplatz,menge}] — ALLE Zeilen, auch menge=0 (historisch)
 let sucheLagerplaetzeCache = []; // [{name,palette}]
 let selectedPaletten = new Set(); // Werte: Palettenname, oder '' für „Ohne Palette"
 let sucheKarton = '';             // gewählter einzelner Karton/Lagerplatz ('' = alle)
 let sucheSortCol = 'name';
 let sucheSortDir = 1;
+let sucheSelektion = new Set();   // ausgewählte Artikelnummern (für Sammelaktionen)
+let sucheSichtbar = [];           // aktuell gerenderte Artikelnummern (für „alle wählen")
+const SUCH_BLOCK = 60;
+let sucheLimit = SUCH_BLOCK;
 
 function amaBadge(online) {
   if (online === 1) return '<span class="badge b-on">AMA</span>';
   if (online === 2) return '<span class="badge b-off" style="text-decoration:line-through;">AMA</span>';
   return '<span class="badge b-unk">AMA ?</span>';
 }
+function sucheUid(artnr, lp) { return (artnr + '__' + lp).replace(/[^a-zA-Z0-9_]/g, '_'); }
 
 async function ladeSucheDaten() {
   const box = el('such-tabelle');
   if (box) box.innerHTML = '<span class="hint">Wird geladen…</span>';
   const [arts, best, lps] = await Promise.all([
-    fetchAll('artikel', 'artikelnummer,artikelname,gtin,online', { order: { col: 'artikelname', asc: true } }),
-    fetchAll('bestaende', 'artikelnummer,lagerplatz,menge', { build: q => q.gt('menge', 0) }),
+    fetchAll('artikel', 'artikelnummer,artikelname,gtin,online,ist_set', { order: { col: 'artikelname', asc: true } }),
+    fetchAll('bestaende', 'artikelnummer,lagerplatz,menge'),   // auch 0-Mengen (frühere Lagerorte)
     fetchAll('v_lagerplaetze', 'name,palette')
   ]);
-  sucheArtikelCache = arts;
+  sucheArtikelCache = arts.map(a => ({ ...a, istSet: !!a.ist_set }));
   sucheBestandCache = best;
   sucheLagerplaetzeCache = lps;
   sucheBuildFilterUI();
   sucheRender();
 }
-// öffentlicher Refresh-Punkt nach Schreibaktionen (Bearbeiten/Löschen/Rückgängig)
+// öffentlicher Refresh-Punkt nach Schreibaktionen (Bearbeiten/Löschen/Rückgängig/Buchen)
 function sucheRefresh() { ladeSucheDaten(); }
 
 function sucheBuildFilterUI() {
-  // Paletten-Buttons
   const box = el('such-paletten');
   if (box) {
     const pals = [...new Set(sucheLagerplaetzeCache.map(x=>x.palette).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
@@ -558,10 +572,9 @@ function sucheBuildFilterUI() {
       box.innerHTML = html;
     }
   }
-  // Karton-Dropdown
   const sel = el('such-karton-filter');
   if (sel) {
-    const namen = sucheLagerplaetzeCache.map(x=>x.name).sort((a,b)=>a.localeCompare(b));
+    const namen = [...new Set(sucheLagerplaetzeCache.map(x=>x.name).concat(sucheBestandCache.map(b=>b.lagerplatz)))].sort((a,b)=>a.localeCompare(b));
     const cur = sucheKarton;
     sel.innerHTML = '<option value="">alle</option>' + namen.map(n=>`<option value="${escAttr(n)}">${esc(n)}</option>`).join('');
     sel.value = namen.includes(cur) ? cur : '';
@@ -570,9 +583,8 @@ function sucheBuildFilterUI() {
 function togglePalette(key, btn) {
   btn.classList.toggle('active');
   if (selectedPaletten.has(key)) selectedPaletten.delete(key); else selectedPaletten.add(key);
-  // Karton-Auswahl und Paletten-Auswahl schließen sich gegenseitig aus
   if (selectedPaletten.size) { sucheKarton = ''; const sel = el('such-karton-filter'); if (sel) sel.value = ''; }
-  sucheRender();
+  sucheLimit = SUCH_BLOCK; sucheRender();
 }
 function sucheKartonChanged() {
   sucheKarton = el('such-karton-filter').value;
@@ -580,7 +592,7 @@ function sucheKartonChanged() {
     selectedPaletten.clear();
     document.querySelectorAll('#such-paletten .ss-lp-btn').forEach(b=>b.classList.remove('active'));
   }
-  sucheRender();
+  sucheLimit = SUCH_BLOCK; sucheRender();
 }
 function sucheFilterReset() {
   el('suche').value = '';
@@ -588,40 +600,134 @@ function sucheFilterReset() {
   sucheKarton = '';
   selectedPaletten.clear();
   sucheBuildFilterUI();
-  sucheSortCol = 'name'; sucheSortDir = 1;
+  sucheSortCol = 'name'; sucheSortDir = 1; sucheLimit = SUCH_BLOCK;
   sucheRender();
 }
 function sucheSortBy(col) {
   if (sucheSortCol === col) sucheSortDir = -sucheSortDir;
-  else { sucheSortCol = col; sucheSortDir = (col === 'menge' || col === 'online') ? -1 : 1; }
-  sucheRender();
+  else { sucheSortCol = col; sucheSortDir = 1; }
+  sucheLimit = SUCH_BLOCK; sucheRender();
+}
+function sucheMehrLaden() { sucheLimit += SUCH_BLOCK; sucheRender(true); }
+
+// ── Mehrfachauswahl + Sammelaktionen ────────────────────────────────────────
+function sucheToggleSelect(artnr, checked) {
+  if (checked) sucheSelektion.add(artnr); else sucheSelektion.delete(artnr);
+  sucheUpdateSammelbar();
+}
+function sucheToggleAlleSichtbar(checked) {
+  sucheSichtbar.forEach(nr => { if (checked) sucheSelektion.add(nr); else sucheSelektion.delete(nr); });
+  sucheRender(true);
+}
+function sucheClearSelektion() { sucheSelektion.clear(); sucheRender(true); }
+function sucheUpdateSammelbar() {
+  const bar = el('such-sammel');
+  if (!bar) return;
+  const n = sucheSelektion.size;
+  if (!n) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  bar.style.display = 'flex';
+  bar.innerHTML = `<span><b>${n}</b> ausgewählt</span>
+    <button class="sec" onclick="suchePickliste()">🧾 Pickliste</button>
+    <button style="background:var(--red);" onclick="sucheSammelAusbuchen()">− Komplett ausbuchen</button>
+    <button class="sec" style="margin-left:auto;" onclick="sucheClearSelektion()">✕ Alle abwählen (${n})</button>`;
+}
+function suchePickliste() {
+  const arr = [...sucheSelektion];
+  if (!arr.length) return;
+  const eintraege = [];
+  arr.forEach(nr => {
+    const a = sucheArtikelCache.find(x => x.artikelnummer === nr);
+    if (!a) return;
+    sucheBestandCache.filter(b => b.artikelnummer === nr && b.menge > 0).forEach(b => {
+      eintraege.push({ lp: b.lagerplatz, menge: b.menge, ean: a.gtin||'', name: a.artikelname||'' });
+    });
+  });
+  if (!eintraege.length) { alert('Keine der ausgewählten Artikel hat aktuell Bestand.'); return; }
+  eintraege.sort((x,y) => x.lp.localeCompare(y.lp) || x.name.localeCompare(y.name));
+  const rows = eintraege.map(e => `<tr><td class="lp">${esc(e.lp)}</td><td class="menge">${e.menge}</td><td class="ean">${esc(e.ean||'—')}</td><td class="name">${esc(e.name)}</td><td class="rest"></td></tr>`).join('');
+  const gesamtMenge = eintraege.reduce((s,e)=>s+e.menge,0);
+  const datum = new Date().toLocaleString('de-DE');
+  const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>Pickliste</title>
+    <style>
+      @page{size:A4 portrait;margin:10mm;}
+      body{font-family:Arial,sans-serif;margin:0;padding:10mm;color:#000;}
+      h1{font-size:16pt;margin:0 0 2mm;} .meta{font-size:9pt;color:#555;margin-bottom:6mm;}
+      table{width:100%;border-collapse:collapse;}
+      th,td{border:1px solid #999;padding:5px 7px;text-align:left;vertical-align:middle;}
+      th{background:#eee;font-size:8.5pt;text-transform:uppercase;letter-spacing:.04em;}
+      td.lp{font-size:11pt;font-weight:700;white-space:nowrap;}
+      td.menge{font-size:14pt;font-weight:800;text-align:center;white-space:nowrap;}
+      th.menge{text-align:center;} td.ean{font-size:9.5pt;white-space:nowrap;} td.name{font-size:9.5pt;}
+      .rest{width:16mm;} th.rest{font-size:8.5pt;color:#999;}
+    </style></head><body>
+    <h1>Pickliste</h1>
+    <div class="meta">${eintraege.length} Positionen · ${arr.length} Artikel · ${gesamtMenge} Stück · erstellt ${esc(datum)}</div>
+    <table><thead><tr><th>Lagerplatz</th><th class="menge">Menge</th><th>EAN</th><th>Name</th><th class="rest">Rest</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <script>window.onload=function(){setTimeout(function(){window.print();},150);};<\/script>
+  </body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { alert('Bitte Pop-ups für diese Seite erlauben'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+async function sucheSammelAusbuchen() {
+  const arr = [...sucheSelektion];
+  if (!arr.length) return;
+  if (!confirm(`${arr.length} Artikel komplett ausbuchen?\n\nDer gesamte Bestand dieser Artikel wird auf ALLEN Lagerplätzen auf 0 gesetzt.\nDas ist nicht mit einem Klick rückgängig zu machen (nur einzeln über das Protokoll) — am besten vorher „Sicherung jetzt" im Import/Export-Tab.`)) return;
+  const { data, error } = await client.rpc('sammel_ausbuchen', { p_artikelnummern: arr });
+  if (error) { alert('Fehler: ' + error.message); return; }
+  alert(`Komplett ausgebucht: ${data.artikel} Artikel · ${data.stueck} Stück (${data.plaetze} Plätze)`);
+  sucheSelektion.clear();
+  await ladeAllePlaetze(); refreshUndo(); refreshLeer();
+  sucheRefresh();
 }
 
-function sucheRender() {
+// ── Schnellbuchen direkt aus der Suche (± je Lagerplatz-Zeile) ──────────────
+async function sucheBuchen(artnr, lp, typ) {
+  const uid = sucheUid(artnr, lp);
+  const inp = el('bk-m-' + uid);
+  const menge = parseInt(inp.value, 10);
+  if (!Number.isInteger(menge) || menge < 1) { alert('Menge muss eine ganze Zahl ≥ 1 sein.'); return; }
+  let zielLp = lp;
+  if (zielLp === '—') {
+    zielLp = (prompt('Auf welchen Lagerplatz buchen?') || '').trim();
+    if (!zielLp) return;
+  }
+  const a = sucheArtikelCache.find(x => x.artikelnummer === artnr);
+  if (a && a.istSet) {
+    const hinweis = typ === 'ein' ? 'mehrere Einheiten = 1 Stück' : 'mehrere Einheiten ins Paket legen!';
+    if (!confirm('⚠️ SET-ARTIKEL\n\n' + (a.artikelname||artnr) + '\n\n' + hinweis + '\n\nFortfahren?')) return;
+  }
+  const { data, error } = await client.rpc('buchen', { p_artikelnummer: artnr, p_lagerplatz: zielLp, p_typ: typ, p_menge: menge, p_kommentar: '' });
+  if (error) { alert('Fehler: ' + error.message); return; }
+  await ladeAllePlaetze();
+  refreshUndo(); refreshLeer();
+  sucheRefresh();
+}
+
+function sucheRender(behalteLimit) {
   const box = el('such-tabelle'), st = el('such-status');
   if (!box) return;
+  if (!behalteLimit) sucheLimit = SUCH_BLOCK;
   const raw = el('suche').value.trim().toLowerCase();
   const onlineFilter = el('such-online-filter').value;
 
   // Bestand je Artikel im aktuellen Scope (alle Lagerplätze, oder eine Karton-/Paletten-Auswahl)
-  const bmap = {}; // artikelnummer -> {menge, plaetze:[...]}
+  const bmapScope = {}; // artikelnummer -> menge im Scope (für Filter/Gesamt bei aktivem Scope)
   let scopeLabel = '';
-  let relevantRows = sucheBestandCache;
+  let scopeRows = null;
   if (sucheKarton) {
-    relevantRows = sucheBestandCache.filter(b => b.lagerplatz === sucheKarton);
+    scopeRows = sucheBestandCache.filter(b => b.lagerplatz === sucheKarton && b.menge > 0);
     scopeLabel = 'Karton „' + sucheKarton + '"';
   } else if (selectedPaletten.size) {
     const namenSet = new Set(sucheLagerplaetzeCache.filter(x => selectedPaletten.has(x.palette || '')).map(x=>x.name));
-    relevantRows = sucheBestandCache.filter(b => namenSet.has(b.lagerplatz));
+    scopeRows = sucheBestandCache.filter(b => namenSet.has(b.lagerplatz) && b.menge > 0);
     scopeLabel = [...selectedPaletten].map(k => k === '' ? 'Ohne Palette' : 'Palette ' + k).join(', ');
   }
-  relevantRows.forEach(b => {
-    const e = (bmap[b.artikelnummer] = bmap[b.artikelnummer] || { menge: 0, plaetze: [] });
-    e.menge += b.menge; e.plaetze.push(b.lagerplatz);
-  });
+  if (scopeRows) scopeRows.forEach(b => { bmapScope[b.artikelnummer] = (bmapScope[b.artikelnummer]||0) + b.menge; });
 
   let liste = sucheArtikelCache;
-  if (sucheKarton || selectedPaletten.size) liste = liste.filter(a => bmap[a.artikelnummer]);
+  if (scopeRows) liste = liste.filter(a => bmapScope[a.artikelnummer]);
   if (onlineFilter !== '') liste = liste.filter(a => a.online === parseInt(onlineFilter, 10));
   if (raw) {
     const q = raw.replace(/[,()%]/g, ' ').trim();
@@ -630,43 +736,94 @@ function sucheRender() {
       (a.artikelname||'').toLowerCase().includes(q) ||
       (a.gtin||'').toLowerCase().includes(q));
   }
-  liste = liste.map(a => ({ ...a, menge: bmap[a.artikelnummer]?.menge || 0 }));
+
+  const gesamtCache = {}; // artikelnummer -> Gesamtbestand (alle Lagerplätze)
+  sucheBestandCache.forEach(b => { gesamtCache[b.artikelnummer] = (gesamtCache[b.artikelnummer]||0) + b.menge; });
 
   const cmp = {
     name: (a,b) => (a.artikelname||'').localeCompare(b.artikelname||''),
     nr:   (a,b) => (a.artikelnummer||'').localeCompare(b.artikelnummer||''),
     ean:  (a,b) => (a.gtin||'').localeCompare(b.gtin||''),
-    menge:(a,b) => a.menge - b.menge,
-    online:(a,b) => a.online - b.online
-  }[sucheSortCol];
+    gesamt:(a,b) => (gesamtCache[a.artikelnummer]||0) - (gesamtCache[b.artikelnummer]||0)
+  }[sucheSortCol] || ((a,b)=>0);
   liste = liste.slice().sort((a,b) => sucheSortDir * cmp(a,b));
 
-  const gesamtStk = liste.reduce((s,a)=>s+a.menge,0);
-  st.textContent = (scopeLabel ? scopeLabel + ': ' : '') + liste.length + ' Artikel · ' + gesamtStk + ' Stück'
+  const gesamtGefiltert = liste.length;
+  const gesamtStk = liste.reduce((s,a)=>s+(gesamtCache[a.artikelnummer]||0),0);
+  st.textContent = (scopeLabel ? scopeLabel + ': ' : '') + gesamtGefiltert + ' Artikel · ' + gesamtStk + ' Stück'
     + (onlineFilter!==''||raw ? ' (gefiltert)' : '');
 
-  if (!liste.length) { box.innerHTML = '<div class="hint" style="padding:10px 0;">Keine Treffer.</div>'; return; }
+  if (!liste.length) { box.innerHTML = '<div class="hint" style="padding:10px 0;">Keine Treffer.</div>'; sucheSichtbar = []; sucheUpdateSammelbar(); return; }
 
-  const th = (col, label, align) => {
+  const hits = liste.slice(0, sucheLimit);
+  sucheSichtbar = hits.map(a => a.artikelnummer);
+  sucheUpdateSammelbar();
+
+  const th = (col, label) => {
     const active = sucheSortCol === col;
-    const arrow = active ? (sucheSortDir === 1 ? '▲' : '▼') : '▲';
-    return `<th class="sortable${active?' sorted':''}" style="${align?'text-align:right;':''}" onclick="sucheSortBy('${col}')">${esc(label)}<span class="arrow">${arrow}</span></th>`;
+    const arrow = active ? (sucheSortDir === 1 ? '▲' : '▼') : '↕';
+    return `<th class="sortable${active?' sorted':''}" onclick="sucheSortBy('${col}')">${esc(label)}<span class="arrow">${arrow}</span></th>`;
   };
+  const alleGewaehlt = sucheSichtbar.length > 0 && sucheSichtbar.every(nr => sucheSelektion.has(nr));
+  const kopfCb = `<input type="checkbox" onclick="event.stopPropagation()" onchange="sucheToggleAlleSichtbar(this.checked)" ${alleGewaehlt?'checked':''}>`;
+
+  const rows = hits.flatMap(a => {
+    const cb = `<input type="checkbox" onclick="event.stopPropagation()" onchange="sucheToggleSelect('${jsAttr(a.artikelnummer)}',this.checked)" ${sucheSelektion.has(a.artikelnummer)?'checked':''}>`;
+    const setBadge = a.istSet ? '<span class="set-badge">SET</span>' : '';
+    const nameHtml = `${cb} ${esc(a.artikelname||'')}${setBadge}${amaBadge(a.online)}
+      <button class="sec" style="padding:2px 6px;margin-left:6px;" onclick="openEtikettModal('${jsAttr(a.artikelnummer)}','${jsAttr(a.artikelname||'')}','${jsAttr(a.gtin||'')}')">🏷️</button>
+      <button class="sec" style="padding:2px 6px;" onclick="openEdit('${jsAttr(a.artikelnummer)}')">✏️</button>`;
+    let plaetze = sucheKarton || selectedPaletten.size
+      ? sucheBestandCache.filter(b => b.artikelnummer === a.artikelnummer && b.menge > 0 &&
+          (sucheKarton ? b.lagerplatz === sucheKarton : true) &&
+          (selectedPaletten.size ? new Set(sucheLagerplaetzeCache.filter(x=>selectedPaletten.has(x.palette||'')).map(x=>x.name)).has(b.lagerplatz) : true))
+      : sucheBestandCache.filter(b => b.artikelnummer === a.artikelnummer);
+    plaetze = plaetze.slice().sort((x,y) => (y.menge>0)-(x.menge>0) || x.lagerplatz.localeCompare(y.lagerplatz));
+    const gesamt = gesamtCache[a.artikelnummer] || 0;
+
+    if (!plaetze.length) {
+      const uid = sucheUid(a.artikelnummer, '—');
+      return [`<tr>
+        <td class="col-name">${nameHtml}</td>
+        <td class="mono">${esc(a.artikelnummer)}</td>
+        <td class="mono">${esc(a.gtin||'—')}</td>
+        <td style="text-align:right;">${gesamt}</td>
+        <td><span class="lp lp-leer">—</span></td>
+        <td style="text-align:right;">0</td>
+        <td style="white-space:nowrap;">
+          <input type="number" id="bk-m-${uid}" value="1" min="1" style="width:56px;height:30px;padding:0 6px;">
+          <button style="background:var(--green);height:30px;padding:0 10px;" onclick="sucheBuchen('${jsAttr(a.artikelnummer)}','—','ein')">+ Ein</button>
+        </td>
+      </tr>`];
+    }
+    return plaetze.map((p, i) => {
+      const leer = p.menge === 0;
+      const uid = sucheUid(a.artikelnummer, p.lagerplatz);
+      const rs = plaetze.length;
+      return `<tr>
+        ${i===0 ? `<td class="col-name" rowspan="${rs}">${nameHtml}</td>` : ''}
+        ${i===0 ? `<td class="mono" rowspan="${rs}">${esc(a.artikelnummer)}</td>` : ''}
+        ${i===0 ? `<td class="mono" rowspan="${rs}">${esc(a.gtin||'—')}</td>` : ''}
+        ${i===0 ? `<td style="text-align:right;" rowspan="${rs}">${gesamt}</td>` : ''}
+        <td><span class="lp${leer?' lp-leer':''}" title="${leer?'Früherer Lagerort (leer)':''}">${esc(p.lagerplatz)}</span></td>
+        <td style="text-align:right;${leer?'color:var(--text-3);':''}">${p.menge}</td>
+        <td style="white-space:nowrap;">
+          <input type="number" id="bk-m-${uid}" value="1" min="1" style="width:56px;height:30px;padding:0 6px;">
+          <button style="background:var(--green);height:30px;padding:0 10px;" onclick="sucheBuchen('${jsAttr(a.artikelnummer)}','${jsAttr(p.lagerplatz)}','ein')">+ Ein</button>
+          ${leer ? '' : `<button style="background:var(--red);height:30px;padding:0 10px;" onclick="sucheBuchen('${jsAttr(a.artikelnummer)}','${jsAttr(p.lagerplatz)}','aus')">− Aus</button>`}
+        </td>
+      </tr>`;
+    });
+  });
+
   let html = '<table><thead><tr>'
-    + th('name','Name') + th('nr','Artikelnummer') + th('ean','EAN') + th('menge','Menge',true) + th('online','Status')
-    + '<th></th></tr></thead><tbody>';
-  html += liste.map(a => `<tr>
-      <td>${esc(a.artikelname||'')}</td>
-      <td class="mono">${esc(a.artikelnummer)}</td>
-      <td class="mono">${esc(a.gtin||'—')}</td>
-      <td style="text-align:right;">${a.menge}</td>
-      <td>${amaBadge(a.online)}</td>
-      <td style="white-space:nowrap;">
-        <button class="sec" style="padding:2px 8px;" onclick="openEtikettModal('${jsAttr(a.artikelnummer)}','${jsAttr(a.artikelname||'')}','${jsAttr(a.gtin||'')}')">🏷️</button>
-        <button class="sec" style="padding:2px 8px;" onclick="openEdit('${jsAttr(a.artikelnummer)}')">✏️</button>
-      </td>
-    </tr>`).join('');
-  html += '</tbody></table>';
+    + `<th style="width:26px;">${kopfCb}</th>`
+    + th('name','Name') + th('nr','Artikelnummer') + th('ean','EAN') + th('gesamt','Gesamt')
+    + '<th>Lagerplatz</th><th style="text-align:right;">Menge</th><th>Buchen</th>'
+    + '</tr></thead><tbody>' + rows.join('') + '</tbody></table>';
+  if (gesamtGefiltert > hits.length) {
+    html += `<div class="hint" style="padding:10px 4px;">${hits.length} von ${gesamtGefiltert} Artikeln — <a href="#" onclick="sucheMehrLaden();return false;">weitere ${Math.min(SUCH_BLOCK, gesamtGefiltert-hits.length)} laden</a></div>`;
+  }
   box.innerHTML = html;
 }
 
@@ -1032,10 +1189,17 @@ async function resolveArtikel(code) {
 }
 
 // ── Scanner (Schnellscan, wie alte App) ─────────────────────────────────────
-let ssMode = 'aus';   // 'aus' voreingestellt (wie Original)
+let ssMode = null;    // keine Vorauswahl — erst nach Klick auf Ein-/Ausbuchen aktiv
 let ssLp   = null;    // gewählter Lagerplatz beim Einbuchen (bleibt aktiv)
 function ssInit() {
-  ssSetMode(ssMode);
+  ssMode = null;
+  el('ss-mode-aus').classList.remove('active');
+  el('ss-mode-ein').classList.remove('active');
+  el('ss-lp-section').style.display = 'none';
+  el('ss-pick-section').style.display = 'none';
+  el('ss-scan').value = '';
+  el('ss-scan').disabled = true;
+  ssStatus('Bitte zuerst „− Ausbuchen" oder „＋ Einbuchen" wählen.');
 }
 function ssStatus(html, cls) {
   el('ss-status').innerHTML = cls ? `<span class="${cls}">${html}</span>` : html;
@@ -1047,6 +1211,7 @@ function ssSetMode(m) {
   el('ss-lp-section').style.display = m === 'ein' ? 'block' : 'none';
   el('ss-pick-section').style.display = 'none';
   el('ss-scan').value = '';
+  el('ss-scan').disabled = false;
   if (m === 'ein') {
     ssBuildLpBtns();
     ssStatus(ssLp ? `Lagerplatz: <b>${esc(ssLp)}</b> — bereit zum Scannen` : 'Lagerplatz wählen, dann scannen');
@@ -1089,6 +1254,7 @@ async function ssBookPick(artnr, lp, typ, name) {
   el('ss-scan').focus();
 }
 async function ssScan() {
+  if (!ssMode) { ssStatus('Bitte zuerst „− Ausbuchen" oder „＋ Einbuchen" wählen.', 'err'); return; }
   const code = el('ss-scan').value.trim();
   el('ss-scan').value = '';
   el('ss-pick-section').style.display = 'none';
