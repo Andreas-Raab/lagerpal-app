@@ -1120,30 +1120,44 @@ function code128svg(text, unit, height) {
 }
 async function kartonBlattDrucken(name) {
   const { data: arts } = await client.from('bestaende')
-    .select('artikelnummer, menge, artikel(artikelname,gtin,online)').eq('lagerplatz', name).gt('menge',0);
+    .select('artikelnummer, menge, artikel(artikelname,gtin)').eq('lagerplatz', name).gt('menge',0);
   const { data: metaRows } = await client.from('v_lagerplaetze').select('palette,kanal').eq('name', name).limit(1);
   const meta = (metaRows && metaRows[0]) || { palette:'', kanal:0 };
-  const rows = (arts||[]).map(r => ({ artnr:r.artikelnummer, name:(r.artikel&&r.artikel.artikelname)||'', gtin:(r.artikel&&r.artikel.gtin)||'', menge:r.menge, online:(r.artikel&&r.artikel.online)||0 }));
-  rows.sort((x,y)=>{ const n=(x.name||'').toLowerCase().localeCompare((y.name||'').toLowerCase()); if(n) return n; return (x.gtin||'').split('').reverse().join('').localeCompare((y.gtin||'').split('').reverse().join('')); });
+  // Für "Weitere Lagerplätze": alle anderen Plätze, auf denen dieselben Artikel
+  // noch liegen (Karton ist sortenrein — Online/Offline daher nicht mehr relevant).
+  const artnrs = [...new Set((arts||[]).map(r => r.artikelnummer))];
+  const weitereMap = {};
+  if (artnrs.length) {
+    const { data: alle } = await client.from('bestaende').select('artikelnummer,lagerplatz,menge')
+      .in('artikelnummer', artnrs).neq('lagerplatz', name).gt('menge',0);
+    (alle||[]).forEach(r => { (weitereMap[r.artikelnummer] = weitereMap[r.artikelnummer] || []).push(r.lagerplatz + ' (' + r.menge + ')'); });
+  }
+  const rows = (arts||[]).map(r => ({ artnr:r.artikelnummer, name:(r.artikel&&r.artikel.artikelname)||'', gtin:(r.artikel&&r.artikel.gtin)||'', menge:r.menge,
+    weitere: (weitereMap[r.artikelnummer]||[]).join(', ') || '—' }));
+  // Sortierung ausschließlich nach EAN, aber von hinten (letzte Ziffer zuerst).
+  rows.sort((x,y)=>(x.gtin||'').split('').reverse().join('').localeCompare((y.gtin||'').split('').reverse().join('')));
   const kanalTxt = meta.kanal===1?'🟢 online':(meta.kanal===2?'🔴 nicht online':'gemischt');
-  const onTxt = o => o===1?'ja':(o===2?'nein':'—');
   const svg = code128svg(name, 2, 52);
   const bc = svg ? `<div>${svg}</div><div style="font-size:9pt;letter-spacing:1px;">${esc(name)}</div>` : `<div style="font-weight:700;">${esc(name)}</div>`;
-  const body = rows.map(a => `<tr><td class="mono">${esc(a.gtin)}</td><td>${esc(a.name)}</td><td class="mono">${esc(a.artnr)}</td><td class="r">${a.menge}</td><td class="c">${onTxt(a.online)}</td></tr>`).join('')
+  const body = rows.map(a => `<tr><td class="mono">${esc(a.gtin)}</td><td>${esc(a.name)}</td><td class="mono">${esc(a.artnr)}</td><td class="r">${a.menge}</td><td>${esc(a.weitere)}</td></tr>`).join('')
     || '<tr><td colspan="5" style="text-align:center;color:#888;padding:8mm;">(leer)</td></tr>';
   const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${esc(name)}</title><style>
-    *{box-sizing:border-box;} body{margin:0;padding:12mm;font-family:Arial,sans-serif;color:#000;}
+    *{box-sizing:border-box;} body{margin:0;padding:14mm;font-family:Arial,sans-serif;color:#000;}
     .kar{font-size:90pt;font-weight:800;line-height:1;letter-spacing:-1px;}
     .hdr{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #000;padding-bottom:4mm;margin:2mm 0 5mm;}
     .meta{font-size:14pt;} .pal{font-weight:700;}
     table{width:100%;border-collapse:collapse;font-size:10.5pt;} th,td{border-bottom:1px solid #ccc;padding:2mm;text-align:left;}
     th{border-bottom:1.5px solid #000;font-size:9pt;text-transform:uppercase;} .r{text-align:right;} .c{text-align:center;} .mono{font-family:'Courier New',monospace;}
-    .hint{margin-bottom:5mm;font-size:9pt;color:#666;} @media print{body{padding:0;}.hint{display:none;}@page{margin:12mm;}}
+    .hint{margin-bottom:5mm;font-size:9pt;color:#666;}
+    /* Rand bleibt beim Drucken bewusst als echtes Innen-Padding erhalten (nicht auf 0
+       zurückgesetzt) - so wird nie bis an den Papierrand gedruckt, egal was der
+       Drucker/Browser als @page-Rand tatsächlich umsetzt. */
+    @media print{.hint{display:none;}@page{margin:8mm;}}
   </style></head><body>
     <div class="hint">Karton-Blatt. Druck startet automatisch — sonst Strg/Cmd+P.</div>
     <div class="kar">${esc(name)}</div>
     <div class="hdr"><div class="meta"><div class="pal">Palette: ${esc(meta.palette||'—')}</div><div>Kanal: ${kanalTxt}</div></div><div style="text-align:center;">${bc}</div></div>
-    <table><thead><tr><th>EAN</th><th>Artikelname</th><th>Art.-Nr.</th><th class="r">Menge</th><th class="c">Online</th></tr></thead><tbody>${body}</tbody></table>
+    <table><thead><tr><th>EAN</th><th>Artikelname</th><th>Art.-Nr.</th><th class="r">Menge</th><th>Weitere Lagerplätze</th></tr></thead><tbody>${body}</tbody></table>
     <script>window.onload=function(){setTimeout(function(){window.print();},150);};<\/script>
   </body></html>`;
   const w = window.open('', '_blank');
