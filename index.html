@@ -2282,7 +2282,13 @@ function toggleLeerPanel() {
 }
 async function leerGesehen() {
   if (!confirm('Alle offenen Leermeldungen als gesehen markieren?')) return;
-  const { error } = await client.from('leermeldungen').update({ gesehen: 1 }).eq('gesehen', 0);
+  // Über die Datenbank-Funktion statt direkt in die Tabelle zu schreiben: Nach
+  // Paket 3 (Schritt B) haben Nutzer keine direkten Schreibrechte mehr.
+  let { error } = await client.rpc('leermeldungen_alle_gesehen');
+  if (error && /leermeldungen_alle_gesehen/.test(error.message || '') && /(find|exist|schema cache)/i.test(error.message || '')) {
+    // Übergang: Funktion noch nicht angelegt (Schritt A fehlt) → bisheriger Weg
+    ({ error } = await client.from('leermeldungen').update({ gesehen: 1 }).eq('gesehen', 0));
+  }
   if (error) { alert('Fehler: ' + error.message); return; }
   refreshLeer();
 }
