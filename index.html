@@ -555,18 +555,26 @@ function beschreibeBuchung(b) {
   if (b.typ === 'Zusammenlegung') return 'Lagerplätze zusammengelegt · ' + (b.lagerplatz||'');
   return (b.typ === 'Eingang' ? 'Eingebucht' : 'Ausgebucht') + ': ' + b.menge + '× ' + (b.artikelname||b.artikelnummer) + ' auf ' + (b.lagerplatz||'');
 }
+let undoLetzteId = null;
 async function refreshUndo() {
   if (!client) return;
-  const { data } = await client.from('buchungen').select('typ,artikelnummer,artikelname,lagerplatz,menge')
+  const { data } = await client.from('buchungen').select('id,typ,artikelnummer,artikelname,lagerplatz,menge')
     .in('typ', UNDO_TYPEN).eq('rueckgaengig_gemacht', 0).order('id', { ascending: false }).limit(1);
   const bar = el('undo-bar');
-  if (!data || !data.length) { bar.style.display = 'none'; return; }
+  if (!data || !data.length) { undoLetzteId = null; bar.style.display = 'none'; return; }
+  undoLetzteId = data[0].id;
   el('undo-bar-info').innerHTML = 'Letzte Aktion: <strong>' + esc(beschreibeBuchung(data[0])) + '</strong>';
   bar.style.display = 'flex';
 }
 async function rueckgaengigJetzt() {
-  const { data: res, error } = await client.rpc('rueckgaengig');
-  if (error) { alert('Fehler: ' + error.message); return; }
+  if (!undoLetzteId) { alert('Keine rückgängig-machbare Aktion vorhanden — bitte kurz aktualisieren.'); return; }
+  const { data: res, error } = await client.rpc('rueckgaengig', { p_buchung_id: undoLetzteId });
+  if (error) {
+    // Jemand anderes war inzwischen schneller (oder die Anzeige war veraltet) - Leiste neu laden statt blind meckern.
+    await refreshUndo();
+    alert('Fehler: ' + error.message);
+    return;
+  }
   await ladeAllePlaetze();
   refreshUndo(); refreshLeer();
   sucheRefresh();
@@ -1649,12 +1657,12 @@ async function datenbankSichern() {
   st.innerHTML = '<span class="hint">⏳ Sicherung wird erstellt…</span>';
   try {
     const [artikel, bestaende, lagerplaetze, buchungen, leermeldungen, paletten] = await Promise.all([
-      fetchAll('artikel', '*'),
-      fetchAll('bestaende', '*'),
-      fetchAll('lagerplaetze', '*'),
-      fetchAll('buchungen', '*'),
-      fetchAll('leermeldungen', '*'),
-      fetchAll('paletten', '*')
+      fetchAll('artikel', '*', { orderBy: [{ col: 'artikelnummer' }] }),
+      fetchAll('bestaende', '*', { orderBy: [{ col: 'artikelnummer' }, { col: 'lagerplatz' }] }),
+      fetchAll('lagerplaetze', '*', { orderBy: [{ col: 'name' }] }),
+      fetchAll('buchungen', '*', { orderBy: [{ col: 'id' }] }),
+      fetchAll('leermeldungen', '*', { orderBy: [{ col: 'id' }] }),
+      fetchAll('paletten', '*', { orderBy: [{ col: 'name' }] })
     ]);
     const snapshot = { erstellt: new Date().toISOString(), quelle: 'LagerPal Web-App', artikel, bestaende, lagerplaetze, buchungen, leermeldungen, paletten };
     const blob = new Blob([JSON.stringify(snapshot)], { type: 'application/json' });
@@ -1848,6 +1856,11 @@ async function fetchAll(table, select, opts) {
     if (opts.eq) for (const k in opts.eq) q = q.eq(k, opts.eq[k]);
     if (opts.build) q = opts.build(q);
     if (opts.order) q = q.order(opts.order.col, { ascending: opts.order.asc });
+    // orderBy: Liste von Spalten für eine STABILE Sortierung über mehrere Seiten hinweg
+    // (wichtig bei .range()-Pagination - ohne vollständig eindeutige Sortierung ist die
+    // Reihenfolge zwischen zwei range()-Aufrufen nicht garantiert, Zeilen könnten beim
+    // Blättern doppelt auftauchen oder fehlen, z.B. beim Backup-Export).
+    if (opts.orderBy) for (const o of opts.orderBy) q = q.order(o.col, { ascending: o.asc !== false });
     const { data, error } = await q;
     if (error) throw error;
     all = all.concat(data || []);
