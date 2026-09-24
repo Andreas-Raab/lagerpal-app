@@ -102,6 +102,7 @@ tbody tr:hover td{background:#eef4fb;}
 #undo-bar-info{font-size:.82rem;color:#7c4a12;flex:1;min-width:0;}
 #undo-bar-btn{background:var(--amber);color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:.82rem;font-weight:600;}
 #undo-bar-btn:hover{background:#c2630f;}
+#undo-bar-btn:disabled{opacity:.5;cursor:wait;}
 .ss-mode-toggle{display:inline-flex;border:1.5px solid var(--line);border-radius:8px;overflow:hidden;}
 .ss-mode{padding:8px 18px;background:#fff;color:var(--text);font-weight:600;font-size:.9rem;cursor:pointer;border:none;}
 .ss-mode+.ss-mode{border-left:1.5px solid var(--line);}
@@ -381,7 +382,7 @@ tbody tr:hover td{background:#eef4fb;}
   <div id="tab-import" class="tabpanel" style="display:none;">
     <div class="card">
       <b>⬆️ Bestände per CSV/Excel importieren (JTL-kompatibel)</b>
-      <div class="hint" style="margin-top:6px;">Die Datei muss die Spalten <b>Artikelnummer</b>, <b>Lagerplatz</b> und <b>Bestand/Menge</b> enthalten (optional: Artikelname, GTIN, Set).
+      <div class="hint" style="margin-top:6px;">Die Datei muss die Spalten <b>Artikelnummer</b>, <b>Lagerplatz</b> und <b>Bestand/Menge</b> (ganze Zahl, nicht negativ) enthalten (optional: Artikelname, GTIN, Set).
         CSV (Trennzeichen/Kodierung automatisch erkannt) und Excel (.xlsx) werden unterstützt.</div>
       <div class="hint" style="margin-top:6px;color:#7c4a12;">⚠️ Ein CSV-Import lässt sich <b>nicht</b> per „Rückgängig" aufheben — nur einzeln über das Protokoll korrigieren.</div>
       <div class="ss-mode-toggle" style="margin-top:12px;">
@@ -523,7 +524,7 @@ async function anmelden() {
   if (!client) return;
   el('login-status').textContent = 'Anmelden…';
   const { data, error } = await client.auth.signInWithPassword({ email: el('email').value.trim(), password: el('pass').value });
-  if (error) { el('login-status').innerHTML = '<span class="err">Login fehlgeschlagen: ' + error.message + '</span>'; return; }
+  if (error) { el('login-status').innerHTML = '<span class="err">Login fehlgeschlagen: ' + esc(error.message) + '</span>'; return; }
   zeigeApp(data.user.email);
 }
 async function abmelden() {
@@ -555,9 +556,8 @@ function beschreibeBuchung(b) {
   if (b.typ === 'Zusammenlegung') return 'Lagerplätze zusammengelegt · ' + (b.lagerplatz||'');
   return (b.typ === 'Eingang' ? 'Eingebucht' : 'Ausgebucht') + ': ' + b.menge + '× ' + (b.artikelname||b.artikelnummer) + ' auf ' + (b.lagerplatz||'');
 }
-// Muss zur Altersgrenze in rueckgaengig() (SQL, v_max_alter/2 hours) passen. Die
-// Datenbank prüft ohnehin selbst; hier geht es nur darum, die Leiste rechtzeitig
-// auszublenden, statt eine Aktion anzubieten, die der Server sowieso ablehnt.
+// Muss zur Altersgrenze in rueckgaengig() (SQL, v_max_alter) passen. Die Datenbank
+// prüft ohnehin selbst; hier geht es nur darum, die Leiste rechtzeitig auszublenden.
 const UNDO_MAX_MS = 2 * 60 * 60 * 1000;
 let undoLetzteId = null;
 let undoLaeuft = false;      // verhindert Doppelklick während des Aufrufs
@@ -567,23 +567,22 @@ async function refreshUndo() {
   if (!client) return;
   if (undoLaeuft || Date.now() < undoPauseBis) return;
   const seq = ++undoRefreshSeq;
-  // Dieselbe Logik wie im Backend: die neueste noch nicht zurückgenommene Buchung
-  // JEDES Typs laden (nicht nur der umkehrbaren) - nur so stimmt "letzte Aktion"
-  // mit dem überein, was rueckgaengig() tatsächlich prüft. Ist der Typ nicht
-  // umkehrbar (z.B. CSV-Import, Inventur), bleibt die Leiste ausgeblendet, auch
-  // wenn danach noch eine ältere umkehrbare Aktion in der Historie steht.
-  const { data } = await client.from('buchungen').select('id,typ,artikelnummer,artikelname,lagerplatz,menge,zeitstempel')
+  // Dieselbe Logik wie in rueckgaengig(): maßgeblich ist die NEUESTE nicht
+  // zurückgenommene Buchung JEDES Typs. Ist die nicht umkehrbar (z. B. Inventur,
+  // CSV-Import), gibt es nichts zurückzunehmen - auch keine ältere Aktion.
+  const { data, error } = await client.from('buchungen')
+    .select('id,typ,zeitstempel,artikelnummer,artikelname,lagerplatz,menge')
     .eq('rueckgaengig_gemacht', 0).order('id', { ascending: false }).limit(1);
   if (seq !== undoRefreshSeq || undoLaeuft || Date.now() < undoPauseBis) return;
   const bar = el('undo-bar');
-  const b = (data && data.length) ? data[0] : null;
-  const zeit = b && b.zeitstempel ? new Date(b.zeitstempel) : null;
-  if (!b || !UNDO_TYPEN.includes(b.typ) || (zeit && (Date.now() - zeit.getTime()) > UNDO_MAX_MS)) {
+  const b = (!error && data && data.length) ? data[0] : null;
+  const zeit = b ? new Date(b.zeitstempel) : null;
+  if (!b || !UNDO_TYPEN.includes(b.typ) || (Date.now() - zeit.getTime()) > UNDO_MAX_MS) {
     undoLetzteId = null; bar.style.display = 'none'; return;
   }
   undoLetzteId = b.id;
-  const uhr = zeit ? zeit.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '';
-  el('undo-bar-info').innerHTML = 'Letzte Aktion' + (uhr ? ' (' + esc(uhr) + ' Uhr)' : '') + ': <strong>' + esc(beschreibeBuchung(b)) + '</strong>';
+  const uhr = zeit.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  el('undo-bar-info').innerHTML = 'Letzte Aktion (' + esc(uhr) + ' Uhr): <strong>' + esc(beschreibeBuchung(b)) + '</strong>';
   el('undo-bar-btn').style.display = '';
   el('undo-bar-btn').disabled = false;
   bar.style.display = 'flex';
@@ -1084,7 +1083,7 @@ async function erScan() {
     // ein einziger atomarer Aufruf statt zwei getrennter (umlagern + buchen) —
     // damit bei Verbindungsabbruch nie ein halb fertiger Zustand entsteht
     const { error } = await client.rpc('einraeumen_scan', { p_artikelnummer:g.artnr, p_quelle:erSession.quelle, p_ziel:ziel, p_menge:menge });
-    if (error) { st.innerHTML='<span class="err">❌ '+error.message+'</span>'; el('er-scan').select(); return; }
+    if (error) { st.innerHTML='<span class="err">❌ '+esc(error.message)+'</span>'; el('er-scan').select(); return; }
     const extra = menge > verf ? ` (davon ${menge-verf} als Inventur-Zugang)` : '';
     erZeigeFlash(kanal, (g.name||g.artnr) + ' → ' + ziel);
     sprich(kanal === 'online' ? 'online' : 'offline');
@@ -1347,7 +1346,7 @@ async function umlagern() {
   if (!g || g.mehrdeutig) { st.innerHTML = '<span class="err">Artikel nicht eindeutig/gefunden.</span>'; return; }
   st.textContent = 'Lagere um…';
   const { data, error } = await client.rpc('umlagern', { p_artikelnummer: g.artnr, p_von: von, p_nach: nach, p_menge: menge });
-  if (error) { st.innerHTML = '<span class="err">Fehler: ' + error.message + '</span>'; return; }
+  if (error) { st.innerHTML = '<span class="err">Fehler: ' + esc(error.message) + '</span>'; return; }
   st.innerHTML = `<span class="ok">🔀 ${menge}× ${esc(data.artikelname||g.artnr)} umgelagert<br>`
     + `${esc(von)}: <b>${data.von_nachher}</b> · ${esc(nach)}: <b>${data.nach_nachher}</b></span>`;
   el('u-menge').value = 1;
@@ -1483,7 +1482,7 @@ async function kartonsLaden() {
   const grid = el('kartons-grid'); grid.textContent = 'Wird geladen…';
   el('kartons-detail').innerHTML = '';
   const { data, error } = await client.from('v_lagerplaetze').select('*');
-  if (error) { grid.innerHTML = '<span class="err">Fehler: ' + error.message + '</span>'; return; }
+  if (error) { grid.innerHTML = '<span class="err">Fehler: ' + esc(error.message) + '</span>'; return; }
   vlpCache = data || [];
   lpFillSelects();
   palettenFuellen();
@@ -1520,7 +1519,7 @@ function kartonPaletteZeigen(key, btn) {
 let palettenCache = [];
 async function palettenFuellen() {
   const { data, error } = await client.from('paletten').select('name').order('name', { ascending: true });
-  if (error) { el('pal-status').innerHTML = '<span class="err">' + error.message + '</span>'; return; }
+  if (error) { el('pal-status').innerHTML = '<span class="err">' + esc(error.message) + '</span>'; return; }
   palettenCache = (data || []).map(x => x.name);
   const opts = palettenCache.map(n => `<option value="${escAttr(n)}">${esc(n)}</option>`).join('');
   const sel = el('pal-um-von'); if (sel) sel.innerHTML = '<option value="">— wählen —</option>' + opts;
@@ -1609,13 +1608,11 @@ async function bestandZeilenAusDatei(file) {
   const colGtin = spalteFinden(rows, ['gtin','ean','barcode']);
   const colSet = spalteFinden(rows, ['set','setartikel','set-artikel','set artikel','ist_set','bundle']);
   const gefunden = ' Gefunden: ' + Object.keys(rows[0]).join(', ');
-  if (!colArtnr) throw new Error('Spalte "Artikelnummer" nicht gefunden.' + gefunden);
-  if (!colBestand) throw new Error('Spalte "Bestand"/"Menge" nicht gefunden.' + gefunden);
-  // Lagerplatz ist Pflicht: fehlt die Spalte (z.B. weil die Kopfzeile anders
-  // benannt ist als erwartet), würde ohne diese Prüfung jede Zeile stillschweigend
-  // mit leerem Lagerplatz landen - beim Komplett-Import setzt das sonst unbemerkt
-  // ALLE bestehenden Bestände auf 0 (siehe RPC-seitige Absicherung).
-  if (!colLp) throw new Error('Spalte "Lagerplatz" nicht gefunden.' + gefunden);
+  if (!colArtnr) throw new Error('Spalte „Artikelnummer" nicht gefunden.' + gefunden);
+  if (!colBestand) throw new Error('Spalte „Bestand"/„Menge" nicht gefunden.' + gefunden);
+  // Ohne Lagerplatz-Spalte würde kein einziger Bestand geändert - und ein
+  // Komplett-Import würde ALLE Bestände auf 0 setzen. Deshalb Pflicht.
+  if (!colLp) throw new Error('Spalte „Lagerplatz" nicht gefunden (erlaubte Namen: Lagerplatz, Lager, Standort).' + gefunden);
   const zeilen = [];
   const ungueltig = [];   // Zeilen mit Artikelnummer, aber unbrauchbarem Bestand
   const negativ = [];
@@ -1625,9 +1622,8 @@ async function bestandZeilenAusDatei(file) {
     if (!artikelnummer) continue;
     const bZahl = Number(bRoh.replace(',', '.'));
     // Nur ganze Zahlen. "1.234" / "1,5" / "abc" / leer werden NICHT mehr still
-    // abgeschnitten oder übersprungen (1.234 wurde früher zu 1 - deutsche
-    // Tausenderpunkte wurden vom alten parseInt(parseFloat(...)) verschluckt).
-    if (bRoh === '' || !Number.isInteger(bZahl)) { ungueltig.push(artikelnummer + ' ("' + bRoh + '")'); continue; }
+    // abgeschnitten oder übersprungen (1.234 wurde früher zu 1).
+    if (bRoh === '' || !Number.isInteger(bZahl)) { ungueltig.push(artikelnummer + ' („' + bRoh + '")'); continue; }
     const bestand = bZahl;
     if (bestand < 0) { negativ.push(artikelnummer + ' (' + bestand + ')'); continue; }
     zeilen.push({
@@ -1715,6 +1711,7 @@ async function bestandImportieren() {
       ${data.auf_null_gesetzt > 0 ? hinweis(`Auf 0 gesetzt: <b>${data.auf_null_gesetzt}</b> Artikel`) : ''}
       ${data.nicht_gefunden > 0 ? hinweis(`Übersprungen (unbekannt): ${data.nicht_gefunden}${data.beispiele_nicht_gefunden?.length ? ' (z.B. ' + esc(data.beispiele_nicht_gefunden.join(', ')) + ')' : ''}`) : ''}
       ${data.ohne_lagerplatz > 0 ? hinweis(`Übersprungen (Lagerplatz leer): <b>${data.ohne_lagerplatz}</b> Zeilen`) : ''}
+      ${data.gtin_konflikte > 0 ? hinweis(`GTIN nicht übernommen (gehört schon einem anderen Artikel): <b>${data.gtin_konflikte}</b>${data.beispiele_gtin_konflikte?.length ? ', z. B. ' + esc(data.beispiele_gtin_konflikte.join(' · ')) : ''}`) : ''}
       ${ungueltig.length ? hinweis(`Übersprungen (Bestand leer/keine ganze Zahl): <b>${ungueltig.length}</b> Zeilen, z. B. ${esc(ungueltig.slice(0, 5).join(', '))}`) : ''}
     </div>`;
     bestandImportZuruecksetzen();
@@ -1862,7 +1859,8 @@ async function backupEinspielen() {
   const { data, error } = await client.rpc('backup_wiederherstellen', { p_daten: daten });
   if (error) { st.innerHTML = '<span class="err">❌ ' + esc(error.message) + '</span>'; el('restore-btn').disabled = false; return; }
   const palTxt = data.paletten === null || typeof data.paletten === 'undefined' ? ' (Paletten-Liste unverändert, war nicht in dieser Sicherung enthalten)' : `, ${data.paletten} Paletten`;
-  st.innerHTML = `<span class="ok">✓ Eingespielt: ${data.artikel} Artikel, ${data.bestaende} Bestände, ${data.lagerplaetze} Lagerplätze, ${data.buchungen} Protokoll-Einträge, ${data.leermeldungen} Leermeldungen${palTxt}.</span>`;
+  st.innerHTML = `<span class="ok">✓ Eingespielt: ${data.artikel} Artikel, ${data.bestaende} Bestände, ${data.lagerplaetze} Lagerplätze, ${data.buchungen} Protokoll-Einträge, ${data.leermeldungen} Leermeldungen${palTxt}.</span>`
+    + (data.negativ_auf_null > 0 ? `<div class="err" style="margin-top:6px;">⚠️ ${data.negativ_auf_null} negative Bestände aus der Sicherung wurden auf 0 gesetzt (bitte per Inventur prüfen).</div>` : '');
   el('restore-phrase').value = '';
   el('restore-file').value = '';
   await ladeAllePlaetze();
@@ -1941,6 +1939,11 @@ async function importAnwenden() {
 function importReset() { importFile = null; el('imp-file').value = ''; el('imp-result').innerHTML = ''; }
 
 // Alle Zeilen einer Tabelle holen (überwindet das 1000-Zeilen-API-Limit)
+// Primärschlüssel je Tabelle/View – eindeutige Sortierung fürs Blättern in fetchAll()
+const FETCH_PK = {
+  artikel: ['artikelnummer'], bestaende: ['artikelnummer', 'lagerplatz'], lagerplaetze: ['name'],
+  v_lagerplaetze: ['name'], buchungen: ['id'], leermeldungen: ['id'], paletten: ['name']
+};
 async function fetchAll(table, select, opts) {
   opts = opts || {};
   let all = [], from = 0; const pageSize = 1000;
@@ -1954,6 +1957,11 @@ async function fetchAll(table, select, opts) {
     // Reihenfolge zwischen zwei range()-Aufrufen nicht garantiert, Zeilen könnten beim
     // Blättern doppelt auftauchen oder fehlen, z.B. beim Backup-Export).
     if (opts.orderBy) for (const o of opts.orderBy) q = q.order(o.col, { ascending: o.asc !== false });
+    // Immer den Primärschlüssel als letzte Sortierstufe anhängen: sonst ist die
+    // Reihenfolge bei gleichen Werten (z. B. gleicher Artikelname, oder bei
+    // bestaende nur nach artikelnummer) zwischen zwei Seiten nicht garantiert.
+    const schonSortiert = new Set([opts.order && opts.order.col, ...(opts.orderBy || []).map(o => o.col)]);
+    for (const c of (FETCH_PK[table] || [])) if (!schonSortiert.has(c)) q = q.order(c, { ascending: true });
     const { data, error } = await q;
     if (error) throw error;
     all = all.concat(data || []);
@@ -1961,6 +1969,22 @@ async function fetchAll(table, select, opts) {
     from += pageSize;
   }
   return all;
+}
+// Zeitstempel aus der DB (UTC) in Ortszeit des Geräts, Format "2026-09-24 14:05".
+// Vorher wurde der Text nur abgeschnitten → Anzeige in UTC (im Sommer 2 h zu früh).
+function fmtZeit(ts, mitSekunden) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return String(ts);
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes())
+    + (mitSekunden ? ':' + p(d.getSeconds()) : '');
+}
+// Datumsfeld "2026-09-24" → Tagesbeginn in Ortszeit als ISO-Zeitpunkt (mit Offset),
+// optional um n Tage verschoben. Grundlage für "von"/"bis"-Filter im Protokoll.
+function tagesbeginnIso(datum, plusTage) {
+  const [y, m, d] = datum.split('-').map(Number);
+  return new Date(y, m - 1, d + (plusTage || 0)).toISOString();
 }
 function csvZelle(v) { v = v == null ? '' : String(v); if (/[";\n]/.test(v)) v = '"' + v.replace(/"/g, '""') + '"'; return v; }
 function csvDownload(dateiname, zeilen) {
@@ -1979,9 +2003,9 @@ async function exportProtokollCsv() {
     const rows = await fetchAll('buchungen',
       'zeitstempel,typ,artikelnummer,artikelname,gtin,lagerplatz,menge,bestand_lp_vorher,bestand_lp_nachher,bestand_gesamt_vorher,bestand_gesamt_nachher,kommentar',
       { eq: typ ? { typ } : {}, order: { col: 'id', asc: false },
-        build: q => { if (von) q = q.gte('zeitstempel', von+'T00:00:00'); if (bis) q = q.lte('zeitstempel', bis+'T23:59:59'); return q; } });
+        build: q => { if (von) q = q.gte('zeitstempel', tagesbeginnIso(von)); if (bis) q = q.lt('zeitstempel', tagesbeginnIso(bis, 1)); return q; } });
     const head = ['Zeit','Typ','Artikelnummer','Artikelname','EAN','Lagerplatz','Menge','LP vorher','LP nachher','Gesamt vorher','Gesamt nachher','Kommentar'];
-    const data = rows.map(b => [b.zeitstempel, b.typ, b.artikelnummer, b.artikelname, b.gtin, b.lagerplatz, b.menge, b.bestand_lp_vorher, b.bestand_lp_nachher, b.bestand_gesamt_vorher, b.bestand_gesamt_nachher, b.kommentar]);
+    const data = rows.map(b => [fmtZeit(b.zeitstempel, true), b.typ, b.artikelnummer, b.artikelname, b.gtin, b.lagerplatz, b.menge, b.bestand_lp_vorher, b.bestand_lp_nachher, b.bestand_gesamt_vorher, b.bestand_gesamt_nachher, b.kommentar]);
     csvDownload('protokoll.csv', [head, ...data]);
   } catch (e) { alert('Fehler beim Export: ' + (e.message || e)); }
 }
@@ -2029,10 +2053,11 @@ async function protokollLaden() {
   const typ = el('prot-typ').value;
   if (typ) q = q.eq('typ', typ);
   const von = el('prot-von').value, bis = el('prot-bis').value;
-  if (von) q = q.gte('zeitstempel', von + 'T00:00:00');
-  if (bis) q = q.lte('zeitstempel', bis + 'T23:59:59');
+  // Tagesgrenzen in Ortszeit (vorher UTC → Einträge zwischen 0 und 2 Uhr fielen raus)
+  if (von) q = q.gte('zeitstempel', tagesbeginnIso(von));
+  if (bis) q = q.lt('zeitstempel', tagesbeginnIso(bis, 1));
   const { data, error } = await q;
-  if (error) { box.innerHTML = '<span class="err">Fehler: ' + error.message + '</span>'; return; }
+  if (error) { box.innerHTML = '<span class="err">Fehler: ' + esc(error.message) + '</span>'; return; }
   allProt = data || [];
   renderProtokoll();
 }
@@ -2053,7 +2078,7 @@ function renderProtokoll() {
   box.innerHTML = '<table><tr><th>Zeit</th><th>Typ</th><th>Artikel</th><th>EAN</th><th>Platz</th>'
     + '<th style="text-align:right;">Menge</th><th>LP-Best.</th><th>Gesamt</th><th>Kommentar</th></tr>'
     + data.map(b => {
-        const z = (b.zeitstempel||'').replace('T',' ').slice(0,16);
+        const z = fmtZeit(b.zeitstempel);
         const komm = (b.kommentar||'').replace(/\|.*$/s,'').slice(0,60);
         return `<tr>
           <td style="white-space:nowrap;">${esc(z)}</td>
@@ -2120,7 +2145,7 @@ async function invAbschliessen() {
   if (!Object.keys(zaehl).length) { el('inv-status').textContent = 'Keine Änderungen.'; return; }
   el('inv-status').textContent = 'Übernehme…';
   const { data, error } = await client.rpc('inventur_anwenden', { p_lagerplatz: lp, p_zaehlungen: zaehl });
-  if (error) { el('inv-status').innerHTML = '<span class="err">Fehler: ' + error.message + '</span>'; return; }
+  if (error) { el('inv-status').innerHTML = '<span class="err">Fehler: ' + esc(error.message) + '</span>'; return; }
   el('inv-status').innerHTML = `<span class="ok">✓ ${data.anzahl_geaendert} Korrektur(en) übernommen.</span>`;
   invLadePlatz();
 }
@@ -2149,14 +2174,14 @@ async function lpNeu() {
   const name = el('lp-neu').value.trim();
   if (!name) return;
   const { error } = await client.rpc('lagerplatz_neu', { p_name: name });
-  if (error) { el('lp-status').innerHTML = '<span class="err">' + error.message + '</span>'; return; }
+  if (error) { el('lp-status').innerHTML = '<span class="err">' + esc(error.message) + '</span>'; return; }
   el('lp-neu').value = ''; lpAfter('Lagerplatz „' + esc(name) + '" angelegt.');
 }
 async function lpUmbenennen() {
   const von = el('lp-um-von').value, nach = el('lp-um-nach').value.trim();
   if (!von || !nach) { el('lp-status').innerHTML = '<span class="err">Von-Platz und neuer Name nötig.</span>'; return; }
   const { error } = await client.rpc('lagerplatz_umbenennen', { p_alt: von, p_neu: nach });
-  if (error) { el('lp-status').innerHTML = '<span class="err">' + error.message + '</span>'; return; }
+  if (error) { el('lp-status').innerHTML = '<span class="err">' + esc(error.message) + '</span>'; return; }
   el('lp-um-nach').value = ''; lpAfter('Umbenannt: ' + esc(von) + ' → ' + esc(nach));
 }
 async function lpLoeschen() {
@@ -2170,7 +2195,7 @@ async function lpLoeschen() {
     if (!confirm('Es liegt noch Bestand darauf. Wirklich MIT Bestand löschen?')) return;
     res = await client.rpc('lagerplatz_loeschen', { p_name: name, p_mit_bestand: true });
   }
-  if (res.error) { el('lp-status').innerHTML = '<span class="err">' + res.error.message + '</span>'; return; }
+  if (res.error) { el('lp-status').innerHTML = '<span class="err">' + esc(res.error.message) + '</span>'; return; }
   lpAfter('Lagerplatz „' + esc(name) + '" gelöscht.');
 }
 async function lpZusammenlegen() {
@@ -2180,7 +2205,7 @@ async function lpZusammenlegen() {
   if (!ziel) { el('lp-status').innerHTML = '<span class="err">Zielname nötig.</span>'; return; }
   if (!confirm('Zusammenlegen:\n' + quellen.join(' + ') + '\n→ ' + ziel + ' ?')) return;
   const { error } = await client.rpc('lagerplatz_zusammenlegen', { p_quellen: quellen, p_ziel: ziel });
-  if (error) { el('lp-status').innerHTML = '<span class="err">' + error.message + '</span>'; return; }
+  if (error) { el('lp-status').innerHTML = '<span class="err">' + esc(error.message) + '</span>'; return; }
   el('lp-merge-ziel').value = ''; lpAfter('Zusammengelegt → ' + esc(ziel));
 }
 async function kartonSetzen() {
@@ -2189,7 +2214,7 @@ async function kartonSetzen() {
   const palette = el('karton-pal').value.trim();
   const kanal = parseInt(el('karton-kanal').value, 10);
   const { error } = await client.rpc('karton_setzen', { p_name: name, p_palette: palette, p_kanal: kanal });
-  if (error) { el('lp-status').innerHTML = '<span class="err">' + error.message + '</span>'; return; }
+  if (error) { el('lp-status').innerHTML = '<span class="err">' + esc(error.message) + '</span>'; return; }
   lpAfter('Karton „' + esc(name) + '" gespeichert.');
 }
 
@@ -2198,7 +2223,7 @@ async function loadDashboard() {
   const cards = el('dash-cards');
   cards.innerHTML = '<span class="hint">Wird geladen…</span>';
   const { data, error } = await client.from('v_dashboard').select('*').limit(1);
-  if (error) { cards.innerHTML = '<span class="err">Fehler: ' + error.message + '</span>'; return; }
+  if (error) { cards.innerHTML = '<span class="err">Fehler: ' + esc(error.message) + '</span>'; return; }
   const d = (data && data[0]) || {};
   const kpi = (label, wert, farbe) => `<div style="flex:1 1 140px;min-width:140px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;">
       <div style="font-size:1.6rem;font-weight:800;color:${farbe||'#2b6cb0'};line-height:1.1;">${wert}</div>
@@ -2220,7 +2245,7 @@ async function loadDashboard() {
   const box = el('dash-letzte');
   if (!bew || !bew.length) { box.textContent = 'Keine Bewegungen'; return; }
   box.innerHTML = '<table><tr><th>Zeit</th><th>Typ</th><th>Artikel</th><th>Platz</th><th style="text-align:right;">Menge</th></tr>'
-    + bew.map(b => { const z=(b.zeitstempel||'').replace('T',' ').slice(0,16);
+    + bew.map(b => { const z=fmtZeit(b.zeitstempel);
         return `<tr><td>${esc(z)}</td><td>${esc(b.typ||'')}</td><td>${esc((b.artikelnummer||'')+' · '+(b.artikelname||''))}</td><td>${esc(b.lagerplatz||'—')}</td><td style="text-align:right;">${b.menge==null?'—':b.menge}</td></tr>`;
       }).join('') + '</table>';
 }
@@ -2244,7 +2269,7 @@ function renderLeerPanel(data, gesamt) {
   const hinweis = (gesamt && gesamt > data.length)
     ? `<div class="muted" style="padding:6px 4px;">Zeige ${data.length} von ${gesamt} — „Alle als gesehen markieren" leert die Glocke komplett.</div>` : '';
   box.innerHTML = hinweis + data.map(l => {
-    const z = (l.zeitstempel||'').replace('T',' ').slice(0,16);
+    const z = fmtZeit(l.zeitstempel);
     if (l.hinweis) return `<div class="art"><b>📦 Einräum-Hinweis</b><div class="muted">${esc(l.hinweis)}<br>${esc(z)}</div></div>`;
     return `<div class="art"><b>${esc(l.artikelname || l.artikelnummer)}</b>
       <div class="muted">${esc(l.artikelnummer)}${l.gtin?' · EAN '+esc(l.gtin):''} · <span class="lp">${esc(l.lagerplatz)}</span> leer — ${esc(z)}</div></div>`;
@@ -2263,7 +2288,11 @@ async function leerGesehen() {
 }
 
 // ── Artikel anlegen / bearbeiten ────────────────────────────────────────────
-function jsAttr(s){ return String(s).replace(/&/g,'&amp;').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+// Für Werte in onclick="f('…')": erst JS-String maskieren (\\ ' Zeilenumbruch),
+// dann HTML-Attribut maskieren (& " <). Ohne das & wurde z. B. "&#39;" aus einem
+// Artikelnamen vom Browser zu ' dekodiert und brach den JS-String auf.
+function jsAttr(s){ return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\r/g,'\\r').replace(/\n/g,'\\n')
+  .replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 function openNeu() {
   el('art-titel').textContent = 'Neuer Artikel';
   el('art-nr').value = ''; el('art-nr').disabled = false;
