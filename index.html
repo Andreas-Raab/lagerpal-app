@@ -555,28 +555,66 @@ function beschreibeBuchung(b) {
   if (b.typ === 'Zusammenlegung') return 'Lagerplätze zusammengelegt · ' + (b.lagerplatz||'');
   return (b.typ === 'Eingang' ? 'Eingebucht' : 'Ausgebucht') + ': ' + b.menge + '× ' + (b.artikelname||b.artikelnummer) + ' auf ' + (b.lagerplatz||'');
 }
+// Muss zur Altersgrenze in rueckgaengig() (SQL, v_max_alter/2 hours) passen. Die
+// Datenbank prüft ohnehin selbst; hier geht es nur darum, die Leiste rechtzeitig
+// auszublenden, statt eine Aktion anzubieten, die der Server sowieso ablehnt.
+const UNDO_MAX_MS = 2 * 60 * 60 * 1000;
 let undoLetzteId = null;
+let undoLaeuft = false;      // verhindert Doppelklick während des Aufrufs
+let undoPauseBis = 0;        // nach erfolgreicher Rücknahme: Bestätigung kurz stehen lassen
+let undoRefreshSeq = 0;      // verwirft Antworten älterer, überholter refreshUndo()-Aufrufe
 async function refreshUndo() {
   if (!client) return;
-  const { data } = await client.from('buchungen').select('id,typ,artikelnummer,artikelname,lagerplatz,menge')
-    .in('typ', UNDO_TYPEN).eq('rueckgaengig_gemacht', 0).order('id', { ascending: false }).limit(1);
+  if (undoLaeuft || Date.now() < undoPauseBis) return;
+  const seq = ++undoRefreshSeq;
+  // Dieselbe Logik wie im Backend: die neueste noch nicht zurückgenommene Buchung
+  // JEDES Typs laden (nicht nur der umkehrbaren) - nur so stimmt "letzte Aktion"
+  // mit dem überein, was rueckgaengig() tatsächlich prüft. Ist der Typ nicht
+  // umkehrbar (z.B. CSV-Import, Inventur), bleibt die Leiste ausgeblendet, auch
+  // wenn danach noch eine ältere umkehrbare Aktion in der Historie steht.
+  const { data } = await client.from('buchungen').select('id,typ,artikelnummer,artikelname,lagerplatz,menge,zeitstempel')
+    .eq('rueckgaengig_gemacht', 0).order('id', { ascending: false }).limit(1);
+  if (seq !== undoRefreshSeq || undoLaeuft || Date.now() < undoPauseBis) return;
   const bar = el('undo-bar');
-  if (!data || !data.length) { undoLetzteId = null; bar.style.display = 'none'; return; }
-  undoLetzteId = data[0].id;
-  el('undo-bar-info').innerHTML = 'Letzte Aktion: <strong>' + esc(beschreibeBuchung(data[0])) + '</strong>';
+  const b = (data && data.length) ? data[0] : null;
+  const zeit = b && b.zeitstempel ? new Date(b.zeitstempel) : null;
+  if (!b || !UNDO_TYPEN.includes(b.typ) || (zeit && (Date.now() - zeit.getTime()) > UNDO_MAX_MS)) {
+    undoLetzteId = null; bar.style.display = 'none'; return;
+  }
+  undoLetzteId = b.id;
+  const uhr = zeit ? zeit.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '';
+  el('undo-bar-info').innerHTML = 'Letzte Aktion' + (uhr ? ' (' + esc(uhr) + ' Uhr)' : '') + ': <strong>' + esc(beschreibeBuchung(b)) + '</strong>';
+  el('undo-bar-btn').style.display = '';
+  el('undo-bar-btn').disabled = false;
   bar.style.display = 'flex';
 }
 async function rueckgaengigJetzt() {
+  if (undoLaeuft) return;
   if (!undoLetzteId) { alert('Keine rückgängig-machbare Aktion vorhanden — bitte kurz aktualisieren.'); return; }
-  const { data: res, error } = await client.rpc('rueckgaengig', { p_buchung_id: undoLetzteId });
+  undoLaeuft = true;
+  const btn = el('undo-bar-btn');
+  btn.disabled = true;
+  let res, error;
+  try {
+    ({ data: res, error } = await client.rpc('rueckgaengig', { p_buchung_id: undoLetzteId }));
+  } catch (e) { error = e; }
+  undoLaeuft = false;
   if (error) {
     // Jemand anderes war inzwischen schneller (oder die Anzeige war veraltet) - Leiste neu laden statt blind meckern.
     await refreshUndo();
-    alert('Fehler: ' + error.message);
+    alert('Fehler: ' + (error.message || error));
     return;
   }
+  // Erfolg kurz sichtbar bestätigen, Button ausblenden. Sonst rückt sofort die
+  // nächstältere Aktion nach und ein zweiter Klick ("hat's geklappt?") nähme
+  // ungewollt auch diese zurück.
+  undoLetzteId = null;
+  undoPauseBis = Date.now() + 4000;
+  el('undo-bar-info').innerHTML = '✅ Rückgängig gemacht: <strong>' + esc((res && res.beschreibung) || '') + '</strong>';
+  btn.style.display = 'none';
+  setTimeout(refreshUndo, 4100);
   await ladeAllePlaetze();
-  refreshUndo(); refreshLeer();
+  refreshLeer();
   sucheRefresh();
 }
 
@@ -1570,14 +1608,28 @@ async function bestandZeilenAusDatei(file) {
   const colName = spalteFinden(rows, ['artikelname','name','bezeichnung']);
   const colGtin = spalteFinden(rows, ['gtin','ean','barcode']);
   const colSet = spalteFinden(rows, ['set','setartikel','set-artikel','set artikel','ist_set','bundle']);
-  if (!colArtnr || !colBestand) throw new Error('Spalten nicht gefunden. Gefunden: ' + Object.keys(rows[0]).join(', '));
+  const gefunden = ' Gefunden: ' + Object.keys(rows[0]).join(', ');
+  if (!colArtnr) throw new Error('Spalte "Artikelnummer" nicht gefunden.' + gefunden);
+  if (!colBestand) throw new Error('Spalte "Bestand"/"Menge" nicht gefunden.' + gefunden);
+  // Lagerplatz ist Pflicht: fehlt die Spalte (z.B. weil die Kopfzeile anders
+  // benannt ist als erwartet), würde ohne diese Prüfung jede Zeile stillschweigend
+  // mit leerem Lagerplatz landen - beim Komplett-Import setzt das sonst unbemerkt
+  // ALLE bestehenden Bestände auf 0 (siehe RPC-seitige Absicherung).
+  if (!colLp) throw new Error('Spalte "Lagerplatz" nicht gefunden.' + gefunden);
   const zeilen = [];
+  const ungueltig = [];   // Zeilen mit Artikelnummer, aber unbrauchbarem Bestand
+  const negativ = [];
   for (const row of rows) {
     const artikelnummer = String(row[colArtnr] ?? '').trim().replace(/^"|"$/g, '');
-    const bStr = String(row[colBestand] ?? '').trim().replace(/^"|"$/g, '').replace(',', '.');
-    if (!artikelnummer || bStr === '') continue;
-    const bestand = parseInt(parseFloat(bStr), 10);
-    if (isNaN(bestand)) continue;
+    const bRoh = String(row[colBestand] ?? '').trim().replace(/^"|"$/g, '');
+    if (!artikelnummer) continue;
+    const bZahl = Number(bRoh.replace(',', '.'));
+    // Nur ganze Zahlen. "1.234" / "1,5" / "abc" / leer werden NICHT mehr still
+    // abgeschnitten oder übersprungen (1.234 wurde früher zu 1 - deutsche
+    // Tausenderpunkte wurden vom alten parseInt(parseFloat(...)) verschluckt).
+    if (bRoh === '' || !Number.isInteger(bZahl)) { ungueltig.push(artikelnummer + ' ("' + bRoh + '")'); continue; }
+    const bestand = bZahl;
+    if (bestand < 0) { negativ.push(artikelnummer + ' (' + bestand + ')'); continue; }
     zeilen.push({
       artikelnummer, bestand,
       lagerplatz: colLp ? String(row[colLp] ?? '').trim() : '',
@@ -1586,10 +1638,15 @@ async function bestandZeilenAusDatei(file) {
       set_flag: colSet ? setflagAusWert(row[colSet]) : null
     });
   }
-  return zeilen;
+  if (negativ.length) {
+    throw new Error('Datei enthält negative Bestände (' + negativ.length + ' Zeilen, z. B. ' + negativ.slice(0, 5).join(', ') + '). Nichts wurde importiert.');
+  }
+  return { zeilen, ungueltig };
 }
 let bestandModus = 'teil';
 let bestandFile = null;
+let bestandVorab = null;          // bereits geprüfter Dateiinhalt { zeilen, ungueltig }
+let bestandImportLaeuft = false;  // verhindert doppelten Start (Doppelklick auf "Ja, fortfahren")
 function setBestandModus(m) {
   bestandModus = m;
   el('bimp-mode-teil').classList.toggle('active', m === 'teil');
@@ -1598,40 +1655,76 @@ function setBestandModus(m) {
     ? '<span class="err">⚠️ Artikel in der Datei werden aktualisiert, alle anderen (bzw. deren nicht genannte Plätze) werden auf 0 gesetzt!</span>'
     : 'Nur Artikel in der Datei werden aktualisiert. Alle anderen bleiben unverändert.';
 }
+function bestandImportZuruecksetzen() {
+  bestandFile = null; bestandVorab = null; el('bimp-file').value = '';
+}
 async function handleBestandFile(file) {
   if (!file) return;
-  bestandFile = file;
+  if (bestandImportLaeuft) return;
+  bestandFile = file; bestandVorab = null;
   const rd = el('bimp-result');
+  // Datei ZUERST prüfen - Fehler (fehlende Spalte, negative Werte …) erscheinen,
+  // bevor irgendeine Bestätigung abgefragt oder etwas geschrieben wird.
+  rd.innerHTML = '<span class="hint">⏳ Datei wird geprüft…</span>';
+  try {
+    bestandVorab = await bestandZeilenAusDatei(file);
+  } catch (e) {
+    rd.innerHTML = '<span class="err">❌ ' + esc(e.message || String(e)) + '</span>';
+    bestandImportZuruecksetzen();
+    return;
+  }
+  const { zeilen, ungueltig } = bestandVorab;
   if (bestandModus === 'komplett') {
+    // Beim Komplett-Import würde jede verworfene Zeile dazu führen, dass der
+    // zugehörige Platz auf 0 gesetzt wird. Deshalb hier: abbrechen statt überspringen.
+    if (ungueltig.length) {
+      rd.innerHTML = '<span class="err">❌ Komplett-Import abgebrochen: ' + ungueltig.length
+        + ' Zeile(n) ohne gültigen ganzzahligen Bestand, z. B. ' + esc(ungueltig.slice(0, 5).join(', '))
+        + '. Bitte Datei korrigieren. Nichts wurde geändert.</span>';
+      bestandImportZuruecksetzen();
+      return;
+    }
+    const nArt = new Set(zeilen.map(z => z.artikelnummer)).size;
+    const nLp = new Set(zeilen.map(z => z.lagerplatz).filter(Boolean)).size;
     rd.innerHTML = `<div style="background:#fff5f5;border:2px solid #9b2c2c;border-radius:8px;padding:12px 14px;color:#9b2c2c;">
       <div style="font-weight:700;">⚠️ Komplett-Import: Alle nicht in der Datei enthaltenen Plätze werden auf 0 gesetzt!</div>
+      <div style="margin-top:6px;">Die Datei enthält <b>${zeilen.length}</b> Zeilen mit <b>${nArt}</b> Artikeln auf <b>${nLp}</b> Lagerplätzen. Passt das zu deinem Gesamtbestand?</div>
       <div class="row" style="margin-top:10px;">
         <button style="background:#9b2c2c;" onclick="bestandImportieren()">Ja, fortfahren</button>
-        <button class="sec" onclick="el('bimp-result').innerHTML=''">Abbrechen</button>
+        <button class="sec" onclick="el('bimp-result').innerHTML='';bestandImportZuruecksetzen()">Abbrechen</button>
       </div></div>`;
     return;
   }
   await bestandImportieren();
 }
 async function bestandImportieren() {
-  if (!bestandFile) return;
+  if (!bestandFile || !bestandVorab || bestandImportLaeuft) return;
+  bestandImportLaeuft = true;
   const rd = el('bimp-result');
   rd.innerHTML = '<span class="hint">⏳ Wird importiert…</span>';
   try {
-    const zeilen = await bestandZeilenAusDatei(bestandFile);
+    const { zeilen, ungueltig } = bestandVorab;
     const anlegen = el('bimp-anlegen').checked;
     const { data, error } = await client.rpc('bestand_csv_import', { p_zeilen: zeilen, p_modus: bestandModus, p_anlegen: anlegen });
     if (error) throw error;
+    const hinweis = (txt) => `<div style="margin-top:4px;color:#7c4a12;">${txt}</div>`;
     rd.innerHTML = `<div style="background:#C6F6D5;border-radius:8px;padding:12px 14px;color:#276749;">
       <div style="font-weight:700;">✅ Import erfolgreich (${bestandModus === 'komplett' ? 'Komplett' : 'Teil'}-Import)</div>
-      <div style="margin-top:6px;">Aktualisiert: <b>${data.aktualisiert}</b> Zeilen</div>
+      <div style="margin-top:6px;">Geändert: <b>${data.aktualisiert}</b> Zeilen${data.unveraendert != null ? ` · unverändert: <b>${data.unveraendert}</b>` : ''}</div>
       ${data.neu_angelegt > 0 ? `<div style="margin-top:4px;">Neu angelegt: <b>${data.neu_angelegt}</b> Artikel</div>` : ''}
-      ${data.auf_null_gesetzt > 0 ? `<div style="margin-top:4px;color:#7c4a12;">Auf 0 gesetzt: <b>${data.auf_null_gesetzt}</b> Artikel</div>` : ''}
-      ${data.nicht_gefunden > 0 ? `<div style="margin-top:4px;color:#7c4a12;">Übersprungen (unbekannt): ${data.nicht_gefunden}${data.beispiele_nicht_gefunden?.length ? ' (z.B. ' + esc(data.beispiele_nicht_gefunden.join(', ')) + ')' : ''}</div>` : ''}
+      ${data.auf_null_gesetzt > 0 ? hinweis(`Auf 0 gesetzt: <b>${data.auf_null_gesetzt}</b> Artikel`) : ''}
+      ${data.nicht_gefunden > 0 ? hinweis(`Übersprungen (unbekannt): ${data.nicht_gefunden}${data.beispiele_nicht_gefunden?.length ? ' (z.B. ' + esc(data.beispiele_nicht_gefunden.join(', ')) + ')' : ''}`) : ''}
+      ${data.ohne_lagerplatz > 0 ? hinweis(`Übersprungen (Lagerplatz leer): <b>${data.ohne_lagerplatz}</b> Zeilen`) : ''}
+      ${ungueltig.length ? hinweis(`Übersprungen (Bestand leer/keine ganze Zahl): <b>${ungueltig.length}</b> Zeilen, z. B. ${esc(ungueltig.slice(0, 5).join(', '))}`) : ''}
     </div>`;
-    bestandFile = null; el('bimp-file').value = '';
-    await ladeAllePlaetze(); refreshLeer();
-  } catch (e) { rd.innerHTML = '<span class="err">❌ ' + esc(e.message || String(e)) + '</span>'; }
+    bestandImportZuruecksetzen();
+    await ladeAllePlaetze(); refreshLeer(); refreshUndo();
+  } catch (e) {
+    rd.innerHTML = '<span class="err">❌ ' + esc(e.message || String(e)) + '</span>';
+    bestandImportZuruecksetzen();
+  } finally {
+    bestandImportLaeuft = false;
+  }
 }
 async function exportJtlLagerbestandCsv() {
   try {
@@ -2170,7 +2263,7 @@ async function leerGesehen() {
 }
 
 // ── Artikel anlegen / bearbeiten ────────────────────────────────────────────
-function jsAttr(s){ return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function jsAttr(s){ return String(s).replace(/&/g,'&amp;').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 function openNeu() {
   el('art-titel').textContent = 'Neuer Artikel';
   el('art-nr').value = ''; el('art-nr').disabled = false;
