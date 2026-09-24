@@ -264,11 +264,19 @@ tbody tr:hover td{background:#eef4fb;}
     <div class="card">
       <div class="hint" style="margin-bottom:8px;">Quelle ausräumen: Artikel scannen, die App legt Kartons automatisch an
         (P01-K01, K02, …) und sagt nach Amazon-Status, in welchen Karton. Voraussetzung: Amazon-Status ist gepflegt.</div>
+      <div id="er-resume" style="display:none;"></div>
       <div id="er-setup">
         <label>Quelle (ausräumen)</label>
         <select id="er-quelle"><option value="">— Quelle wählen —</option></select>
         <label>Palette</label>
-        <select id="er-palette"><option value="">— Palette wählen —</option></select>
+        <select id="er-palette" onchange="erPaletteGewaehlt()"><option value="">— Palette wählen —</option></select>
+        <div id="er-karton-wahl" style="display:none;">
+          <label>🟢 Online-Karton</label>
+          <select id="er-karton-on"></select>
+          <label>🔴 Nicht-online-Karton</label>
+          <select id="er-karton-off"></select>
+          <div class="hint" style="margin-top:6px;">„＋ Neuer Karton" legt den nächsten freien Karton der Palette an. Oder einen bestehenden (z. B. halbvollen) Karton wählen und weiter befüllen.</div>
+        </div>
         <div class="row" style="margin-top:12px;"><button onclick="erStart()">▶︎ Starten</button></div>
       </div>
       <div id="er-run" style="display:none;">
@@ -981,11 +989,46 @@ function showTab(name) {
 let erSession = null;
 function erKartonName(pal, n){ return pal + '-K' + String(n).padStart(2,'0'); }
 
+// ── Laufende Sortierung im Browser merken ───────────────────────────────────
+// Jeder Scan wird sofort in der Datenbank gebucht - verloren gehen konnte bei
+// einem Abbruch (Rechner aus, Browser zu, Tab gewechselt) nur, WELCHE Kartons
+// gerade aktiv waren. Das wird hier gemerkt, damit die Sortierung beim nächsten
+// Öffnen fortgesetzt und sauber abgeschlossen werden kann (Karton-Blätter,
+// Rest-Meldung). Gilt pro Gerät/Browser.
+const ER_LS_KEY = 'lp_er_session';
+function erSpeichern() {
+  try {
+    if (!erSession) { localStorage.removeItem(ER_LS_KEY); return; }
+    const s = erSession;
+    localStorage.setItem(ER_LS_KEY, JSON.stringify({
+      quelle: s.quelle, pal: s.pal, counter: s.counter,
+      aktivOnline: s.aktivOnline, aktivOffline: s.aktivOffline,
+      seit: s.seit, stk: s.stk, gebucht: s.gebucht.slice(-1000)
+    }));
+  } catch (e) {}
+}
+function erGespeichert() {
+  try {
+    const s = JSON.parse(localStorage.getItem(ER_LS_KEY) || 'null');
+    return (s && s.quelle && s.pal && s.aktivOnline && s.aktivOffline) ? s : null;
+  } catch (e) { return null; }
+}
+
 async function initEinraeumen() {
-  erSession = null;
+  // Läuft schon eine Sortierung (z. B. nur kurz den Tab gewechselt)? Dann nichts
+  // zurücksetzen - früher ging die laufende Sitzung dabei verloren.
+  if (erSession) {
+    el('er-setup').style.display = 'none';
+    el('er-resume').style.display = 'none';
+    el('er-run').style.display = 'block';
+    await erInhaltLaden(); erRenderCtx(); erLogRender();
+    setTimeout(() => el('er-scan').focus(), 50);
+    return;
+  }
   el('er-setup').style.display = 'block';
   el('er-run').style.display = 'none';
   el('er-status').innerHTML = '';
+  el('er-karton-wahl').style.display = 'none';
   erVersteckeFlash();
   el('er-log').textContent = 'Noch nichts eingeräumt.';
   // Paletten aus der verwaltbaren Liste (Tab „Lagerplätze" → „Paletten verwalten")
@@ -1000,6 +1043,46 @@ async function initEinraeumen() {
   const q = (data||[]).sort((a,b)=>a.name.localeCompare(b.name));
   el('er-quelle').innerHTML = '<option value="">— Quelle wählen —</option>'
     + q.map(x=>`<option value="${escAttr(x.name)}">${esc(x.name)} (${x.artikel} SKUs / ${x.stueck} Stk)</option>`).join('');
+  erZeigeResume();
+}
+
+// Hinweis „Unterbrochene Sortierung fortsetzen?"
+function erZeigeResume() {
+  const box = el('er-resume');
+  const s = erGespeichert();
+  if (!s) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const pos = (s.gebucht || []).length;
+  box.innerHTML = `<div style="background:var(--amber-soft);border:2px solid var(--amber);border-radius:8px;padding:12px 14px;margin-bottom:12px;">
+      <div style="font-weight:800;color:#7c4a12;">⏸️ Unterbrochene Sortierung gefunden</div>
+      <div style="margin-top:6px;">Palette <b>${esc(s.pal)}</b> · Quelle <b>${esc(s.quelle)}</b><br>
+        Kartons <b>${esc(s.aktivOnline)}</b> (online) und <b>${esc(s.aktivOffline)}</b> (nicht online)<br>
+        <span class="muted">begonnen ${esc(fmtZeit(s.seit) || '?')} · ${pos} Positionen / ${s.stk || 0} Stück eingeräumt</span></div>
+      <div class="hint" style="margin-top:6px;">Alles bisher Gescannte ist bereits gebucht und liegt in den Kartons. Beim Fortsetzen geht es mit denselben Kartons weiter; „✓ Palette fertig" druckt danach die Karton-Blätter und meldet den Rest auf der Quelle.</div>
+      <div class="row" style="margin-top:10px;">
+        <button onclick="erFortsetzen()">▶︎ Fortsetzen</button>
+        <button class="sec" onclick="erVerwerfen()">Verwerfen</button>
+      </div></div>`;
+  box.style.display = 'block';
+}
+function erVerwerfen() {
+  const s = erGespeichert();
+  if (s && !confirm(`Hinweis verwerfen?\n\nDie Kartons ${s.aktivOnline} und ${s.aktivOffline} bleiben so, wie sie sind (nichts wird gelöscht). Karton-Blätter kannst du jederzeit unter „Lagerplätze" → „Nachdruck" drucken.`)) return;
+  try { localStorage.removeItem(ER_LS_KEY); } catch (e) {}
+  erZeigeResume();
+}
+async function erFortsetzen() {
+  const s = erGespeichert();
+  if (!s) { erZeigeResume(); return; }
+  await ladeAllePlaetze();
+  erSession = { quelle: s.quelle, pal: s.pal, aktivOnline: s.aktivOnline, aktivOffline: s.aktivOffline,
+    counter: Math.max(s.counter || 0, erNaechsteNummer(s.pal)), seit: s.seit || new Date().toISOString(),
+    gebucht: s.gebucht || [], stk: s.stk || 0, inhalt: {}, wechsel: null };
+  // Palette/Kanal der Kartons sicherstellen (idempotent)
+  const r1 = await erSetKarton(erSession.aktivOnline, 1);
+  const r2 = await erSetKarton(erSession.aktivOffline, 2);
+  const err = (r1 && r1.error) || (r2 && r2.error);
+  if (err) { alert('Fehler: ' + err.message); erSession = null; return; }
+  await erLaufAnzeigen();
 }
 
 function erNaechsteNummer(pal) {
@@ -1010,30 +1093,132 @@ function erNaechsteNummer(pal) {
 async function erSetKarton(name, kanal) {
   return client.rpc('karton_setzen', { p_name: name, p_palette: erSession.pal, p_kanal: kanal });
 }
+
+// Kartons einer Palette für einen Kanal (1 = online, 2 = nicht online), neueste zuerst
+async function erKartonsDerPalette(pal, kanal) {
+  const { data } = await client.from('v_lagerplaetze').select('name,palette,kanal,artikel,stueck')
+    .eq('palette', pal).eq('kanal', kanal);
+  const re = new RegExp('^' + pal.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '-K(\\d+)$');
+  const nr = n => { const m = (n||'').match(re); return m ? parseInt(m[1]) : -1; };
+  return (data || []).sort((a, b) => (nr(b.name) - nr(a.name)) || a.name.localeCompare(b.name));
+}
+function erKartonOptionen(liste, ausser) {
+  return '<option value="__neu__">＋ Neuer Karton</option>'
+    + liste.filter(k => k.name !== ausser).map(k => `<option value="${escAttr(k.name)}">${esc(k.name)} — ${k.stueck ? `${k.artikel} SKUs / ${k.stueck} Stk` : 'leer'}</option>`).join('');
+}
+// Nach Wahl der Palette: je Kanal bestehende Kartons zur Auswahl anbieten
+async function erPaletteGewaehlt() {
+  const pal = el('er-palette').value;
+  const box = el('er-karton-wahl');
+  if (!pal) { box.style.display = 'none'; return; }
+  const [on, off] = await Promise.all([erKartonsDerPalette(pal, 1), erKartonsDerPalette(pal, 2)]);
+  if (el('er-palette').value !== pal) return;   // inzwischen umgewählt
+  el('er-karton-on').innerHTML = erKartonOptionen(on);
+  el('er-karton-off').innerHTML = erKartonOptionen(off);
+  // Vorauswahl: ein noch leerer Karton wird weiterverwendet (sonst entstehen
+  // Lücken/leere Kartons), ansonsten ein neuer Karton.
+  const leerOn = on.find(k => !k.stueck), leerOff = off.find(k => !k.stueck);
+  el('er-karton-on').value = leerOn ? leerOn.name : '__neu__';
+  el('er-karton-off').value = leerOff ? leerOff.name : '__neu__';
+  box.style.display = 'block';
+}
+// Legt den nächsten freien Karton der Palette an und gibt den Namen zurück
+async function erNeuerKarton(kanal) {
+  await ladeAllePlaetze();
+  erSession.counter = Math.max(erSession.counter || 0, erNaechsteNummer(erSession.pal)) + 1;
+  const name = erKartonName(erSession.pal, erSession.counter);
+  const { error } = await erSetKarton(name, kanal);
+  if (error) throw error;
+  return name;
+}
+
 async function erStart() {
   const quelle = el('er-quelle').value, pal = el('er-palette').value;
   if (!quelle) { alert('Bitte Quelle wählen'); return; }
   if (!pal) { alert('Bitte Palette wählen'); return; }
-  const start = erNaechsteNummer(pal);
-  erSession = { quelle, pal, counter: start+2, aktivOnline: erKartonName(pal,start+1), aktivOffline: erKartonName(pal,start+2), kartonStk:{}, gebucht:[], stk:0 };
-  await erSetKarton(erSession.aktivOnline, 1);
-  await erSetKarton(erSession.aktivOffline, 2);
+  const wahlOn = el('er-karton-on').value || '__neu__';
+  const wahlOff = el('er-karton-off').value || '__neu__';
+  await ladeAllePlaetze();
+  erSession = { quelle, pal, counter: erNaechsteNummer(pal), aktivOnline: null, aktivOffline: null,
+    seit: new Date().toISOString(), gebucht: [], stk: 0, inhalt: {}, wechsel: null };
+  try {
+    erSession.aktivOnline = wahlOn === '__neu__' ? await erNeuerKarton(1) : wahlOn;
+    erSession.aktivOffline = wahlOff === '__neu__' ? await erNeuerKarton(2) : wahlOff;
+  } catch (e) { alert('Fehler: ' + (e.message || e)); erSession = null; return; }
+  await erLaufAnzeigen();
+}
+async function erLaufAnzeigen() {
+  erSpeichern();
+  el('er-resume').style.display = 'none';
   el('er-setup').style.display = 'none';
   el('er-run').style.display = 'block';
+  el('er-status').innerHTML = '';
+  await erInhaltLaden();
   erRenderCtx(); erLogRender();
   setTimeout(()=>el('er-scan').focus(), 50);
 }
+
+// Tatsächlicher Inhalt der beiden aktiven Kartons aus der Datenbank (nicht nur
+// das in dieser Sitzung Gescannte - wichtig beim Fortsetzen/Weiterbefüllen)
+async function erInhaltLaden() {
+  if (!erSession) return;
+  const namen = [erSession.aktivOnline, erSession.aktivOffline];
+  const { data } = await client.from('bestaende')
+    .select('lagerplatz,artikelnummer,menge,artikel(artikelname,gtin)').in('lagerplatz', namen).gt('menge', 0);
+  const inhalt = {}; namen.forEach(n => inhalt[n] = []);
+  (data || []).forEach(r => (inhalt[r.lagerplatz] = inhalt[r.lagerplatz] || []).push({
+    artnr: r.artikelnummer, name: (r.artikel && r.artikel.artikelname) || '', gtin: (r.artikel && r.artikel.gtin) || '', menge: r.menge }));
+  Object.values(inhalt).forEach(l => l.sort((a, b) => (a.name || a.artnr).localeCompare(b.name || b.artnr)));
+  erSession.inhalt = inhalt;
+}
+function erKartonStueck(name) {
+  return ((erSession && erSession.inhalt && erSession.inhalt[name]) || []).reduce((s, x) => s + x.menge, 0);
+}
+
 function erRenderCtx() {
   const s = erSession;
-  const box = (farbe,titel,name,ch) => `<div style="flex:1 1 220px;border:2px solid ${farbe};border-radius:8px;padding:10px 12px;margin:4px 0;">
+  const box = (farbe,titel,name,ch) => {
+    const unten = s.wechsel && s.wechsel.kanal === ch
+      ? `<div style="margin-top:6px;"><select id="er-wechsel-sel" style="width:100%;">${s.wechsel.optionen}</select>
+           <div class="row" style="margin-top:6px;gap:6px;">
+             <button style="padding:4px 10px;height:auto;" onclick="erKartonWechselnOk()">Übernehmen</button>
+             <button class="sec" style="padding:4px 10px;height:auto;" onclick="erKartonWechselnAbbruch()">Abbrechen</button></div></div>`
+      : `<div class="row" style="margin-top:6px;gap:6px;">
+           <button class="sec" style="padding:4px 10px;height:auto;" onclick="erKartonVoll('${ch}')">📄 Karton voll → drucken & nächster</button>
+           <button class="sec" style="padding:4px 10px;height:auto;" onclick="erKartonWechseln('${ch}')">🔁 Anderen Karton wählen</button></div>`;
+    return `<div style="flex:1 1 220px;border:2px solid ${farbe};border-radius:8px;padding:10px 12px;margin:4px 0;">
       <div class="muted" style="text-transform:uppercase;font-size:.7rem;">${titel}</div>
       <div style="font-weight:800;color:${farbe};">${esc(name)}</div>
-      <div class="muted">${s.kartonStk[name]||0} Stück eingeräumt</div>
-      <button class="sec" style="margin-top:6px;padding:4px 10px;" onclick="erKartonVoll('${ch}')">📄 Karton voll → drucken & nächster</button>
+      <div class="muted">${erKartonStueck(name)} Stück im Karton</div>${unten}
     </div>`;
+  };
   el('er-ctx').innerHTML = `<div class="muted" style="margin-bottom:6px;">Palette <b>${esc(s.pal)}</b> · Quelle <b>${esc(s.quelle)}</b></div>`
     + `<div style="display:flex;gap:10px;flex-wrap:wrap;">${box('#276749','🟢 Aktiver Online-Karton',s.aktivOnline,'online')}${box('#9b2c2c','🔴 Aktiver Nicht-online-Karton',s.aktivOffline,'offline')}</div>`;
 }
+// Während des Sortierens auf einen anderen (z. B. halbvollen) Karton wechseln
+async function erKartonWechseln(ch) {
+  const kanal = ch === 'online' ? 1 : 2;
+  const aktiv = ch === 'online' ? erSession.aktivOnline : erSession.aktivOffline;
+  const liste = await erKartonsDerPalette(erSession.pal, kanal);
+  erSession.wechsel = { kanal: ch, optionen: erKartonOptionen(liste, aktiv) };
+  erRenderCtx();
+  const sel = el('er-wechsel-sel');
+  if (sel && liste.some(k => k.name !== aktiv)) sel.selectedIndex = 1;   // Vorschlag: neuester bestehender Karton
+}
+function erKartonWechselnAbbruch() { erSession.wechsel = null; erRenderCtx(); el('er-scan').focus(); }
+async function erKartonWechselnOk() {
+  const w = erSession.wechsel; if (!w) return;
+  const wahl = el('er-wechsel-sel').value;
+  let name;
+  try { name = wahl === '__neu__' ? await erNeuerKarton(w.kanal === 'online' ? 1 : 2) : wahl; }
+  catch (e) { alert('Fehler: ' + (e.message || e)); return; }
+  if (w.kanal === 'online') erSession.aktivOnline = name; else erSession.aktivOffline = name;
+  erSession.wechsel = null;
+  erSpeichern();
+  await erInhaltLaden(); erRenderCtx(); erLogRender();
+  el('er-scan').focus();
+}
+
 async function erBestandAuf(artnr, lp) {
   const { data } = await client.from('bestaende').select('menge').eq('artikelnummer',artnr).eq('lagerplatz',lp).limit(1);
   return (data && data.length) ? data[0].menge : 0;
@@ -1066,13 +1251,17 @@ async function erScan() {
   const code = el('er-scan').value.trim(); const menge = parseInt(el('er-menge').value,10);
   const st = el('er-status');
   if (!code) return;
+  // Nach JEDEM Scan wieder 1 - die eingestellte Menge gilt nur für diesen einen
+  // Artikel, egal ob der Scan klappt. Sonst räumt man beim nächsten Artikel
+  // versehentlich die alte Menge ein.
+  el('er-menge').value = 1;
   if (!Number.isInteger(menge) || menge < 1) { st.innerHTML='<span class="err">Menge ≥ 1</span>'; return; }
   const g = await resolveArtikel(code);
   if (!g) { st.innerHTML='<span class="err">❌ Nicht gefunden: '+esc(code)+'</span>'; erVersteckeFlash(); el('er-scan').select(); return; }
   if (g.mehrdeutig) { st.innerHTML='<span class="err">EAN mehrdeutig – Artikelnummer eingeben</span>'; erVersteckeFlash(); el('er-scan').select(); return; }
-  let ziel, farbe, label, kanal;
-  if (g.online === 1) { ziel = erSession.aktivOnline; farbe='#276749'; label='🟢 ONLINE'; kanal='online'; }
-  else if (g.online === 2) { ziel = erSession.aktivOffline; farbe='#9b2c2c'; label='🔴 NICHT ONLINE'; kanal='offline'; }
+  let ziel, label, kanal;
+  if (g.online === 1) { ziel = erSession.aktivOnline; label='🟢 ONLINE'; kanal='online'; }
+  else if (g.online === 2) { ziel = erSession.aktivOffline; label='🔴 NICHT ONLINE'; kanal='offline'; }
   else { st.innerHTML='<span class="err">❔ '+esc(g.name||code)+': Amazon-Status unbekannt. Bitte erst Status setzen/importieren.</span>'; erVersteckeFlash(); el('er-scan').select(); return; }
   const verf = await erBestandAuf(g.artnr, erSession.quelle);
   try {
@@ -1088,24 +1277,17 @@ async function erScan() {
     erZeigeFlash(kanal, (g.name||g.artnr) + ' → ' + ziel);
     sprich(kanal === 'online' ? 'online' : 'offline');
     st.innerHTML = `<span class="ok">${label} → Karton ${esc(ziel)}<br>${menge}× ${esc(g.name||'')} (${esc(g.artnr)})${extra}</span>`;
-    erSession.kartonStk[ziel] = (erSession.kartonStk[ziel]||0) + menge;
     erSession.gebucht.push({artnr:g.artnr, name:g.name||'', gtin:g.gtin||'', menge, ziel});
     erSession.stk += menge;
-    erRenderCtx(); erLogRender(); refreshUndo();
+    erSpeichern();
     el('er-scan').value=''; el('er-scan').focus();
+    await erInhaltLaden();
+    erRenderCtx(); erLogRender(); refreshUndo();
   } catch(e) { st.innerHTML='<span class="err">Verbindungsfehler</span>'; }
 }
-function erAggListe(ziel) {
-  const map = {};
-  erSession.gebucht.filter(x => x.ziel === ziel).forEach(x => {
-    const e = (map[x.artnr] = map[x.artnr] || { artnr:x.artnr, name:x.name, gtin:x.gtin||'', menge:0 });
-    e.menge += x.menge;
-  });
-  return Object.values(map).sort((a,b)=>a.name.localeCompare(b.name));
-}
 function erKartonSpalte(farbe, titel, ziel) {
-  const liste = erAggListe(ziel);
-  const stk = erSession.kartonStk[ziel] || 0;
+  const liste = (erSession.inhalt && erSession.inhalt[ziel]) || [];
+  const stk = erKartonStueck(ziel);
   const rows = liste.length
     ? liste.map(x=>`<tr><td class="mono">${esc(x.gtin||'—')}</td><td>${esc(x.name||x.artnr)}</td><td style="text-align:right;">${x.menge}</td></tr>`).join('')
     : `<tr><td colspan="3" class="hint" style="padding:6px 0;">Noch nichts in diesem Karton.</td></tr>`;
@@ -1117,13 +1299,13 @@ function erKartonSpalte(farbe, titel, ziel) {
 function erLogRender() {
   const g = erSession.gebucht;
   const s = erSession;
-  let html = `<div style="margin-bottom:10px;">Eingeräumt gesamt: <b>${g.length}</b> Positionen · <b>${s.stk}</b> Stück</div>`;
+  let html = `<div style="margin-bottom:10px;">In dieser Sortierung eingeräumt: <b>${g.length}</b> Positionen · <b>${s.stk}</b> Stück</div>`;
   html += `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:${g.length?'14px':'0'};">`
     + erKartonSpalte('#276749','🟢 Online', s.aktivOnline)
     + erKartonSpalte('#9b2c2c','🔴 Nicht online', s.aktivOffline)
     + '</div>';
   if (g.length) {
-    html += `<details><summary class="muted" style="cursor:pointer;">Gesamter Verlauf dieser Sitzung (${g.length})</summary>`
+    html += `<details><summary class="muted" style="cursor:pointer;">Verlauf dieser Sortierung (${g.length})</summary>`
       + '<table style="margin-top:6px;"><tr><th>Karton</th><th>Artikel</th><th style="text-align:right;">Menge</th></tr>'
       + g.slice().reverse().map(x=>`<tr><td>${esc(x.ziel)}</td><td>${esc(x.artnr)} · ${esc(x.name)}</td><td style="text-align:right;">${x.menge}</td></tr>`).join('')
       + '</table></details>';
@@ -1133,19 +1315,23 @@ function erLogRender() {
 async function erKartonVoll(channel) {
   const name = channel==='online' ? erSession.aktivOnline : erSession.aktivOffline;
   await kartonBlattDrucken(name);
-  erSession.counter += 1;
-  const neu = erKartonName(erSession.pal, erSession.counter);
-  await erSetKarton(neu, channel==='online' ? 1 : 2);
+  let neu;
+  try { neu = await erNeuerKarton(channel==='online' ? 1 : 2); }
+  catch (e) { alert('Fehler: ' + (e.message || e)); return; }
   if (channel==='online') erSession.aktivOnline = neu; else erSession.aktivOffline = neu;
-  erRenderCtx(); erLogRender(); el('er-scan').focus();
+  erSpeichern();
+  await erInhaltLaden(); erRenderCtx(); erLogRender(); el('er-scan').focus();
 }
 async function erFertig() {
   if (erSession) {
+    await erInhaltLaden();
     for (const nm of [erSession.aktivOnline, erSession.aktivOffline]) {
-      if ((erSession.kartonStk[nm]||0) > 0) await kartonBlattDrucken(nm);
+      if (erKartonStueck(nm) > 0) await kartonBlattDrucken(nm);
     }
     await client.rpc('einraeumen_rest_melden', { p_quelle: erSession.quelle, p_palette: erSession.pal });
   }
+  erSession = null;
+  erSpeichern();   // gemerkte Sortierung löschen
   initEinraeumen();
 }
 
@@ -1424,8 +1610,11 @@ async function ssBook(artnr, lp, typ, menge, name) {
   await ladeAllePlaetze(); refreshUndo();
   return data;
 }
-async function ssBookPick(artnr, lp, typ, name) {
-  const menge = ssMenge(); if (menge === null) return;
+// menge wird beim Scan gemerkt und hier übergeben: das Mengenfeld steht nach
+// jedem Scan schon wieder auf 1 (sonst würde eine versehentlich stehen
+// gebliebene Menge beim nächsten Artikel mitgebucht).
+async function ssBookPick(artnr, lp, typ, name, menge) {
+  if (!Number.isInteger(menge) || menge < 1) { menge = ssMenge(); if (menge === null) return; }
   await ssBook(artnr, lp, typ, menge, name);
   el('ss-pick-section').style.display = 'none';
   el('ss-scan').focus();
@@ -1436,7 +1625,12 @@ async function ssScan() {
   el('ss-scan').value = '';
   el('ss-pick-section').style.display = 'none';
   if (!code) return;
-  const menge = ssMenge(); if (menge === null) { el('ss-scan').focus(); return; }
+  const menge = ssMenge();
+  // Nach JEDEM Scan wieder 1 - egal ob der Scan klappt (nicht gefunden,
+  // mehrdeutig, Set abgebrochen, Platzwahl offen …). Die eingestellte Menge
+  // gilt nur für genau diesen einen Scan.
+  el('ss-menge').value = 1;
+  if (menge === null) { el('ss-scan').focus(); return; }
   ssStatus('🔍 Suche: ' + esc(code) + '…');
   const g = await resolveArtikel(code);
   if (!g)            { ssStatus('❌ Nicht gefunden: ' + esc(code), 'err'); el('ss-scan').focus(); return; }
@@ -1453,9 +1647,9 @@ async function ssScan() {
     const stock = await artikelPlaetze(g.artnr);
     const stockNamen = stock.map(s => s.lagerplatz);
     const nm = jsAttr(g.name || '');
-    let html = stock.map(s => `<button class="ss-lp-btn" onclick="ssBookPick('${jsAttr(g.artnr)}','${jsAttr(s.lagerplatz)}','ein','${nm}')">${esc(s.lagerplatz)} <span class="muted">(${s.menge})</span></button>`).join('');
-    html += allePlaetze.filter(p => !stockNamen.includes(p)).map(p => `<button class="ss-lp-btn" onclick="ssBookPick('${jsAttr(g.artnr)}','${jsAttr(p)}','ein','${nm}')">${esc(p)}</button>`).join('');
-    ssStatus(`<b>${esc(g.name||g.artnr)}</b><br>⚠️ Lagerplatz zum Einbuchen wählen:`);
+    let html = stock.map(s => `<button class="ss-lp-btn" onclick="ssBookPick('${jsAttr(g.artnr)}','${jsAttr(s.lagerplatz)}','ein','${nm}',${menge})">${esc(s.lagerplatz)} <span class="muted">(${s.menge})</span></button>`).join('');
+    html += allePlaetze.filter(p => !stockNamen.includes(p)).map(p => `<button class="ss-lp-btn" onclick="ssBookPick('${jsAttr(g.artnr)}','${jsAttr(p)}','ein','${nm}',${menge})">${esc(p)}</button>`).join('');
+    ssStatus(`<b>${esc(g.name||g.artnr)}</b> — <b>${menge} Stk</b><br>⚠️ Lagerplatz zum Einbuchen wählen:`);
     el('ss-pick-btns').innerHTML = html || '<span class="muted">Keine Lagerplätze.</span>';
     el('ss-pick-section').style.display = 'block';
     el('ss-scan').focus();
@@ -1467,8 +1661,8 @@ async function ssScan() {
   if (!stock.length) { ssStatus(`<b>${esc(g.name||g.artnr)}</b><br>⚠️ Aktuell kein Bestand vorhanden.`, 'err'); el('ss-scan').focus(); return; }
   if (stock.length === 1) { await ssBook(g.artnr, stock[0].lagerplatz, 'aus', menge, g.name); el('ss-scan').focus(); return; }
   const nm = jsAttr(g.name || '');
-  ssStatus(`<b>${esc(g.name||g.artnr)}</b> — von welchem Lagerplatz ausbuchen?`);
-  el('ss-pick-btns').innerHTML = stock.map(s => `<button class="ss-lp-btn" onclick="ssBookPick('${jsAttr(g.artnr)}','${jsAttr(s.lagerplatz)}','aus','${nm}')">${esc(s.lagerplatz)} <span class="muted">(${s.menge})</span></button>`).join('');
+  ssStatus(`<b>${esc(g.name||g.artnr)}</b> — <b>${menge} Stk</b> von welchem Lagerplatz ausbuchen?`);
+  el('ss-pick-btns').innerHTML = stock.map(s => `<button class="ss-lp-btn" onclick="ssBookPick('${jsAttr(g.artnr)}','${jsAttr(s.lagerplatz)}','aus','${nm}',${menge})">${esc(s.lagerplatz)} <span class="muted">(${s.menge})</span></button>`).join('');
   el('ss-pick-section').style.display = 'block';
   el('ss-scan').focus();
 }
@@ -1733,11 +1927,19 @@ async function exportJtlLagerbestandCsv() {
 }
 async function exportJtlKommentarCsv() {
   try {
-    const rows = await fetchAll('bestaende', 'artikelnummer,lagerplatz,menge', { order: { col: 'artikelnummer', asc: true } });
+    // Gleiches Format wie der tägliche automatische Export (Edge Function
+    // lagerpal-backup, jtlKommentarCsv) - bei Änderungen beide anpassen.
+    const [rows, arts] = await Promise.all([
+      fetchAll('bestaende', 'artikelnummer,lagerplatz,menge', { order: { col: 'artikelnummer', asc: true } }),
+      fetchAll('artikel', 'artikelnummer', { order: { col: 'artikelnummer', asc: true } })
+    ]);
     const grp = {};
     rows.filter(r => r.menge > 0).forEach(r => { (grp[r.artikelnummer] = grp[r.artikelnummer] || []).push(r.lagerplatz + ' (' + r.menge + ')'); });
     const head = ['Artikelnummer','Kommentar'];
-    const data = Object.keys(grp).sort().map(artnr => [artnr, grp[artnr].join(', ')]);
+    // Artikel OHNE Bestand mit leerem Kommentar mitschicken - sonst bliebe in JTL
+    // nach dem Import der alte Lagerplatz als Kommentar stehen.
+    const alle = [...new Set([...arts.map(a => a.artikelnummer), ...Object.keys(grp)])].sort();
+    const data = alle.map(artnr => [artnr, (grp[artnr] || []).join(', ')]);
     csvDownload('Lagerbestandskommentar.csv', [head, ...data]);
   } catch (e) { alert('Fehler beim Export: ' + (e.message || e)); }
 }
