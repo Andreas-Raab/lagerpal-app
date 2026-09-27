@@ -129,6 +129,12 @@ tbody tr:hover td{background:#eef4fb;}
 .so-card{border:1.5px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fff;}
 .so-card.so-offen{border-color:var(--blue);}
 .so-kopf{cursor:pointer;}
+.so-kopf:hover{border-color:var(--blue);}
+.so-kachel{flex:1 1 120px;border-radius:8px;padding:8px 12px;cursor:pointer;border:2px solid transparent;user-select:none;}
+.so-kachel:hover{border-color:var(--line);}
+.so-kachel.aktiv{border-color:var(--so-fg);}
+.so-table tbody tr td{background:#fff;}
+.so-table tbody tr:hover td{background:#eef4fb;}
 </style>
 </head>
 <body>
@@ -1355,7 +1361,7 @@ async function erFertig() {
 // Rückgängig gemachte Buchungen zählen nicht. Annahme: jede Quelle wird einmal
 // sortiert (ggf. mit Unterbrechung) - wird ein Quellname für mehrere Lieferungen
 // wiederverwendet, werden diese zusammengefasst.
-let soDaten = null, soFilter = 'alle', soOffen = null;
+let soDaten = null, soFilter = 'alle', soOffen = null, soDetailFilter = 'alle';
 
 function soPaletteVon(karton, palMap) {
   if (palMap[karton]) return palMap[karton];
@@ -1436,7 +1442,9 @@ async function soLaden() {
   }
 }
 function soSetFilter(f) { soFilter = f; soRender(); }
-function soToggle(i) { soOffen = soOffen === i ? null : i; soRender(); }
+// Liste → eigene Detailansicht einer Quelle („Untermenü"), mit Zurück-Knopf
+function soOeffnen(i) { soOffen = i; soDetailFilter = 'alle'; soRender(); el('so-box').scrollIntoView({ block: 'start' }); }
+function soZurueck() { soOffen = null; soRender(); el('so-box').scrollIntoView({ block: 'start' }); }
 function soZeitraum(g) {
   if (!g.von) return '';
   const a = fmtZeit(g.von), b = fmtZeit(g.bis);
@@ -1447,10 +1455,23 @@ function soBalken(g) {
   const tot = g.drauf + g.mehr || 1, pct = n => (n / tot * 100).toFixed(1) + '%';
   return `<div class="so-bar"><div style="width:${pct(g.runter)};background:var(--green);"></div><div style="width:${pct(g.noch)};background:var(--amber);"></div><div style="width:${pct(g.mehr)};background:#7c5cc4;"></div></div>`;
 }
+function soStatus(g) {
+  return g.noch > 0
+    ? `<span class="pt" style="background:#fff4e6;color:#7c4a12;">Rest: ${g.noch} Stk</span>`
+    : `<span class="pt pt-ein">Quelle leer</span>`;
+}
+function soKopf(g) {
+  return `<div class="row" style="gap:8px;margin-bottom:6px;">
+      <b>${esc(g.quelle)}</b><span class="muted">→</span><span>Palette ${esc([...g.paletten].sort().join(', ') || '?')}</span>${soStatus(g)}
+      <span class="muted" style="margin-left:auto;">${esc(soZeitraum(g))}</span></div>
+    ${soBalken(g)}
+    <div class="muted" style="margin-top:5px;">${g.drauf} drauf · ${g.runter} runter · <span style="color:#7c4a12;">${g.noch} noch drauf</span>${g.mehr ? ` · <span style="color:#5b3fa8;">+${g.mehr} mehr gebucht</span>` : ''}</div>`;
+}
 function soRender() {
   const box = el('so-box');
   if (!soDaten) return;
   if (!soDaten.length) { box.innerHTML = '<span class="hint">Noch keine Sortierung im Protokoll gefunden.</span>'; return; }
+  if (soOffen !== null && soDaten[soOffen]) { box.innerHTML = soDetailHtml(soDaten[soOffen], soOffen); return; }
   const filter = { alle: () => true, rest: g => g.noch > 0, mehr: g => g.mehr > 0, leer: g => g.noch === 0 };
   const zahl = f => soDaten.filter(filter[f]).length;
   const pill = (f, txt) => `<button class="ss-lp-btn${soFilter === f ? ' active' : ''}" onclick="soSetFilter('${f}')">${txt} (${zahl(f)})</button>`;
@@ -1458,21 +1479,11 @@ function soRender() {
     <div class="hint" style="margin-bottom:10px;display:flex;gap:14px;flex-wrap:wrap;">
       <span><span class="so-dot" style="background:var(--green);"></span>runtergebucht</span>
       <span><span class="so-dot" style="background:var(--amber);"></span>liegt noch drauf</span>
-      <span><span class="so-dot" style="background:#7c5cc4;"></span>mehr gebucht als drauf war</span></div>`;
+      <span><span class="so-dot" style="background:#7c5cc4;"></span>mehr gebucht als drauf war</span>
+      <span style="margin-left:auto;">Palette anklicken für die Artikel</span></div>`;
   soDaten.forEach((g, i) => {
     if (!filter[soFilter](g)) return;
-    const status = g.noch > 0
-      ? `<span class="pt" style="background:#fff4e6;color:#7c4a12;">Rest: ${g.noch} Stk</span>`
-      : `<span class="pt pt-ein">Quelle leer</span>`;
-    const offen = soOffen === i;
-    html += `<div class="so-card${offen ? ' so-offen' : ''}">
-      <div class="so-kopf" onclick="soToggle(${i})">
-        <div class="row" style="gap:8px;margin-bottom:6px;">
-          <b>${esc(g.quelle)}</b><span class="muted">→</span><span>Palette ${esc([...g.paletten].sort().join(', ') || '?')}</span>${status}
-          <span class="muted" style="margin-left:auto;">${esc(soZeitraum(g))} ${offen ? '▲' : '▼'}</span></div>
-        ${soBalken(g)}
-        <div class="muted" style="margin-top:5px;">${g.drauf} drauf · ${g.runter} runter · <span style="color:#7c4a12;">${g.noch} noch drauf</span>${g.mehr ? ` · <span style="color:#5b3fa8;">+${g.mehr} mehr gebucht</span>` : ''}</div>
-      </div>${offen ? soDetailHtml(g, i) : ''}</div>`;
+    html += `<div class="so-card so-kopf" onclick="soOeffnen(${i})">${soKopf(g)}</div>`;
   });
   box.innerHTML = html;
 }
@@ -1485,41 +1496,61 @@ function soKartons(p) {
   const k = Object.entries(p.kartons);
   return k.length ? k.sort().map(([n, m]) => `${n} (${m})`).join(', ') : (p.noch > 0 && !p.runter ? 'nicht gescannt' : '—');
 }
+// Filter in der Detailansicht: die vier Kacheln oben
+const SO_DETAIL_FILTER = {
+  alle:   { titel: 'Alle Artikel',     test: () => true },
+  drauf:  { titel: 'War drauf',        test: p => p.runter + p.noch > 0 },
+  runter: { titel: 'Runtergebucht',    test: p => p.runter > 0 },
+  noch:   { titel: 'Liegt noch drauf', test: p => p.noch > 0 },
+  mehr:   { titel: 'Mehr gebucht',     test: p => p.mehr > 0 }
+};
+function soSetDetailFilter(f) { soDetailFilter = (soDetailFilter === f || !SO_DETAIL_FILTER[f]) ? 'alle' : f; soRender(); }
+function soGefiltert(g) { return soSortiert(g).filter(SO_DETAIL_FILTER[soDetailFilter].test); }
 function soDetailHtml(g, i) {
-  const kachel = (titel, wert, bg, fg) => `<div style="flex:1 1 120px;background:${bg};border-radius:8px;padding:8px 12px;">
-      <div style="font-size:.72rem;color:${fg};">${titel}</div><div style="font-size:1.35rem;font-weight:700;color:${fg};">${wert}</div></div>`;
-  const zeilen = soSortiert(g).map(p => {
-    const bg = p.noch > 0 ? 'background:#fff8ee;' : p.mehr > 0 ? 'background:#f4f0fd;' : '';
-    return `<tr style="${bg}"><td class="col-name">${esc(p.name || p.artnr)}<div class="muted" style="font-size:.74rem;">${esc(p.artnr)}${p.gtin ? ' · ' + esc(p.gtin) : ''}${p.mehr && !p.runter && !p.noch ? ' · war nicht gebucht' : ''}</div></td>
+  const kachel = (f, titel, wert, bg, fg) => {
+    const aktiv = soDetailFilter === f;
+    return `<div class="so-kachel${aktiv ? ' aktiv' : ''}" style="background:${bg};color:${fg};--so-fg:${fg};" onclick="soSetDetailFilter('${f}')" title="${aktiv ? 'Filter aufheben' : 'Nur diese Artikel anzeigen'}">
+      <div style="font-size:.72rem;">${titel}${aktiv ? ' · Filter aktiv' : ''}</div><div style="font-size:1.35rem;font-weight:700;">${wert}</div></div>`;
+  };
+  const liste = soGefiltert(g);
+  const zeilen = liste.map(p => `<tr><td class="col-name">${esc(p.name || p.artnr)}<div class="muted" style="font-size:.74rem;">${esc(p.artnr)}${p.gtin ? ' · ' + esc(p.gtin) : ''}${p.mehr && !p.runter && !p.noch ? ' · war nicht gebucht' : ''}</div></td>
       <td class="num">${p.runter + p.noch}</td><td class="num">${p.runter}</td>
       <td class="num"${p.noch ? ' style="color:#7c4a12;font-weight:700;"' : ''}>${p.noch}</td>
       <td class="num"${p.mehr ? ' style="color:#5b3fa8;font-weight:700;"' : ''}>${p.mehr ? '+' + p.mehr : '–'}</td>
-      <td>${esc(soKartons(p))}</td></tr>`;
-  }).join('');
-  return `<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px;">
-    <div class="muted" style="margin-bottom:8px;">${g.liste.length} Artikel · Kartons: ${esc([...g.kartons].sort().join(', ') || '—')}</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-      ${kachel('War drauf', g.drauf, '#f1f3f6', 'var(--text)')}
-      ${kachel('Runtergebucht', g.runter, '#e6f4ea', '#276749')}
-      ${kachel('Liegt noch drauf', g.noch, '#fff4e6', '#7c4a12')}
-      ${kachel('Mehr gebucht', (g.mehr ? '+' : '') + g.mehr, '#f1ecfb', '#5b3fa8')}</div>
-    <div style="overflow-x:auto;"><table class="such-table"><thead><tr><th>Artikel</th><th class="num">Drauf</th><th class="num">Runter</th><th class="num">Noch drauf</th><th class="num">Mehr</th><th>Einsortiert in</th></tr></thead>
+      <td>${esc(soKartons(p))}</td></tr>`).join('')
+    || `<tr><td colspan="6" class="hint" style="padding:10px 8px;">Keine Artikel in dieser Auswahl.</td></tr>`;
+  const info = soDetailFilter === 'alle'
+    ? `${g.liste.length} Artikel`
+    : `${liste.length} von ${g.liste.length} Artikeln · Filter: <b>${SO_DETAIL_FILTER[soDetailFilter].titel}</b> · <a href="#" onclick="soSetDetailFilter('alle');return false;">Alle anzeigen</a>`;
+  return `<div class="row" style="margin-bottom:10px;"><button class="sec" onclick="soZurueck()">← Alle sortierten Paletten</button></div>
+    <div class="so-card" style="cursor:default;">${soKopf(g)}</div>
+    <div class="muted" style="margin:10px 0 8px;">Kartons: ${esc([...g.kartons].sort().join(', ') || '—')}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+      ${kachel('drauf', 'War drauf', g.drauf, '#f1f3f6', '#1a2433')}
+      ${kachel('runter', 'Runtergebucht', g.runter, '#e6f4ea', '#276749')}
+      ${kachel('noch', 'Liegt noch drauf', g.noch, '#fff4e6', '#7c4a12')}
+      ${kachel('mehr', 'Mehr gebucht', (g.mehr ? '+' : '') + g.mehr, '#f1ecfb', '#5b3fa8')}</div>
+    <div class="hint" style="margin-bottom:8px;">Kachel anklicken = nur diese Artikel anzeigen, nochmal klicken = alle. ${info}</div>
+    <div style="overflow-x:auto;"><table class="such-table so-table"><thead><tr><th>Artikel</th><th class="num">Drauf</th><th class="num">Runter</th><th class="num">Noch drauf</th><th class="num">Mehr</th><th>Einsortiert in</th></tr></thead>
       <tbody>${zeilen}</tbody></table></div>
     <div class="row" style="margin-top:10px;gap:8px;">
-      <button class="sec" onclick="soDrucken(${i})">🖨️ Übersicht drucken</button>
-      <button class="sec" onclick="soCsv(${i})">⬇️ Als CSV</button></div>
-    <div class="hint" style="margin-top:6px;">„Drauf" = runtergebucht + liegt noch drauf. „Noch drauf" ist der aktuelle Bestand auf ${esc(g.quelle)}.</div>
-  </div>`;
+      <button class="sec" onclick="soDrucken(${i})">🖨️ Drucken</button>
+      <button class="sec" onclick="soCsv(${i})">⬇️ Als CSV</button>
+      <span class="hint">Druck und CSV enthalten die aktuell angezeigten Artikel.</span></div>
+    <div class="hint" style="margin-top:6px;">„Drauf" = runtergebucht + liegt noch drauf. „Noch drauf" ist der aktuelle Bestand auf ${esc(g.quelle)}.</div>`;
 }
 function soCsv(i) {
   const g = soDaten[i];
   const head = ['Artikelnummer', 'Artikelname', 'EAN', 'War drauf', 'Runtergebucht', 'Liegt noch drauf', 'Mehr gebucht', 'Einsortiert in'];
-  const data = soSortiert(g).map(p => [p.artnr, p.name, p.gtin, p.runter + p.noch, p.runter, p.noch, p.mehr, soKartons(p)]);
-  csvDownload('Sortierung_' + g.quelle.replace(/[^\w.-]+/g, '_') + '.csv', [head, ...data]);
+  const data = soGefiltert(g).map(p => [p.artnr, p.name, p.gtin, p.runter + p.noch, p.runter, p.noch, p.mehr, soKartons(p)]);
+  const zusatz = soDetailFilter === 'alle' ? '' : '_' + SO_DETAIL_FILTER[soDetailFilter].titel.replace(/\s+/g, '-');
+  csvDownload('Sortierung_' + g.quelle.replace(/[^\w.-]+/g, '_') + zusatz + '.csv', [head, ...data]);
 }
 function soDrucken(i) {
   const g = soDaten[i];
-  const zeilen = soSortiert(g).map(p => `<tr><td>${esc(p.name || p.artnr)}<br><small>${esc(p.artnr)}${p.gtin ? ' · ' + esc(p.gtin) : ''}</small></td><td class="n">${p.runter + p.noch}</td><td class="n">${p.runter}</td><td class="n">${p.noch}</td><td class="n">${p.mehr ? '+' + p.mehr : '–'}</td><td>${esc(soKartons(p))}</td></tr>`).join('');
+  const liste = soGefiltert(g);
+  const zeilen = liste.map(p => `<tr><td>${esc(p.name || p.artnr)}<br><small>${esc(p.artnr)}${p.gtin ? ' · ' + esc(p.gtin) : ''}</small></td><td class="n">${p.runter + p.noch}</td><td class="n">${p.runter}</td><td class="n">${p.noch}</td><td class="n">${p.mehr ? '+' + p.mehr : '–'}</td><td>${esc(soKartons(p))}</td></tr>`).join('');
+  const auswahl = soDetailFilter === 'alle' ? '' : ` · Auswahl: ${SO_DETAIL_FILTER[soDetailFilter].titel} (${liste.length} von ${g.liste.length})`;
   const w = window.open('', '_blank');
   if (!w) { alert('Popup blockiert – bitte Popups für diese Seite erlauben.'); return; }
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Sortierung ${esc(g.quelle)}</title><style>
@@ -1527,7 +1558,7 @@ function soDrucken(i) {
     th,td{border-bottom:1px solid #ccc;padding:4px 6px;text-align:left;vertical-align:top}th{background:#eef2f7}.n{text-align:right}small{color:#666}
     .k{display:inline-block;margin-right:18px}@page{margin:8mm}</style></head><body>
     <h1>Sortierung ${esc(g.quelle)} → Palette ${esc([...g.paletten].sort().join(', '))}</h1>
-    <div>${esc(soZeitraum(g))} · ${g.liste.length} Artikel · Stand ${esc(fmtZeit(new Date().toISOString()))}</div>
+    <div>${esc(soZeitraum(g))} · ${g.liste.length} Artikel${esc(auswahl)} · Stand ${esc(fmtZeit(new Date().toISOString()))}</div>
     <div style="margin-top:8px;"><span class="k">War drauf: <b>${g.drauf}</b></span><span class="k">Runtergebucht: <b>${g.runter}</b></span><span class="k">Liegt noch drauf: <b>${g.noch}</b></span><span class="k">Mehr gebucht: <b>${g.mehr}</b></span></div>
     <table><thead><tr><th>Artikel</th><th class="n">Drauf</th><th class="n">Runter</th><th class="n">Noch drauf</th><th class="n">Mehr</th><th>Einsortiert in</th></tr></thead><tbody>${zeilen}</tbody></table>
     <script>setTimeout(function(){window.print();},300);<\/script></body></html>`);
