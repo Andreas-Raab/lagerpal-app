@@ -123,6 +123,12 @@ tbody tr:hover td{background:#eef4fb;}
 .login-wrap{max-width:460px;margin:24px auto;padding:0 16px;}
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-start;justify-content:center;padding:16px;z-index:50;overflow:auto;}
 .modal-box{background:#fff;border-radius:12px;padding:18px;max-width:460px;width:100%;margin-top:5vh;}
+.so-bar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:#eef0f3;}
+.so-bar>div{height:100%;}
+.so-dot{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px;}
+.so-card{border:1.5px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fff;}
+.so-card.so-offen{border-color:var(--blue);}
+.so-kopf{cursor:pointer;}
 </style>
 </head>
 <body>
@@ -299,6 +305,11 @@ tbody tr:hover td{background:#eef4fb;}
       </div>
     </div>
     <div class="card"><div id="er-log" class="hint">Noch nichts eingeräumt.</div></div>
+    <div class="card">
+      <div class="row" style="justify-content:space-between;"><b>📊 Bisher sortierte Paletten</b>
+        <button class="sec" onclick="soLaden()">↻ Übersicht laden</button></div>
+      <div id="so-box" class="hint" style="margin-top:8px;">Zeigt je Quelle, was drauf war, was runtergebucht wurde, was noch drauf liegt und was mehr gebucht wurde als drauf war. Wird nur aus Protokoll und Beständen berechnet und ändert nichts.</div>
+    </div>
   </div>
 
   <div id="tab-inventur" class="tabpanel" style="display:none;">
@@ -1333,6 +1344,194 @@ async function erFertig() {
   erSession = null;
   erSpeichern();   // gemerkte Sortierung löschen
   initEinraeumen();
+}
+
+// ── Übersicht: bisher sortierte Paletten (reine Auswertung, schreibt nichts) ──
+// Quelle der Zahlen ist ausschließlich das Protokoll + der aktuelle Bestand:
+//  • Runtergebucht = Umlagerungen (MOVE|…) von der Quelle in einen Paletten-Karton
+//  • Mehr gebucht  = Eingänge „Inventur-Zugang (Einräumen)" (mehr gescannt als gebucht war)
+//  • Noch drauf    = aktueller Bestand auf der Quelle
+//  • War drauf     = runtergebucht + noch drauf
+// Rückgängig gemachte Buchungen zählen nicht. Annahme: jede Quelle wird einmal
+// sortiert (ggf. mit Unterbrechung) - wird ein Quellname für mehrere Lieferungen
+// wiederverwendet, werden diese zusammengefasst.
+let soDaten = null, soFilter = 'alle', soOffen = null;
+
+function soPaletteVon(karton, palMap) {
+  if (palMap[karton]) return palMap[karton];
+  const m = (karton || '').match(/^(.+)-K\d+$/);   // z. B. umbenannter/gelöschter Karton
+  return m ? m[1] : '';
+}
+async function soChunks(werte, fn) {
+  const out = [];
+  for (let i = 0; i < werte.length; i += 100) out.push(...await fn(werte.slice(i, i + 100)));
+  return out;
+}
+async function soLaden() {
+  const box = el('so-box');
+  box.className = ''; box.innerHTML = '<span class="hint">⏳ Wird aus dem Protokoll berechnet…</span>';
+  try {
+    const [moves, plus, lps] = await Promise.all([
+      fetchAll('buchungen', 'zeitstempel,artikelnummer,artikelname,gtin,menge,kommentar',
+        { eq: { typ: 'Umlagerung', rueckgaengig_gemacht: 0 }, build: q => q.like('kommentar', 'MOVE|%') }),
+      fetchAll('buchungen', 'zeitstempel,artikelnummer,artikelname,gtin,lagerplatz,menge',
+        { eq: { typ: 'Eingang', rueckgaengig_gemacht: 0, kommentar: 'Inventur-Zugang (Einräumen)' } }),
+      fetchAll('v_lagerplaetze', 'name,palette')
+    ]);
+    const palMap = {}; lps.forEach(l => { if (l.palette) palMap[l.name] = l.palette; });
+    const gruppen = {};   // Quelle → Gruppe
+    const grp = q => gruppen[q] || (gruppen[q] = { quelle: q, paletten: new Set(), kartons: new Set(), von: null, bis: null, art: {} });
+    const posten = (g, r) => g.art[r.artikelnummer] || (g.art[r.artikelnummer] = { artnr: r.artikelnummer, name: r.artikelname || '', gtin: r.gtin || '', runter: 0, mehr: 0, noch: 0, kartons: {} });
+    const zeit = (g, ts) => { if (!g.von || ts < g.von) g.von = ts; if (!g.bis || ts > g.bis) g.bis = ts; };
+    const scanIndex = {};   // "artnr|karton|zeit" → Quelle (für exakte Zuordnung der Mehrbuchungen)
+    const kartonScans = {}; // Karton → [{quelle, ts}]
+    for (const r of moves) {
+      let m; try { m = JSON.parse(r.kommentar.slice(5)); } catch (e) { continue; }
+      const pal = soPaletteVon(m.nach, palMap);
+      if (!pal || !m.von || m.von === m.nach) continue;   // nur Umlagerungen in Paletten-Kartons
+      const g = grp(m.von), p = posten(g, r), n = parseInt(m.menge, 10) || 0;
+      p.runter += n; p.kartons[m.nach] = (p.kartons[m.nach] || 0) + n;
+      if (!p.name && r.artikelname) p.name = r.artikelname;
+      g.paletten.add(pal); g.kartons.add(m.nach); zeit(g, r.zeitstempel);
+      scanIndex[r.artikelnummer + '|' + m.nach + '|' + r.zeitstempel] = m.von;
+      (kartonScans[m.nach] = kartonScans[m.nach] || []).push({ quelle: m.von, ts: r.zeitstempel });
+    }
+    const naechste = (liste, ts) => {
+      let best = null, bestD = Infinity; const t = new Date(ts).getTime();
+      liste.forEach(x => { const d = Math.abs(new Date(x.ts).getTime() - t); if (d < bestD) { bestD = d; best = x.quelle; } });
+      return best;
+    };
+    for (const r of plus) {
+      const karton = r.lagerplatz, pal = soPaletteVon(karton, palMap);
+      // 1) gleicher Scan (gleiche Zeit, gleicher Artikel, gleicher Karton) → exakt
+      let q = scanIndex[r.artikelnummer + '|' + karton + '|' + r.zeitstempel];
+      // 2) sonst: Quelle, die zeitlich am nächsten in DENSELBEN Karton sortiert hat
+      if (!q && kartonScans[karton]) q = naechste(kartonScans[karton], r.zeitstempel);
+      // 3) sonst: Quelle, die zeitlich am nächsten in dieselbe Palette sortiert hat
+      if (!q && pal) q = naechste(Object.values(gruppen).filter(g => g.paletten.has(pal)).map(g => ({ quelle: g.quelle, ts: g.bis })), r.zeitstempel);
+      const g = grp(q || '(Quelle unbekannt)'), p = posten(g, r), n = parseInt(r.menge, 10) || 0;
+      p.mehr += n; p.kartons[karton] = (p.kartons[karton] || 0) + n;
+      if (pal) g.paletten.add(pal); g.kartons.add(karton); zeit(g, r.zeitstempel);
+    }
+    // aktueller Bestand auf den Quellen = „liegt noch drauf"
+    const quellen = Object.keys(gruppen).filter(q => q !== '(Quelle unbekannt)');
+    const rest = await soChunks(quellen, t => fetchAll('bestaende', 'artikelnummer,lagerplatz,menge', { build: q => q.in('lagerplatz', t).gt('menge', 0) }));
+    const fehlend = [...new Set(rest.map(r => r.artikelnummer))];
+    const arts = await soChunks(fehlend, t => fetchAll('artikel', 'artikelnummer,artikelname,gtin', { build: q => q.in('artikelnummer', t) }));
+    const artMap = {}; arts.forEach(a => artMap[a.artikelnummer] = a);
+    for (const r of rest) {
+      const a = artMap[r.artikelnummer] || {};
+      const p = posten(gruppen[r.lagerplatz], { artikelnummer: r.artikelnummer, artikelname: a.artikelname, gtin: a.gtin });
+      p.noch += r.menge;
+      if (!p.gtin && a.gtin) p.gtin = a.gtin;
+    }
+    soDaten = Object.values(gruppen).map(g => {
+      const liste = Object.values(g.art);
+      const sum = k => liste.reduce((s, x) => s + x[k], 0);
+      return { ...g, liste, runter: sum('runter'), mehr: sum('mehr'), noch: sum('noch'), drauf: sum('runter') + sum('noch') };
+    }).sort((a, b) => (b.bis || '').localeCompare(a.bis || ''));
+    soRender();
+  } catch (e) {
+    box.innerHTML = '<span class="err">❌ ' + esc(e.message || String(e)) + '</span>';
+  }
+}
+function soSetFilter(f) { soFilter = f; soRender(); }
+function soToggle(i) { soOffen = soOffen === i ? null : i; soRender(); }
+function soZeitraum(g) {
+  if (!g.von) return '';
+  const a = fmtZeit(g.von), b = fmtZeit(g.bis);
+  const tag = s => s.slice(8, 10) + '.' + s.slice(5, 7) + '.';
+  return a.slice(0, 10) === b.slice(0, 10) ? `${tag(a)} · ${a.slice(11)}–${b.slice(11)}` : `${tag(a)} ${a.slice(11)} – ${tag(b)} ${b.slice(11)}`;
+}
+function soBalken(g) {
+  const tot = g.drauf + g.mehr || 1, pct = n => (n / tot * 100).toFixed(1) + '%';
+  return `<div class="so-bar"><div style="width:${pct(g.runter)};background:var(--green);"></div><div style="width:${pct(g.noch)};background:var(--amber);"></div><div style="width:${pct(g.mehr)};background:#7c5cc4;"></div></div>`;
+}
+function soRender() {
+  const box = el('so-box');
+  if (!soDaten) return;
+  if (!soDaten.length) { box.innerHTML = '<span class="hint">Noch keine Sortierung im Protokoll gefunden.</span>'; return; }
+  const filter = { alle: () => true, rest: g => g.noch > 0, mehr: g => g.mehr > 0, leer: g => g.noch === 0 };
+  const zahl = f => soDaten.filter(filter[f]).length;
+  const pill = (f, txt) => `<button class="ss-lp-btn${soFilter === f ? ' active' : ''}" onclick="soSetFilter('${f}')">${txt} (${zahl(f)})</button>`;
+  let html = `<div class="row" style="gap:6px;margin-bottom:8px;">${pill('alle', 'Alle')}${pill('rest', 'Mit Rest')}${pill('mehr', 'Mehr gebucht')}${pill('leer', 'Quelle leer')}</div>
+    <div class="hint" style="margin-bottom:10px;display:flex;gap:14px;flex-wrap:wrap;">
+      <span><span class="so-dot" style="background:var(--green);"></span>runtergebucht</span>
+      <span><span class="so-dot" style="background:var(--amber);"></span>liegt noch drauf</span>
+      <span><span class="so-dot" style="background:#7c5cc4;"></span>mehr gebucht als drauf war</span></div>`;
+  soDaten.forEach((g, i) => {
+    if (!filter[soFilter](g)) return;
+    const status = g.noch > 0
+      ? `<span class="pt" style="background:#fff4e6;color:#7c4a12;">Rest: ${g.noch} Stk</span>`
+      : `<span class="pt pt-ein">Quelle leer</span>`;
+    const offen = soOffen === i;
+    html += `<div class="so-card${offen ? ' so-offen' : ''}">
+      <div class="so-kopf" onclick="soToggle(${i})">
+        <div class="row" style="gap:8px;margin-bottom:6px;">
+          <b>${esc(g.quelle)}</b><span class="muted">→</span><span>Palette ${esc([...g.paletten].sort().join(', ') || '?')}</span>${status}
+          <span class="muted" style="margin-left:auto;">${esc(soZeitraum(g))} ${offen ? '▲' : '▼'}</span></div>
+        ${soBalken(g)}
+        <div class="muted" style="margin-top:5px;">${g.drauf} drauf · ${g.runter} runter · <span style="color:#7c4a12;">${g.noch} noch drauf</span>${g.mehr ? ` · <span style="color:#5b3fa8;">+${g.mehr} mehr gebucht</span>` : ''}</div>
+      </div>${offen ? soDetailHtml(g, i) : ''}</div>`;
+  });
+  box.innerHTML = html;
+}
+function soSortiert(g) {
+  // Auffällige zuerst: Rest (größter zuerst), dann Mehrbuchungen, dann alphabetisch
+  return g.liste.slice().sort((a, b) => (b.noch > 0) - (a.noch > 0) || b.noch - a.noch
+    || (b.mehr > 0) - (a.mehr > 0) || b.mehr - a.mehr || (a.name || a.artnr).localeCompare(b.name || b.artnr));
+}
+function soKartons(p) {
+  const k = Object.entries(p.kartons);
+  return k.length ? k.sort().map(([n, m]) => `${n} (${m})`).join(', ') : (p.noch > 0 && !p.runter ? 'nicht gescannt' : '—');
+}
+function soDetailHtml(g, i) {
+  const kachel = (titel, wert, bg, fg) => `<div style="flex:1 1 120px;background:${bg};border-radius:8px;padding:8px 12px;">
+      <div style="font-size:.72rem;color:${fg};">${titel}</div><div style="font-size:1.35rem;font-weight:700;color:${fg};">${wert}</div></div>`;
+  const zeilen = soSortiert(g).map(p => {
+    const bg = p.noch > 0 ? 'background:#fff8ee;' : p.mehr > 0 ? 'background:#f4f0fd;' : '';
+    return `<tr style="${bg}"><td class="col-name">${esc(p.name || p.artnr)}<div class="muted" style="font-size:.74rem;">${esc(p.artnr)}${p.gtin ? ' · ' + esc(p.gtin) : ''}${p.mehr && !p.runter && !p.noch ? ' · war nicht gebucht' : ''}</div></td>
+      <td class="num">${p.runter + p.noch}</td><td class="num">${p.runter}</td>
+      <td class="num"${p.noch ? ' style="color:#7c4a12;font-weight:700;"' : ''}>${p.noch}</td>
+      <td class="num"${p.mehr ? ' style="color:#5b3fa8;font-weight:700;"' : ''}>${p.mehr ? '+' + p.mehr : '–'}</td>
+      <td>${esc(soKartons(p))}</td></tr>`;
+  }).join('');
+  return `<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px;">
+    <div class="muted" style="margin-bottom:8px;">${g.liste.length} Artikel · Kartons: ${esc([...g.kartons].sort().join(', ') || '—')}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+      ${kachel('War drauf', g.drauf, '#f1f3f6', 'var(--text)')}
+      ${kachel('Runtergebucht', g.runter, '#e6f4ea', '#276749')}
+      ${kachel('Liegt noch drauf', g.noch, '#fff4e6', '#7c4a12')}
+      ${kachel('Mehr gebucht', (g.mehr ? '+' : '') + g.mehr, '#f1ecfb', '#5b3fa8')}</div>
+    <div style="overflow-x:auto;"><table class="such-table"><thead><tr><th>Artikel</th><th class="num">Drauf</th><th class="num">Runter</th><th class="num">Noch drauf</th><th class="num">Mehr</th><th>Einsortiert in</th></tr></thead>
+      <tbody>${zeilen}</tbody></table></div>
+    <div class="row" style="margin-top:10px;gap:8px;">
+      <button class="sec" onclick="soDrucken(${i})">🖨️ Übersicht drucken</button>
+      <button class="sec" onclick="soCsv(${i})">⬇️ Als CSV</button></div>
+    <div class="hint" style="margin-top:6px;">„Drauf" = runtergebucht + liegt noch drauf. „Noch drauf" ist der aktuelle Bestand auf ${esc(g.quelle)}.</div>
+  </div>`;
+}
+function soCsv(i) {
+  const g = soDaten[i];
+  const head = ['Artikelnummer', 'Artikelname', 'EAN', 'War drauf', 'Runtergebucht', 'Liegt noch drauf', 'Mehr gebucht', 'Einsortiert in'];
+  const data = soSortiert(g).map(p => [p.artnr, p.name, p.gtin, p.runter + p.noch, p.runter, p.noch, p.mehr, soKartons(p)]);
+  csvDownload('Sortierung_' + g.quelle.replace(/[^\w.-]+/g, '_') + '.csv', [head, ...data]);
+}
+function soDrucken(i) {
+  const g = soDaten[i];
+  const zeilen = soSortiert(g).map(p => `<tr><td>${esc(p.name || p.artnr)}<br><small>${esc(p.artnr)}${p.gtin ? ' · ' + esc(p.gtin) : ''}</small></td><td class="n">${p.runter + p.noch}</td><td class="n">${p.runter}</td><td class="n">${p.noch}</td><td class="n">${p.mehr ? '+' + p.mehr : '–'}</td><td>${esc(soKartons(p))}</td></tr>`).join('');
+  const w = window.open('', '_blank');
+  if (!w) { alert('Popup blockiert – bitte Popups für diese Seite erlauben.'); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Sortierung ${esc(g.quelle)}</title><style>
+    body{font-family:Arial,sans-serif;padding:14mm;font-size:12px}h1{font-size:18px;margin:0 0 4px}table{width:100%;border-collapse:collapse;margin-top:10px}
+    th,td{border-bottom:1px solid #ccc;padding:4px 6px;text-align:left;vertical-align:top}th{background:#eef2f7}.n{text-align:right}small{color:#666}
+    .k{display:inline-block;margin-right:18px}@page{margin:8mm}</style></head><body>
+    <h1>Sortierung ${esc(g.quelle)} → Palette ${esc([...g.paletten].sort().join(', '))}</h1>
+    <div>${esc(soZeitraum(g))} · ${g.liste.length} Artikel · Stand ${esc(fmtZeit(new Date().toISOString()))}</div>
+    <div style="margin-top:8px;"><span class="k">War drauf: <b>${g.drauf}</b></span><span class="k">Runtergebucht: <b>${g.runter}</b></span><span class="k">Liegt noch drauf: <b>${g.noch}</b></span><span class="k">Mehr gebucht: <b>${g.mehr}</b></span></div>
+    <table><thead><tr><th>Artikel</th><th class="n">Drauf</th><th class="n">Runter</th><th class="n">Noch drauf</th><th class="n">Mehr</th><th>Einsortiert in</th></tr></thead><tbody>${zeilen}</tbody></table>
+    <script>setTimeout(function(){window.print();},300);<\/script></body></html>`);
+  w.document.close();
 }
 
 // ── Barcode (Code128) + Karton-Blatt drucken ────────────────────────────────
