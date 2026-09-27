@@ -2292,7 +2292,11 @@ async function backupEinspielen() {
   if (error) { st.innerHTML = '<span class="err">❌ ' + esc(error.message) + '</span>'; el('restore-btn').disabled = false; return; }
   const palTxt = data.paletten === null || typeof data.paletten === 'undefined' ? ' (Paletten-Liste unverändert, war nicht in dieser Sicherung enthalten)' : `, ${data.paletten} Paletten`;
   st.innerHTML = `<span class="ok">✓ Eingespielt: ${data.artikel} Artikel, ${data.bestaende} Bestände, ${data.lagerplaetze} Lagerplätze, ${data.buchungen} Protokoll-Einträge, ${data.leermeldungen} Leermeldungen${palTxt}.</span>`
-    + (data.negativ_auf_null > 0 ? `<div class="err" style="margin-top:6px;">⚠️ ${data.negativ_auf_null} negative Bestände aus der Sicherung wurden auf 0 gesetzt (bitte per Inventur prüfen).</div>` : '');
+    + (data.negativ_auf_null > 0 ? `<div class="err" style="margin-top:6px;">⚠️ ${data.negativ_auf_null} negative Bestände aus der Sicherung wurden auf 0 gesetzt (bitte per Inventur prüfen).</div>` : '')
+    // Unstimmigkeiten IN der Sicherungsdatei (entstehen, wenn während des Backups
+    // gebucht wurde) - werden übersprungen statt das Einspielen abzubrechen.
+    + (data.bestaende_ohne_artikel > 0 ? `<div class="err" style="margin-top:6px;">⚠️ ${data.bestaende_ohne_artikel} Bestände übersprungen, weil der Artikel in der Sicherung fehlt${(data.beispiele_ohne_artikel || []).length ? ' (z. B. ' + esc(data.beispiele_ohne_artikel.join(', ')) + ')' : ''}. Bitte diese Plätze per Inventur prüfen.</div>` : '')
+    + (data.uebersprungen && Object.keys(data.uebersprungen).length ? `<div class="err" style="margin-top:6px;">⚠️ Doppelte bzw. unvollständige Zeilen in der Sicherung übersprungen: ${esc(Object.entries(data.uebersprungen).map(([t, n]) => t + ' ' + n).join(', '))}.</div>` : '');
   el('restore-phrase').value = '';
   el('restore-file').value = '';
   await ladeAllePlaetze();
