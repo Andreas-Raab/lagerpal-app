@@ -1602,27 +1602,42 @@ async function kartonBlattDrucken(name) {
   // Kanal nur noch als großer farbiger Punkt hinter dem Kartonnamen (Farbdrucker):
   // grün = online, rot = nicht online, kein Punkt = gemischt/unbekannt.
   // Barcode, Palette und Artikelnummer stehen bewusst nicht mehr auf dem Blatt.
-  const punktFarbe = meta.kanal===1 ? '#15803d' : (meta.kanal===2 ? '#c0392f' : '');
+  const punktFarbe = meta.kanal===1 ? '#22c55e' : (meta.kanal===2 ? '#c0392f' : '');
   const punkt = punktFarbe ? `<span class="dot" style="background:${punktFarbe};"></span>` : '';
   const body = rows.map(a => `<tr><td class="mono">${esc(a.gtin)}</td><td class="t">${esc(a.name)}</td><td class="r m">${a.menge}</td><td class="w">${esc(a.weitere)}</td></tr>`).join('')
     || '<tr><td colspan="4" style="text-align:center;color:#888;padding:8mm;">(leer)</td></tr>';
   const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${esc(name)}</title><style>
     *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
     body{margin:0;padding:7mm;font-family:Arial,sans-serif;color:#000;}
-    .kopf{display:flex;align-items:center;gap:8mm;border-bottom:2px solid #000;padding-bottom:3mm;margin-bottom:3mm;}
+    .kopf{display:flex;align-items:center;justify-content:center;gap:8mm;border-bottom:2px solid #000;padding-bottom:3mm;margin-bottom:3mm;}
     .kar{font-size:90pt;font-weight:800;line-height:1;letter-spacing:-1px;}
     .dot{display:inline-block;width:56pt;height:56pt;border-radius:50%;flex:none;}
-    table{width:100%;border-collapse:collapse;font-size:10pt;} th,td{border-bottom:1px solid #ccc;padding:1.3mm 1.5mm;text-align:left;vertical-align:top;}
+    /* feste Spaltenbreiten: nichts darf breiter als das Blatt werden (sonst schneidet der Drucker ab) */
+    table{width:100%;border-collapse:collapse;font-size:10pt;table-layout:fixed;}
+    col.c-ean{width:31mm;} col.c-m{width:14mm;} col.c-w{width:42mm;}
+    th,td{border-bottom:1px solid #ccc;padding:1.3mm 1.5mm;text-align:left;vertical-align:top;overflow:hidden;}
     th{border-bottom:1.5px solid #000;font-size:8.5pt;text-transform:uppercase;}
-    .r{text-align:right;} .m{font-weight:700;} .t{font-size:8pt;} .w{font-size:8.5pt;} .mono{font-family:'Courier New',monospace;white-space:nowrap;}
+    .r{text-align:right;} .m{font-weight:700;} .t{font-size:8pt;white-space:nowrap;} .t.umbruch{white-space:normal;} .w{font-size:8.5pt;overflow-wrap:anywhere;} .mono{font-family:'Courier New',monospace;white-space:nowrap;}
     .hint{margin-bottom:4mm;font-size:9pt;color:#666;}
-    @page{size:A4;margin:7mm;}
+    /* oben 7 mm, links/rechts/unten 12 mm */
+    @page{size:A4;margin:7mm 12mm 12mm 12mm;}
     @media print{.hint{display:none;} body{padding:0;}}
   </style></head><body>
     <div class="hint">Karton-Blatt. Druck startet automatisch — sonst Strg/Cmd+P.</div>
     <div class="kopf"><div class="kar">${esc(name)}</div>${punkt}</div>
-    <table><thead><tr><th>EAN</th><th>Artikelname</th><th class="r">Menge</th><th>Weitere Lagerplätze</th></tr></thead><tbody>${body}</tbody></table>
-    <script>window.onload=function(){setTimeout(function(){window.print();},150);};<\/script>
+    <table><colgroup><col class="c-ean"><col><col class="c-m"><col class="c-w"></colgroup><thead><tr><th>EAN</th><th>Artikelname</th><th class="r">Menge</th><th>Weitere Lagerplätze</th></tr></thead><tbody>${body}</tbody></table>
+    <script>
+      // Artikelname: bleibt 8pt; passt er nicht in eine Zeile, wird die Schrift
+      // schrittweise kleiner (bis 5.5pt). Reicht auch das nicht, wird umgebrochen.
+      function namenEinpassen(){
+        document.querySelectorAll('td.t').forEach(function(td){
+          var s=8;
+          while(td.scrollWidth>td.clientWidth+1 && s>5.5){ s-=0.25; td.style.fontSize=s+'pt'; }
+          if(td.scrollWidth>td.clientWidth+1) td.classList.add('umbruch');
+        });
+      }
+      window.onload=function(){namenEinpassen();setTimeout(function(){window.print();},150);};
+    <\/script>
   </body></html>`;
   const w = window.open('', '_blank');
   if (!w) { alert('Bitte Pop-ups erlauben, damit das Karton-Blatt gedruckt werden kann.'); return; }
