@@ -1282,7 +1282,14 @@ async function erScan() {
   // versehentlich die alte Menge ein.
   el('er-menge').value = 1;
   if (!Number.isInteger(menge) || menge < 1) { st.innerHTML='<span class="err">Menge ≥ 1</span>'; return; }
-  const g = await resolveArtikel(code);
+  let g = await resolveArtikel(code);
+  // Nicht in LagerPal, aber in der JTL-Artikelliste → echten Artikel anlegen
+  // (nicht online → geht ganz normal in den Offline-Karton)
+  let neuAngelegt = null;
+  if (!g && istEan(code)) {
+    g = await ausListeAnlegen(code);
+    if (g && g.neu) neuAngelegt = g;
+  }
   // Unbekannt (neue EAN oder schon angelegter Platzhalter) → Klärfall-Karton,
   // Ansage „Unbekannt" statt online/offline
   if ((!g && istEan(code)) || (g && g.unbekannt)) {
@@ -1307,7 +1314,8 @@ async function erScan() {
   else { st.innerHTML='<span class="err">❔ '+esc(g.name||code)+': Amazon-Status unbekannt. Bitte erst Status setzen/importieren.</span>'; erVersteckeFlash(); el('er-scan').select(); return; }
   const verf = await erBestandAuf(g.artnr, erSession.quelle);
   try {
-    if (menge > verf) {
+    // Neu aus der JTL-Liste angelegt → lag sicher nicht auf der Quelle, keine Rückfrage
+    if (menge > verf && !neuAngelegt) {
       const surplus = menge - verf;
       if (!confirm(`Auf „${erSession.quelle}" sind nur ${verf} Stk von „${g.name||g.artnr}" gebucht — du räumst ${menge} ein.\n\nDie ${surplus} zusätzlichen als Inventur-Zugang in Karton ${ziel} buchen?`)) { st.innerHTML='<span class="err">Abgebrochen.</span>'; el('er-scan').select(); return; }
     }
@@ -1316,9 +1324,9 @@ async function erScan() {
     const { error } = await client.rpc('einraeumen_scan', { p_artikelnummer:g.artnr, p_quelle:erSession.quelle, p_ziel:ziel, p_menge:menge });
     if (error) { st.innerHTML='<span class="err">❌ '+esc(error.message)+'</span>'; el('er-scan').select(); return; }
     const extra = menge > verf ? ` (davon ${menge-verf} als Inventur-Zugang)` : '';
-    erZeigeFlash(kanal, (g.name||g.artnr) + ' → ' + ziel);
-    sprich(kanal === 'online' ? 'online' : 'offline');
-    st.innerHTML = `<span class="ok">${label} → Karton ${esc(ziel)}<br>${menge}× ${esc(g.name||'')} (${esc(g.artnr)})${extra}</span>`;
+    erZeigeFlash(kanal, (neuAngelegt ? '🆕 NEU · ' : '') + (g.name||g.artnr) + ' → ' + ziel);
+    if (neuAngelegt) neuAnsage(g.online); else sprich(kanal === 'online' ? 'online' : 'offline');
+    st.innerHTML = `<span class="ok">${label} → Karton ${esc(ziel)}<br>${menge}× ${esc(g.name||'')} (${esc(g.artnr)})${extra}</span>` + (neuAngelegt ? NEU_HINWEIS(neuAngelegt) : '');
     erSession.gebucht.push({artnr:g.artnr, name:g.name||'', gtin:g.gtin||'', menge, ziel});
     erSession.stk += menge;
     erSpeichern();
@@ -1835,6 +1843,29 @@ async function resolveArtikel(code) {
 // jemand auf den Bildschirm schaut.
 let unbKarton = null;   // aktueller Klärfall-Karton (null = wird beim ersten Scan „Unbekannt-01")
 const istEan = code => /^[0-9]{8,14}$/.test(code);
+// EAN in LagerPal unbekannt → erst in der JTL-Artikelliste nachschlagen. Steht
+// sie dort genau einmal, legt die Datenbank den echten Artikel an (JTL-Nummer +
+// Name, nicht online). Ergebnis im Format von resolveArtikel() plus .neu, oder
+// null (nicht in der Liste / mehrdeutig / Funktion noch nicht eingespielt).
+async function ausListeAnlegen(code) {
+  if (!istEan(code)) return null;
+  const { data, error } = await client.rpc('artikel_aus_liste', { p_gtin: code });
+  if (error || !data || !data.gefunden) return null;
+  return { artnr: data.artikelnummer, name: data.artikelname, gtin: data.gtin || code, online: data.online,
+           istSet: !!data.ist_set, unbekannt: data.unbekannt === 1, neu: !!data.neu };
+}
+// Ansage „Neu angelegt, offline" - immer, unabhängig vom Häkchen
+function neuAnsage(online) {
+  try {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance('Neu angelegt, ' + (online === 1 ? 'online' : 'offline'));
+      u.lang = 'de-DE'; u.rate = 1.0;
+      window.speechSynthesis.speak(u);
+    }
+  } catch (e) {}
+}
+const NEU_HINWEIS = g => `<div style="margin-top:6px;padding:8px 10px;border:2px solid var(--amber);border-radius:8px;background:var(--amber-soft);color:#7c4a12;"><b>🆕 Neu angelegt aus JTL-Liste:</b> ${esc(g.artnr)} · ${esc(g.name || '')} (nicht online)</div>`;
 function unbAnsage() {
   try {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -2067,7 +2098,13 @@ async function ssScanIntern() {
   el('ss-menge').value = 1;
   if (menge === null) { el('ss-scan').focus(); return; }
   ssStatus('🔍 Suche: ' + esc(code) + '…');
-  const g = await resolveArtikel(code);
+  let g = await resolveArtikel(code);
+  // Nicht in LagerPal, aber in der JTL-Artikelliste → echten Artikel anlegen (nur beim Einbuchen)
+  let neuAngelegt = null;
+  if (!g && ssMode === 'ein' && istEan(code)) {
+    g = await ausListeAnlegen(code);
+    if (g && g.neu) { neuAngelegt = g; neuAnsage(g.online); }
+  }
   // Unbekannte Artikel beim Einbuchen: nicht abweisen, sondern in den Klärfall-Karton
   if (ssMode === 'ein' && ((!g && istEan(code)) || (g && g.unbekannt))) {
     const r = await unbEinbuchen(g ? g.gtin : code, g ? g.artnr : '', menge, 'Unbekannter Artikel (Scanner)');
@@ -2087,14 +2124,18 @@ async function ssScanIntern() {
 
   // ── Einbuchen ──
   if (ssMode === 'ein') {
-    if (ssLp) { await ssBook(g.artnr, ssLp, 'ein', menge, g.name); el('ss-scan').focus(); return; }
+    if (ssLp) {
+      const ok = await ssBook(g.artnr, ssLp, 'ein', menge, g.name);
+      if (ok && neuAngelegt) el('ss-status').insertAdjacentHTML('beforeend', NEU_HINWEIS(neuAngelegt));
+      el('ss-scan').focus(); return;
+    }
     // kein Lagerplatz gewählt → Buttons: Plätze mit Bestand zuerst, dann weitere
     const stock = await artikelPlaetze(g.artnr);
     const stockNamen = stock.map(s => s.lagerplatz);
     const nm = jsAttr(g.name || '');
     let html = stock.map(s => `<button class="ss-lp-btn" onclick="ssBookPick('${jsAttr(g.artnr)}','${jsAttr(s.lagerplatz)}','ein','${nm}',${menge})">${esc(s.lagerplatz)} <span class="muted">(${s.menge})</span></button>`).join('');
     html += allePlaetze.filter(p => !stockNamen.includes(p)).map(p => `<button class="ss-lp-btn" onclick="ssBookPick('${jsAttr(g.artnr)}','${jsAttr(p)}','ein','${nm}',${menge})">${esc(p)}</button>`).join('');
-    ssStatus(`<b>${esc(g.name||g.artnr)}</b> — <b>${menge} Stk</b><br>⚠️ Lagerplatz zum Einbuchen wählen:`);
+    ssStatus(`<b>${esc(g.name||g.artnr)}</b> — <b>${menge} Stk</b><br>⚠️ Lagerplatz zum Einbuchen wählen:` + (neuAngelegt ? NEU_HINWEIS(neuAngelegt) : ''));
     el('ss-pick-btns').innerHTML = (html || '<span class="muted">Keine Lagerplätze.</span>') + SS_ABBRECHEN_BTN;
     ssOffen = { artnr: g.artnr, name: g.name || '', typ: 'ein', menge };
     el('ss-pick-section').style.display = 'block';
@@ -2706,7 +2747,7 @@ async function exportArtikelCsv() {
 let allProt = [];
 function ptClass(t) {
   return t==='Eingang'?'pt-ein':t==='Ausgang'?'pt-aus':t==='Umlagerung'?'pt-um'
-    :t==='Inventur'?'pt-inv':t==='Artikeländerung'?'pt-art':t==='Rückgängig'?'pt-undo'
+    :t==='Inventur'?'pt-inv':(t==='Artikeländerung'||t==='Artikel angelegt')?'pt-art':t==='Rückgängig'?'pt-undo'
     :t==='Artikel gelöscht'?'pt-art'
     :(t==='Lagerplatz angelegt'||t==='Lagerplatz gelöscht'||t==='Umbenennung'||t==='Zusammenlegung')?'pt-lp':'pt-csv';
 }
