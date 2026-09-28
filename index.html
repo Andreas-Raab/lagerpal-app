@@ -118,6 +118,10 @@ tbody tr:hover td{background:#eef4fb;}
 .er-flash .sub{display:block;font-size:.85rem;font-weight:600;margin-top:6px;letter-spacing:0;}
 .er-flash.online{background:var(--green);}
 .er-flash.offline{background:var(--red);}
+.er-flash.unbekannt{background:#7c3aed;}
+.unb-box{border:2px solid #7c3aed;border-radius:8px;padding:10px 12px;margin:4px 0;}
+.unb-box .t{font-weight:800;color:#7c3aed;}
+.ss-unbekannt{background:#7c3aed;color:#fff;font-size:1.25rem;font-weight:700;padding:14px 16px;border-radius:8px;animation:ssPuls .5s ease 2;}
 @keyframes erPulse{0%{transform:scale(1.06);}100%{transform:scale(1);}}
 .er-flash.pulse{animation:erPulse .32s ease;}
 .login-wrap{max-width:460px;margin:24px auto;padding:0 16px;}
@@ -252,6 +256,7 @@ tbody tr:hover td{background:#eef4fb;}
       <div id="ss-pick-section" style="display:none;margin-top:14px;">
         <div id="ss-pick-btns" class="lp-btn-row"></div>
       </div>
+      <div id="ss-unb" style="display:none;margin-top:14px;"></div>
 
       <div id="ss-status" class="hint" style="margin-top:16px;">Modus wählen und scannen</div>
     </div>
@@ -1181,7 +1186,8 @@ async function erLaufAnzeigen() {
 // das in dieser Sitzung Gescannte - wichtig beim Fortsetzen/Weiterbefüllen)
 async function erInhaltLaden() {
   if (!erSession) return;
-  const namen = [erSession.aktivOnline, erSession.aktivOffline];
+  await unbAktuellLaden();
+  const namen = [erSession.aktivOnline, erSession.aktivOffline].concat(unbKarton ? [unbKarton] : []);
   const { data } = await client.from('bestaende')
     .select('lagerplatz,artikelnummer,menge,artikel(artikelname,gtin)').in('lagerplatz', namen).gt('menge', 0);
   const inhalt = {}; namen.forEach(n => inhalt[n] = []);
@@ -1212,7 +1218,8 @@ function erRenderCtx() {
     </div>`;
   };
   el('er-ctx').innerHTML = `<div class="muted" style="margin-bottom:6px;">Palette <b>${esc(s.pal)}</b> · Quelle <b>${esc(s.quelle)}</b></div>`
-    + `<div style="display:flex;gap:10px;flex-wrap:wrap;">${box('#276749','🟢 Aktiver Online-Karton',s.aktivOnline,'online')}${box('#9b2c2c','🔴 Aktiver Nicht-online-Karton',s.aktivOffline,'offline')}</div>`;
+    + `<div style="display:flex;gap:10px;flex-wrap:wrap;">${box('#276749','🟢 Aktiver Online-Karton',s.aktivOnline,'online')}${box('#9b2c2c','🔴 Aktiver Nicht-online-Karton',s.aktivOffline,'offline')}</div>`
+    + `<div style="max-width:420px;">${unbBoxHtml(unbKarton ? erKartonStueck(unbKarton) : 0)}</div>`;
 }
 // Während des Sortierens auf einen anderen (z. B. halbvollen) Karton wechseln
 async function erKartonWechseln(ch) {
@@ -1258,7 +1265,7 @@ function erZeigeFlash(kanal, sub) {
   const box = el('er-flash');
   if (!box) return;
   box.className = 'er-flash ' + kanal;
-  box.innerHTML = (kanal === 'online' ? '🟢 ONLINE' : '🔴 NICHT ONLINE') + (sub ? `<span class="sub">${esc(sub)}</span>` : '');
+  box.innerHTML = (kanal === 'online' ? '🟢 ONLINE' : kanal === 'unbekannt' ? '❓ UNBEKANNT' : '🔴 NICHT ONLINE') + (sub ? `<span class="sub">${esc(sub)}</span>` : '');
   box.style.display = 'block';
   box.style.animation = 'none';
   void box.offsetWidth;
@@ -1276,6 +1283,22 @@ async function erScan() {
   el('er-menge').value = 1;
   if (!Number.isInteger(menge) || menge < 1) { st.innerHTML='<span class="err">Menge ≥ 1</span>'; return; }
   const g = await resolveArtikel(code);
+  // Unbekannt (neue EAN oder schon angelegter Platzhalter) → Klärfall-Karton,
+  // Ansage „Unbekannt" statt online/offline
+  if ((!g && istEan(code)) || (g && g.unbekannt)) {
+    const r = await unbEinbuchen(g ? g.gtin : code, g ? g.artnr : '', menge,
+      'Unbekannter Artikel (Palette sortieren, Quelle ' + erSession.quelle + ')');
+    if (r.error) { st.innerHTML='<span class="err">❌ '+esc(r.error.message)+'</span>'; erVersteckeFlash(); el('er-scan').select(); return; }
+    const d = r.data;
+    erZeigeFlash('unbekannt', d.artikelname + ' → ' + d.karton);
+    st.innerHTML = unbMeldungHtml(d, menge);
+    erSession.gebucht.push({artnr:d.artikelnummer, name:d.artikelname, gtin:d.gtin||'', menge, ziel:d.karton});
+    erSession.stk += menge;
+    erSpeichern();
+    el('er-scan').value=''; el('er-scan').focus();
+    await erInhaltLaden(); erRenderCtx(); erLogRender(); refreshUndo();
+    return;
+  }
   if (!g) { st.innerHTML='<span class="err">❌ Nicht gefunden: '+esc(code)+'</span>'; erVersteckeFlash(); el('er-scan').select(); return; }
   if (g.mehrdeutig) { st.innerHTML='<span class="err">EAN mehrdeutig – Artikelnummer eingeben</span>'; erVersteckeFlash(); el('er-scan').select(); return; }
   let ziel, label, kanal;
@@ -1322,6 +1345,7 @@ function erLogRender() {
   html += `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:${g.length?'14px':'0'};">`
     + erKartonSpalte('#276749','🟢 Online', s.aktivOnline)
     + erKartonSpalte('#9b2c2c','🔴 Nicht online', s.aktivOffline)
+    + (unbKarton && erKartonStueck(unbKarton) > 0 ? erKartonSpalte('#7c3aed','❓ Unbekannt', unbKarton) : '')
     + '</div>';
   if (g.length) {
     html += `<details><summary class="muted" style="cursor:pointer;">Verlauf dieser Sortierung (${g.length})</summary>`
@@ -1791,12 +1815,101 @@ async function umlagern() {
 // Löst eine Eingabe (Artikelnummer ODER EAN) zur Artikelnummer auf.
 // Rückgabe: {artnr,name} | {mehrdeutig:[…]} | null
 async function resolveArtikel(code) {
-  let r1 = await client.from('artikel').select('artikelnummer,artikelname,gtin,online,ist_set').eq('artikelnummer', code).limit(1);
-  if (r1.data && r1.data.length) return { artnr: r1.data[0].artikelnummer, name: r1.data[0].artikelname, gtin: r1.data[0].gtin||'', online: r1.data[0].online, istSet: !!r1.data[0].ist_set };
-  let r2 = await client.from('artikel').select('artikelnummer,artikelname,gtin,online,ist_set').eq('gtin', code);
-  if (r2.data && r2.data.length === 1) return { artnr: r2.data[0].artikelnummer, name: r2.data[0].artikelname, gtin: r2.data[0].gtin||'', online: r2.data[0].online, istSet: !!r2.data[0].ist_set };
+  // select('*') statt fester Spaltenliste: liefert „unbekannt" mit, sobald die
+  // Spalte existiert (Migration 19), und läuft auch vorher noch fehlerfrei.
+  const conv = a => ({ artnr: a.artikelnummer, name: a.artikelname, gtin: a.gtin||'', online: a.online, istSet: !!a.ist_set, unbekannt: a.unbekannt === 1 });
+  let r1 = await client.from('artikel').select('*').eq('artikelnummer', code).limit(1);
+  if (r1.data && r1.data.length) return conv(r1.data[0]);
+  let r2 = await client.from('artikel').select('*').eq('gtin', code);
+  if (r2.data && r2.data.length === 1) return conv(r2.data[0]);
   if (r2.data && r2.data.length > 1)  return { mehrdeutig: r2.data };
   return null;
+}
+
+// ── Unbekannte Artikel (Paket A) ────────────────────────────────────────────
+// Eine EAN, die es nicht gibt, wird beim Einbuchen/Palette sortieren nicht mehr
+// abgewiesen: Die Datenbank legt einen Platzhalter an (WE-0-230 … / „Unbekannt 1"
+// …, nicht online) und bucht ihn in den aktuellen Klärfall-Karton „Unbekannt-NN".
+// Jeder solche Scan wird IMMER angesagt (auch wenn die Sprachansage bei „Palette
+// sortieren" ausgeschaltet ist) - man kann sich nicht darauf verlassen, dass
+// jemand auf den Bildschirm schaut.
+let unbKarton = null;   // aktueller Klärfall-Karton (null = wird beim ersten Scan „Unbekannt-01")
+const istEan = code => /^[0-9]{8,14}$/.test(code);
+function unbAnsage() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) {
+      const ctx = unbAnsage.ctx || (unbAnsage.ctx = new AC());
+      [[0, 660], [0.18, 520], [0.36, 390]].forEach(([t, f]) => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'triangle'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.25, ctx.currentTime + t);
+        g.gain.setValueAtTime(0, ctx.currentTime + t + 0.16);
+        o.connect(g); g.connect(ctx.destination);
+        o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.17);
+      });
+    }
+  } catch (e) {}
+  try {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance('Unbekannt');
+      u.lang = 'de-DE'; u.rate = 1.0;
+      // kurz nach dem Ton, damit beides hörbar ist
+      setTimeout(() => { try { window.speechSynthesis.speak(u); } catch (e) {} }, 550);
+    }
+  } catch (e) {}
+}
+async function unbAktuellLaden() {
+  const { data, error } = await client.rpc('unbekannt_karton_aktuell');
+  if (!error) unbKarton = data || null;
+  return unbKarton;
+}
+// Bucht einen unbekannten Artikel ein. code = EAN (neu) oder artnr = vorhandener Platzhalter.
+async function unbEinbuchen(gtin, artnr, menge, kommentar) {
+  const { data, error } = await client.rpc('unbekannt_einbuchen',
+    { p_gtin: gtin || '', p_menge: menge, p_kommentar: kommentar || '', p_artikelnummer: artnr || '' });
+  if (error) return { error };
+  unbKarton = data.karton;
+  unbAnsage();
+  return { data };
+}
+function unbMeldungHtml(d, menge) {
+  return `<div class="ss-unbekannt">❓ UNBEKANNTER ARTIKEL → Karton ${esc(d.karton)}</div>`
+    + `<div style="margin-top:6px;"><b>${menge} Stk</b> · ${esc(d.artikelname)} (${esc(d.artikelnummer)}) · EAN ${esc(d.gtin || '')}`
+    + `${d.neu ? ' · <b>neu angelegt</b>' : ''}<br>Im Karton ${esc(d.karton)} jetzt: <b>${d.lp_bestand_neu}</b> Stk dieses Artikels</div>`;
+}
+// „Unbekannt-Karton voll → drucken & nächster"
+async function unbKartonVoll() {
+  await unbAktuellLaden();
+  if (!unbKarton) { alert('Es gibt noch keinen Unbekannt-Karton - er wird beim ersten unbekannten Artikel angelegt.'); return; }
+  if (!confirm(`Karton „${unbKarton}" ist voll?\n\nKarton-Blatt wird gedruckt, danach geht es mit dem nächsten Unbekannt-Karton weiter.`)) return;
+  const alt = unbKarton;
+  const { data, error } = await client.rpc('unbekannt_karton_naechster');
+  if (error) { alert('Fehler: ' + error.message); return; }
+  unbKarton = data.neu;
+  await kartonBlattDrucken(alt);
+  await ladeAllePlaetze();
+  if (erSession) { await erInhaltLaden(); erRenderCtx(); erLogRender(); }
+  ssUnbRender();
+}
+async function unbKartonStueck() {
+  if (!unbKarton) return 0;
+  const { data } = await client.from('bestaende').select('menge').eq('lagerplatz', unbKarton).gt('menge', 0);
+  return (data || []).reduce((s, r) => s + r.menge, 0);
+}
+function unbBoxHtml(stueck) {
+  return `<div class="unb-box"><div class="muted" style="text-transform:uppercase;font-size:.7rem;">❓ Klärfall-Karton für unbekannte Artikel</div>
+    <div class="t">${esc(unbKarton || 'Unbekannt-01 (wird beim ersten unbekannten Artikel angelegt)')}</div>
+    ${unbKarton ? `<div class="muted">${stueck} Stück im Karton</div>
+    <div class="row" style="margin-top:6px;gap:6px;"><button class="sec" style="padding:4px 10px;height:auto;" onclick="unbKartonVoll()">📄 Karton voll → drucken &amp; nächster</button></div>` : ''}</div>`;
+}
+async function ssUnbRender() {
+  const box = el('ss-unb'); if (!box) return;
+  if (ssMode !== 'ein') { box.style.display = 'none'; return; }
+  await unbAktuellLaden();
+  box.innerHTML = unbBoxHtml(await unbKartonStueck());
+  box.style.display = 'block';
 }
 
 // ── Scanner (Schnellscan, wie alte App) ─────────────────────────────────────
@@ -1845,6 +1958,7 @@ function ssOffenAbbrechen() {
 function ssInit() {
   // Offene Platzwahl beim Tab-Wechsel nicht still verwerfen
   if (ssOffen) {
+    ssUnbRender();
     el('ss-pick-section').style.display = 'block';
     el('ss-scan').disabled = false;
     ssOffenHinweis();
@@ -1856,6 +1970,7 @@ function ssInit() {
   el('ss-mode-ein').classList.remove('active');
   el('ss-lp-section').style.display = 'none';
   el('ss-pick-section').style.display = 'none';
+  el('ss-unb').style.display = 'none';
   el('ss-scan').value = '';
   el('ss-scan').disabled = true;
   ssStatus('Bitte zuerst „− Ausbuchen" oder „＋ Einbuchen" wählen.');
@@ -1869,6 +1984,7 @@ function ssSetMode(m) {
     ssOffen = null;
   }
   ssMode = m;
+  setTimeout(ssUnbRender, 0);
   el('ss-mode-aus').classList.toggle('active', m === 'aus');
   el('ss-mode-ein').classList.toggle('active', m === 'ein');
   el('ss-lp-section').style.display = m === 'ein' ? 'block' : 'none';
@@ -1952,6 +2068,16 @@ async function ssScanIntern() {
   if (menge === null) { el('ss-scan').focus(); return; }
   ssStatus('🔍 Suche: ' + esc(code) + '…');
   const g = await resolveArtikel(code);
+  // Unbekannte Artikel beim Einbuchen: nicht abweisen, sondern in den Klärfall-Karton
+  if (ssMode === 'ein' && ((!g && istEan(code)) || (g && g.unbekannt))) {
+    const r = await unbEinbuchen(g ? g.gtin : code, g ? g.artnr : '', menge, 'Unbekannter Artikel (Scanner)');
+    if (r.error) { ssStatus('Fehler: ' + esc(r.error.message), 'err'); el('ss-scan').focus(); return; }
+    ssStatus(unbMeldungHtml(r.data, menge)
+      + (ssLp ? `<div class="hint" style="margin-top:4px;">Hinweis: unbekannte Artikel gehen immer in den Unbekannt-Karton, nicht auf ${esc(ssLp)}.</div>` : ''));
+    await ladeAllePlaetze(); refreshUndo(); ssUnbRender();
+    el('ss-scan').focus();
+    return;
+  }
   if (!g)            { ssStatus('❌ Nicht gefunden: ' + esc(code), 'err'); el('ss-scan').focus(); return; }
   if (g.mehrdeutig)  { ssStatus('⚠️ EAN mehrdeutig — bitte die Artikelnummer eingeben.', 'err'); el('ss-scan').focus(); return; }
   if (g.istSet) {
@@ -2238,9 +2364,20 @@ async function bestandImportieren() {
     bestandImportLaeuft = false;
   }
 }
+// Unbekannte Artikel (Platzhalter WE-0-…, Paket A) kennt JTL nicht → bis zur
+// Zuordnung aus beiden JTL-Exporten heraushalten. Gleiche Regel in der Edge
+// Function lagerpal-backup (jtlKommentarCsv).
+async function jtlUnbekannteSet() {
+  const arts = await fetchAll('artikel', '*', { order: { col: 'artikelnummer', asc: true } });
+  return { arts: arts.filter(a => a.unbekannt !== 1), unb: new Set(arts.filter(a => a.unbekannt === 1).map(a => a.artikelnummer)) };
+}
 async function exportJtlLagerbestandCsv() {
   try {
-    const rows = await fetchAll('bestaende', 'artikelnummer,lagerplatz,menge', { order: { col: 'artikelnummer', asc: true } });
+    const [alleRows, { unb }] = await Promise.all([
+      fetchAll('bestaende', 'artikelnummer,lagerplatz,menge', { order: { col: 'artikelnummer', asc: true } }),
+      jtlUnbekannteSet()
+    ]);
+    const rows = alleRows.filter(r => !unb.has(r.artikelnummer));
     const head = ['Artikelnummer','Lagerplatz','Einzubuchende Menge'];
     const data = rows.map(r => [r.artikelnummer, r.lagerplatz, r.menge]);
     csvDownload('Lagerbestand.csv', [head, ...data]);
@@ -2250,10 +2387,11 @@ async function exportJtlKommentarCsv() {
   try {
     // Gleiches Format wie der tägliche automatische Export (Edge Function
     // lagerpal-backup, jtlKommentarCsv) - bei Änderungen beide anpassen.
-    const [rows, arts] = await Promise.all([
+    const [alleRows, { arts, unb }] = await Promise.all([
       fetchAll('bestaende', 'artikelnummer,lagerplatz,menge', { order: { col: 'artikelnummer', asc: true } }),
-      fetchAll('artikel', 'artikelnummer', { order: { col: 'artikelnummer', asc: true } })
+      jtlUnbekannteSet()
     ]);
+    const rows = alleRows.filter(r => !unb.has(r.artikelnummer));
     const grp = {};
     rows.filter(r => r.menge > 0).forEach(r => { (grp[r.artikelnummer] = grp[r.artikelnummer] || []).push(r.lagerplatz + ' (' + r.menge + ')'); });
     const head = ['Artikelnummer','Kommentar'];
