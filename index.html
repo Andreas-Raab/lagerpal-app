@@ -129,6 +129,8 @@ tbody tr:hover td{background:#eef4fb;}
 .so-card{border:1.5px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fff;}
 .so-card.so-offen{border-color:var(--blue);}
 .so-kopf{cursor:pointer;}
+.ss-block{background:var(--red);color:#fff;font-size:1.25rem;font-weight:700;padding:14px 16px;border-radius:8px;animation:ssPuls .5s ease 2;}
+@keyframes ssPuls{0%,100%{transform:scale(1);}50%{transform:scale(1.03);}}
 .so-kopf:hover{border-color:var(--blue);}
 .so-kachel{flex:1 1 120px;border-radius:8px;padding:8px 12px;cursor:pointer;border:2px solid transparent;user-select:none;}
 .so-kachel:hover{border-color:var(--line);}
@@ -1597,28 +1599,29 @@ async function kartonBlattDrucken(name) {
     weitere: (weitereMap[r.artikelnummer]||[]).join(', ') || '—' }));
   // Sortierung ausschließlich nach EAN, aber von hinten (letzte Ziffer zuerst).
   rows.sort((x,y)=>(x.gtin||'').split('').reverse().join('').localeCompare((y.gtin||'').split('').reverse().join('')));
-  const kanalTxt = meta.kanal===1?'🟢 online':(meta.kanal===2?'🔴 nicht online':'gemischt');
-  const svg = code128svg(name, 2, 52);
-  const bc = svg ? `<div>${svg}</div><div style="font-size:9pt;letter-spacing:1px;">${esc(name)}</div>` : `<div style="font-weight:700;">${esc(name)}</div>`;
-  const body = rows.map(a => `<tr><td class="mono">${esc(a.gtin)}</td><td>${esc(a.name)}</td><td class="mono">${esc(a.artnr)}</td><td class="r">${a.menge}</td><td>${esc(a.weitere)}</td></tr>`).join('')
-    || '<tr><td colspan="5" style="text-align:center;color:#888;padding:8mm;">(leer)</td></tr>';
+  // Kanal nur noch als großer farbiger Punkt hinter dem Kartonnamen (Farbdrucker):
+  // grün = online, rot = nicht online, kein Punkt = gemischt/unbekannt.
+  // Barcode, Palette und Artikelnummer stehen bewusst nicht mehr auf dem Blatt.
+  const punktFarbe = meta.kanal===1 ? '#15803d' : (meta.kanal===2 ? '#c0392f' : '');
+  const punkt = punktFarbe ? `<span class="dot" style="background:${punktFarbe};"></span>` : '';
+  const body = rows.map(a => `<tr><td class="mono">${esc(a.gtin)}</td><td class="t">${esc(a.name)}</td><td class="r m">${a.menge}</td><td class="w">${esc(a.weitere)}</td></tr>`).join('')
+    || '<tr><td colspan="4" style="text-align:center;color:#888;padding:8mm;">(leer)</td></tr>';
   const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${esc(name)}</title><style>
-    *{box-sizing:border-box;} body{margin:0;padding:14mm;font-family:Arial,sans-serif;color:#000;}
+    *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    body{margin:0;padding:7mm;font-family:Arial,sans-serif;color:#000;}
+    .kopf{display:flex;align-items:center;gap:8mm;border-bottom:2px solid #000;padding-bottom:3mm;margin-bottom:3mm;}
     .kar{font-size:90pt;font-weight:800;line-height:1;letter-spacing:-1px;}
-    .hdr{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #000;padding-bottom:4mm;margin:2mm 0 5mm;}
-    .meta{font-size:14pt;} .pal{font-weight:700;}
-    table{width:100%;border-collapse:collapse;font-size:10.5pt;} th,td{border-bottom:1px solid #ccc;padding:2mm;text-align:left;}
-    th{border-bottom:1.5px solid #000;font-size:9pt;text-transform:uppercase;} .r{text-align:right;} .c{text-align:center;} .mono{font-family:'Courier New',monospace;}
-    .hint{margin-bottom:5mm;font-size:9pt;color:#666;}
-    /* Rand bleibt beim Drucken bewusst als echtes Innen-Padding erhalten (nicht auf 0
-       zurückgesetzt) - so wird nie bis an den Papierrand gedruckt, egal was der
-       Drucker/Browser als @page-Rand tatsächlich umsetzt. */
-    @media print{.hint{display:none;}@page{margin:8mm;}}
+    .dot{display:inline-block;width:56pt;height:56pt;border-radius:50%;flex:none;}
+    table{width:100%;border-collapse:collapse;font-size:10pt;} th,td{border-bottom:1px solid #ccc;padding:1.3mm 1.5mm;text-align:left;vertical-align:top;}
+    th{border-bottom:1.5px solid #000;font-size:8.5pt;text-transform:uppercase;}
+    .r{text-align:right;} .m{font-weight:700;} .t{font-size:8pt;} .w{font-size:8.5pt;} .mono{font-family:'Courier New',monospace;white-space:nowrap;}
+    .hint{margin-bottom:4mm;font-size:9pt;color:#666;}
+    @page{size:A4;margin:7mm;}
+    @media print{.hint{display:none;} body{padding:0;}}
   </style></head><body>
     <div class="hint">Karton-Blatt. Druck startet automatisch — sonst Strg/Cmd+P.</div>
-    <div class="kar">${esc(name)}</div>
-    <div class="hdr"><div class="meta"><div class="pal">Palette: ${esc(meta.palette||'—')}</div><div>Kanal: ${kanalTxt}</div></div><div style="text-align:center;">${bc}</div></div>
-    <table><thead><tr><th>EAN</th><th>Artikelname</th><th>Art.-Nr.</th><th class="r">Menge</th><th>Weitere Lagerplätze</th></tr></thead><tbody>${body}</tbody></table>
+    <div class="kopf"><div class="kar">${esc(name)}</div>${punkt}</div>
+    <table><thead><tr><th>EAN</th><th>Artikelname</th><th class="r">Menge</th><th>Weitere Lagerplätze</th></tr></thead><tbody>${body}</tbody></table>
     <script>window.onload=function(){setTimeout(function(){window.print();},150);};<\/script>
   </body></html>`;
   const w = window.open('', '_blank');
@@ -1784,7 +1787,55 @@ async function resolveArtikel(code) {
 // ── Scanner (Schnellscan, wie alte App) ─────────────────────────────────────
 let ssMode = null;    // keine Vorauswahl — erst nach Klick auf Ein-/Ausbuchen aktiv
 let ssLp   = null;    // gewählter Lagerplatz beim Einbuchen (bleibt aktiv)
+// Offene Platzwahl: Artikel ist gescannt, aber der Lagerplatz noch nicht gewählt.
+// Solange das offen ist, wird KEIN neuer Scan angenommen - sonst ginge die erste
+// Buchung still verloren (früher: nächster Scan hat die Platzwahl einfach ersetzt).
+let ssOffen = null;   // { artnr, name, typ, menge }
+function ssOffenHinweis() {
+  if (!ssOffen) return;
+  ssStatus(`<div class="ss-block">⛔ Erst Lagerplatz für <b>${esc(ssOffen.name || ssOffen.artnr)}</b> (${ssOffen.menge} Stk) wählen!</div>`
+    + `<div class="hint" style="margin-top:6px;">Der zuletzt gescannte Artikel wurde <b>nicht</b> angenommen – nach der Platzwahl einfach noch einmal scannen. Verscannt? Unten auf „Abbrechen".</div>`);
+}
+function ssWarnen(ansage) {
+  // kurzer Doppel-Warnton + Sprachansage (unabhängig vom Häkchen bei „Palette sortieren")
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) {
+      const ctx = ssWarnen.ctx || (ssWarnen.ctx = new AC());
+      [0, 0.22].forEach(t => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'square'; o.frequency.value = 880;
+        g.gain.setValueAtTime(0.15, ctx.currentTime + t);
+        g.gain.setValueAtTime(0, ctx.currentTime + t + 0.15);
+        o.connect(g); g.connect(ctx.destination);
+        o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.16);
+      });
+    }
+  } catch (e) {}
+  try {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(ansage || 'Erst Lagerplatz wählen');
+      u.lang = 'de-DE'; window.speechSynthesis.speak(u);
+    }
+  } catch (e) {}
+}
+function ssOffenAbbrechen() {
+  const o = ssOffen;
+  ssOffen = null;
+  el('ss-pick-section').style.display = 'none';
+  ssStatus(o ? `Abgebrochen: <b>${esc(o.name || o.artnr)}</b> wurde nicht gebucht.` : 'Abgebrochen.');
+  el('ss-scan').focus();
+}
 function ssInit() {
+  // Offene Platzwahl beim Tab-Wechsel nicht still verwerfen
+  if (ssOffen) {
+    el('ss-pick-section').style.display = 'block';
+    el('ss-scan').disabled = false;
+    ssOffenHinweis();
+    el('ss-scan').focus();
+    return;
+  }
   ssMode = null;
   el('ss-mode-aus').classList.remove('active');
   el('ss-mode-ein').classList.remove('active');
@@ -1798,6 +1849,10 @@ function ssStatus(html, cls) {
   el('ss-status').innerHTML = cls ? `<span class="${cls}">${html}</span>` : html;
 }
 function ssSetMode(m) {
+  if (ssOffen) {
+    if (!confirm('Für „' + (ssOffen.name || ssOffen.artnr) + '" ist noch kein Lagerplatz gewählt – diese Buchung verwerfen?')) { ssOffenHinweis(); el('ss-scan').focus(); return; }
+    ssOffen = null;
+  }
   ssMode = m;
   el('ss-mode-aus').classList.toggle('active', m === 'aus');
   el('ss-mode-ein').classList.toggle('active', m === 'ein');
@@ -1825,6 +1880,7 @@ function ssPickLp(lp) {
   ssStatus(ssLp ? `Lagerplatz: <b>${esc(ssLp)}</b> — bereit zum Scannen` : 'Lagerplatz wählen, dann scannen');
   el('ss-scan').focus();
 }
+const SS_ABBRECHEN_BTN = `<button class="sec" style="margin-left:8px;" onclick="ssOffenAbbrechen()">✕ Abbrechen</button>`;
 function ssMenge() {
   const m = parseInt(el('ss-menge').value, 10);
   if (!Number.isInteger(m) || m < 1) { ssStatus('Menge muss eine ganze Zahl ≥ 1 sein.', 'err'); return null; }
@@ -1845,16 +1901,34 @@ async function ssBook(artnr, lp, typ, menge, name) {
 // gebliebene Menge beim nächsten Artikel mitgebucht).
 async function ssBookPick(artnr, lp, typ, name, menge) {
   if (!Number.isInteger(menge) || menge < 1) { menge = ssMenge(); if (menge === null) return; }
-  await ssBook(artnr, lp, typ, menge, name);
-  el('ss-pick-section').style.display = 'none';
+  // Das Mengenfeld steht seit dem Scan schon auf 1; hat der Nutzer während der
+  // offenen Platzwahl schon die Menge für den NÄCHSTEN Artikel eingetippt, soll
+  // die nicht durch ssBook wieder auf 1 gesetzt werden.
+  const mengeFeld = el('ss-menge').value;
+  const ok = await ssBook(artnr, lp, typ, menge, name);
+  el('ss-menge').value = mengeFeld;
+  // Nur bei Erfolg schließen - bei einem Fehler bleibt die Platzwahl offen
+  if (ok) { ssOffen = null; el('ss-pick-section').style.display = 'none'; }
   el('ss-scan').focus();
 }
+// Schutz gegen schnelles Doppel-Scannen: solange der vorige Scan noch nachschlägt
+// (Datenbank-Abfrage), wird der nächste nicht angenommen - sonst könnte er an der
+// noch nicht angezeigten Platzwahl vorbeirutschen.
+let ssLaeuft = false;
 async function ssScan() {
+  if (ssLaeuft) { el('ss-scan').value = ''; ssWarnen('Moment, bitte nochmal scannen'); ssStatus('⏳ Moment – vorheriger Scan läuft noch. Bitte gleich nochmal scannen.', 'err'); return; }
+  ssLaeuft = true;
+  try { await ssScanIntern(); } finally { ssLaeuft = false; }
+}
+async function ssScanIntern() {
   if (!ssMode) { ssStatus('Bitte zuerst „− Ausbuchen" oder „＋ Einbuchen" wählen.', 'err'); return; }
   const code = el('ss-scan').value.trim();
   el('ss-scan').value = '';
-  el('ss-pick-section').style.display = 'none';
   if (!code) return;
+  // Platzwahl noch offen → neuen Scan NICHT annehmen (Menge bleibt unangetastet,
+  // damit der abgewiesene Artikel gleich mit derselben Menge neu gescannt werden kann)
+  if (ssOffen) { ssOffenHinweis(); ssWarnen(); el('ss-scan').focus(); return; }
+  el('ss-pick-section').style.display = 'none';
   const menge = ssMenge();
   // Nach JEDEM Scan wieder 1 - egal ob der Scan klappt (nicht gefunden,
   // mehrdeutig, Set abgebrochen, Platzwahl offen …). Die eingestellte Menge
@@ -1880,7 +1954,8 @@ async function ssScan() {
     let html = stock.map(s => `<button class="ss-lp-btn" onclick="ssBookPick('${jsAttr(g.artnr)}','${jsAttr(s.lagerplatz)}','ein','${nm}',${menge})">${esc(s.lagerplatz)} <span class="muted">(${s.menge})</span></button>`).join('');
     html += allePlaetze.filter(p => !stockNamen.includes(p)).map(p => `<button class="ss-lp-btn" onclick="ssBookPick('${jsAttr(g.artnr)}','${jsAttr(p)}','ein','${nm}',${menge})">${esc(p)}</button>`).join('');
     ssStatus(`<b>${esc(g.name||g.artnr)}</b> — <b>${menge} Stk</b><br>⚠️ Lagerplatz zum Einbuchen wählen:`);
-    el('ss-pick-btns').innerHTML = html || '<span class="muted">Keine Lagerplätze.</span>';
+    el('ss-pick-btns').innerHTML = (html || '<span class="muted">Keine Lagerplätze.</span>') + SS_ABBRECHEN_BTN;
+    ssOffen = { artnr: g.artnr, name: g.name || '', typ: 'ein', menge };
     el('ss-pick-section').style.display = 'block';
     el('ss-scan').focus();
     return;
@@ -1892,7 +1967,8 @@ async function ssScan() {
   if (stock.length === 1) { await ssBook(g.artnr, stock[0].lagerplatz, 'aus', menge, g.name); el('ss-scan').focus(); return; }
   const nm = jsAttr(g.name || '');
   ssStatus(`<b>${esc(g.name||g.artnr)}</b> — <b>${menge} Stk</b> von welchem Lagerplatz ausbuchen?`);
-  el('ss-pick-btns').innerHTML = stock.map(s => `<button class="ss-lp-btn" onclick="ssBookPick('${jsAttr(g.artnr)}','${jsAttr(s.lagerplatz)}','aus','${nm}',${menge})">${esc(s.lagerplatz)} <span class="muted">(${s.menge})</span></button>`).join('');
+  el('ss-pick-btns').innerHTML = stock.map(s => `<button class="ss-lp-btn" onclick="ssBookPick('${jsAttr(g.artnr)}','${jsAttr(s.lagerplatz)}','aus','${nm}',${menge})">${esc(s.lagerplatz)} <span class="muted">(${s.menge})</span></button>`).join('') + SS_ABBRECHEN_BTN;
+  ssOffen = { artnr: g.artnr, name: g.name || '', typ: 'aus', menge };
   el('ss-pick-section').style.display = 'block';
   el('ss-scan').focus();
 }
