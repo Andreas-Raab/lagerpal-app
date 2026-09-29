@@ -1324,9 +1324,12 @@ async function erScan() {
     const { error } = await client.rpc('einraeumen_scan', { p_artikelnummer:g.artnr, p_quelle:erSession.quelle, p_ziel:ziel, p_menge:menge });
     if (error) { st.innerHTML='<span class="err">❌ '+esc(error.message)+'</span>'; el('er-scan').select(); return; }
     const extra = menge > verf ? ` (davon ${menge-verf} als Inventur-Zugang)` : '';
-    erZeigeFlash(kanal, (neuAngelegt ? '🆕 NEU · ' : '') + (g.name||g.artnr) + ' → ' + ziel);
-    if (neuAngelegt) neuAnsage(g.online); else sprich(kanal === 'online' ? 'online' : 'offline');
-    st.innerHTML = `<span class="ok">${label} → Karton ${esc(ziel)}<br>${menge}× ${esc(g.name||'')} (${esc(g.artnr)})${extra}</span>` + (neuAngelegt ? NEU_HINWEIS(neuAngelegt) : '');
+    erZeigeFlash(kanal, (neuAngelegt ? '🆕 NEU · ' : '') + (g.istSet ? '⚠️ SET – mehrere Teile zusammen lassen · ' : '') + (g.name||g.artnr) + ' → ' + ziel);
+    if (neuAngelegt) neuAnsage(g.online);
+    else if (g.istSet) ansageImmer('Set, ' + (kanal === 'online' ? 'online' : 'offline'));
+    else sprich(kanal === 'online' ? 'online' : 'offline');
+    st.innerHTML = `<span class="ok">${label} → Karton ${esc(ziel)}<br>${menge}× ${esc(g.name||'')} (${esc(g.artnr)})${extra}</span>` + (neuAngelegt ? NEU_HINWEIS(neuAngelegt) : '')
+      + (g.istSet ? `<div style="margin-top:6px;padding:8px 10px;border:2px solid var(--red);border-radius:8px;background:#fdecea;color:#9b2c2c;font-weight:700;">⚠️ SET-ARTIKEL: mehrere Teile = 1 Stück – Teile zusammen lassen!</div>` : '');
     erSession.gebucht.push({artnr:g.artnr, name:g.name||'', gtin:g.gtin||'', menge, ziel});
     erSession.stk += menge;
     erSpeichern();
@@ -1854,17 +1857,20 @@ async function ausListeAnlegen(code) {
   return { artnr: data.artikelnummer, name: data.artikelname, gtin: data.gtin || code, online: data.online,
            istSet: !!data.ist_set, unbekannt: data.unbekannt === 1, neu: !!data.neu };
 }
-// Ansage „Neu angelegt, offline" - immer, unabhängig vom Häkchen
-function neuAnsage(online) {
+// Wichtige Ansagen (Neu angelegt, Set …) kommen IMMER, unabhängig vom Häkchen
+// „Sprachansage" bei Palette sortieren - man kann sich nicht darauf verlassen,
+// dass jemand auf den Bildschirm schaut.
+function ansageImmer(text) {
   try {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance('Neu angelegt, ' + (online === 1 ? 'online' : 'offline'));
+      const u = new SpeechSynthesisUtterance(text);
       u.lang = 'de-DE'; u.rate = 1.0;
       window.speechSynthesis.speak(u);
     }
   } catch (e) {}
 }
+function neuAnsage(online) { ansageImmer('Neu angelegt, ' + (online === 1 ? 'online' : 'offline')); }
 const NEU_HINWEIS = g => `<div style="margin-top:6px;padding:8px 10px;border:2px solid var(--amber);border-radius:8px;background:var(--amber-soft);color:#7c4a12;"><b>🆕 Neu angelegt aus JTL-Liste:</b> ${esc(g.artnr)} · ${esc(g.name || '')} (nicht online)</div>`;
 function unbAnsage() {
   try {
@@ -2118,6 +2124,7 @@ async function ssScanIntern() {
   if (!g)            { ssStatus('❌ Nicht gefunden: ' + esc(code), 'err'); el('ss-scan').focus(); return; }
   if (g.mehrdeutig)  { ssStatus('⚠️ EAN mehrdeutig — bitte die Artikelnummer eingeben.', 'err'); el('ss-scan').focus(); return; }
   if (g.istSet) {
+    ansageImmer('Set');
     const hinweis = ssMode === 'ein' ? 'mehrere Einheiten = 1 Stück' : 'mehrere Einheiten ins Paket legen!';
     if (!confirm('⚠️ SET-ARTIKEL\n\n' + (g.name||g.artnr) + '\n\n' + hinweis + '\n\nFortfahren?')) { ssStatus('Abgebrochen (Set-Artikel).'); el('ss-scan').focus(); return; }
   }
