@@ -529,12 +529,20 @@ const el = id => document.getElementById(id);
 // ── Schutz gegen Doppelklick / Doppel-Enter ─────────────────────────────────
 // Solange ein Vorgang mit demselben Schlüssel läuft, wird er kein zweites Mal
 // gestartet (z. B. zweimal schnell auf denselben Platz-Knopf getippt).
+// nachlaufMs: Sperre bleibt nach dem Ende noch so lange bestehen. Bei schnellem
+// Netz ist eine Buchung nach 0,1 s fertig - der zweite Klick eines Doppelklicks
+// käme sonst erst danach an und würde ein zweites Mal buchen.
 const laufend = new Set();
-async function einmalig(key, fn) {
+async function einmalig(key, fn, nachlaufMs) {
   if (laufend.has(key)) return undefined;
   laufend.add(key);
-  try { return await fn(); } finally { laufend.delete(key); }
+  try { return await fn(); }
+  finally {
+    if (nachlaufMs) setTimeout(() => laufend.delete(key), nachlaufMs);
+    else laufend.delete(key);
+  }
 }
+const DOPPELKLICK_SPERRE_MS = 1500;
 // Bricht die Verbindung erst NACH dem Speichern ab, meldet die App trotzdem einen
 // Fehler. Dann ist unklar, ob gebucht wurde - nicht blind wiederholen.
 function istNetzfehler(e) {
@@ -950,7 +958,8 @@ async function sucheBuchen(artnr, lp, typ, btn) {
   const inp = zelle && zelle.querySelector('input[type=number]');
   if (!inp) return;
   // eine Schnellbuchung nach der anderen - ein Doppelklick bucht nicht doppelt
-  return einmalig('suche-buchen|' + artnr + '|' + lp, async () => {
+  const key = 'suche-buchen|' + artnr + '|' + lp;
+  return einmalig(key, async () => {
     const menge = parseInt(inp.value, 10);
     if (!Number.isInteger(menge) || menge < 1) { alert('Menge muss eine ganze Zahl ≥ 1 sein.'); return; }
     let zielLp = lp;
@@ -970,8 +979,16 @@ async function sucheBuchen(artnr, lp, typ, btn) {
       if (error) { alert('Fehler: ' + buchFehlerText(error)); return; }
       sucheNachBuchung(artnr, zielLp, data.lp_bestand_neu);
       refreshUndo(); refreshLeer();
+      sucheKnoepfeKurzSperren(key);
     } finally { knoepfe.forEach(b => b.disabled = false); }
-  });
+  }, DOPPELKLICK_SPERRE_MS);
+}
+// Die Tabelle wurde nach der Buchung neu aufgebaut - die frischen Knöpfe derselben
+// Zeile während der Doppelklick-Sperre sichtbar ausgrauen
+function sucheKnoepfeKurzSperren(key) {
+  const knoepfe = [...document.querySelectorAll('.such-table .buchen-cell button')].filter(b => b.dataset.key === key);
+  knoepfe.forEach(b => b.disabled = true);
+  setTimeout(() => knoepfe.forEach(b => b.disabled = false), DOPPELKLICK_SPERRE_MS);
 }
 
 function sucheRender(behalteLimit) {
@@ -1070,7 +1087,7 @@ function sucheRender(behalteLimit) {
         <td class="num">0</td>
         <td class="buchen-cell">
           <input type="number" value="1" min="1">
-          <button class="bk-ein" title="Einbuchen" onclick="sucheBuchen('${jsAttr(a.artikelnummer)}','—','ein',this)">+ Ein</button>
+          <button class="bk-ein" title="Einbuchen" data-key="${escAttr('suche-buchen|' + a.artikelnummer + '|—')}" onclick="sucheBuchen('${jsAttr(a.artikelnummer)}','—','ein',this)">+ Ein</button>
         </td>
       </tr>`];
     }
@@ -1087,8 +1104,8 @@ function sucheRender(behalteLimit) {
         <td class="num"${leer?' style="color:var(--text-3);"':''}>${p.menge}</td>
         <td class="buchen-cell">
           <input type="number" value="1" min="1">
-          <button class="bk-ein" title="Einbuchen" onclick="sucheBuchen('${jsAttr(a.artikelnummer)}','${jsAttr(p.lagerplatz)}','ein',this)">+ Ein</button>
-          ${leer ? '' : `<button class="bk-aus" title="Ausbuchen" onclick="sucheBuchen('${jsAttr(a.artikelnummer)}','${jsAttr(p.lagerplatz)}','aus',this)">− Aus</button>`}
+          <button class="bk-ein" title="Einbuchen" data-key="${escAttr('suche-buchen|' + a.artikelnummer + '|' + p.lagerplatz)}" onclick="sucheBuchen('${jsAttr(a.artikelnummer)}','${jsAttr(p.lagerplatz)}','ein',this)">+ Ein</button>
+          ${leer ? '' : `<button class="bk-aus" title="Ausbuchen" data-key="${escAttr('suche-buchen|' + a.artikelnummer + '|' + p.lagerplatz)}" onclick="sucheBuchen('${jsAttr(a.artikelnummer)}','${jsAttr(p.lagerplatz)}','aus',this)">− Aus</button>`}
         </td>
       </tr>`;
     });
@@ -2034,8 +2051,9 @@ async function umlagernArtikelGeladen() {
 async function umlagern() {
   return einmalig('umlagern', async () => {
     el('u-btn').disabled = true;
-    try { await umlagernIntern(); } finally { el('u-btn').disabled = false; }
-  });
+    try { await umlagernIntern(); }
+    finally { setTimeout(() => { el('u-btn').disabled = false; }, DOPPELKLICK_SPERRE_MS); }
+  }, DOPPELKLICK_SPERRE_MS);
 }
 async function umlagernIntern() {
   const eingabe = el('u-artnr').value.trim();

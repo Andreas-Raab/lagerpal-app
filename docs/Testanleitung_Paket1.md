@@ -22,8 +22,9 @@ Hake jeden Punkt ab. Wenn etwas anders ist als beschrieben, notier es dir. Ein S
 ### 1. Doppelklick bucht nur einmal
 - [ ] **Scanner → „− Ausbuchen“**: Artikel scannen, der auf **mehreren** Plätzen liegt. Bei der Platzwahl **zweimal schnell** auf denselben Platz tippen.
       Erwartet: Im Protokoll steht **ein** Ausgang, der Bestand ist nur um 1 gesunken.
-- [ ] **Suche**: Bei einem Artikel zweimal schnell auf **„+ Ein“** klicken.
-      Erwartet: **ein** Eingang im Protokoll.
+- [ ] **Suche**: Bei einem Artikel zweimal schnell auf **„+ Ein“** klicken (Doppelklick), danach dasselbe mit **„− Aus“**.
+      Erwartet: Je **eine** Buchung im Protokoll. Die Knöpfe dieser Zeile sind nach einer Buchung ca. 1,5 Sekunden ausgegraut.
+      Wer bewusst zweimal buchen will, wartet kurz, bis die Knöpfe wieder aktiv sind.
 - [ ] **Umlagern**: Alles ausfüllen und zweimal schnell auf **„🔀 Umlagern“** klicken.
       Erwartet: **eine** Umlagerung.
 
@@ -47,8 +48,8 @@ Hake jeden Punkt ab. Wenn etwas anders ist als beschrieben, notier es dir. Ein S
 - [ ] **Lagerplätze → Palette wählen → „🖨️ Nachdruck“**: Das Blatt öffnet sich wie gewohnt.
 
 ### 5. Suche
-- [ ] Artikel mit zwei ähnlich heißenden Plätzen, z. B. „Regal-1“ und „Regal 1“: Bei der **zweiten** Zeile eine Menge eintragen und ausbuchen.
-      Erwartet: Genau dieser Platz ändert sich.
+- [ ] *(Optional, nur wenn es bei euch solche Plätze gibt)* Artikel mit zwei ähnlich heißenden Plätzen, z. B. „Regal-1“ und „Regal 1“: Bei der **zweiten** Zeile eine Menge eintragen und ausbuchen.
+      Erwartet: Genau dieser Platz ändert sich. Dieser Fall wird auch automatisch getestet. Gibt es keine solchen Plätze, einfach überspringen.
 - [ ] Nach „+ Ein“ / „− Aus“ zeigt die Tabelle **sofort** den neuen Bestand, ohne „Wird geladen…“.
 - [ ] Artikel ankreuzen, dann etwas anderes suchen.
       Erwartet: Die Leiste zeigt „… ausgewählt (davon X durch Suche/Filter ausgeblendet)“. „Komplett ausbuchen“ listet die Artikel auf und warnt vor den ausgeblendeten.

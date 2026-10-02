@@ -81,6 +81,42 @@ const scanne = async (page, feld, code) => { await page.focus(feld); await page.
     gleich(sql("select count(*) from buchungen where typ='Eingang'"), 1, 'Anzahl Eingänge');
   });
 
+  // Echte Mausklicks (Playwright wartet sonst, bis ein gesperrter Knopf wieder frei ist)
+  // bei SCHNELLEM Netz - so hat der Anwender die Doppelbuchung gefunden
+  const mausDoppel = async (page, loc, abstand) => {
+    const bb = await loc.boundingBox(); const x = bb.x + bb.width / 2, y = bb.y + bb.height / 2;
+    await page.mouse.click(x, y); await page.waitForTimeout(abstand); await page.mouse.click(x, y);
+  };
+  for (const abstand of [80, 250, 600]) {
+    await test(`#7 Suche: Doppelklick mit ${abstand} ms Abstand, schnelles Netz → eine Buchung`, async page => {
+      await page.fill('#suche', 'Offline'); await page.waitForTimeout(300);
+      const zeile = page.locator('.such-table tr', { hasText: 'QUELLE-1' });
+      await mausDoppel(page, zeile.locator('button.bk-aus'), abstand);
+      await page.waitForTimeout(1200);
+      gleich(sql("select count(*) from buchungen where typ='Ausgang'"), 1, 'Anzahl Ausgänge');
+      gleich(menge('A2', 'QUELLE-1'), 9, 'Bestand');
+    });
+  }
+  await test('#7 Suche: bewusste zweite Buchung nach der Sperrzeit geht durch', async page => {
+    await page.fill('#suche', 'Offline'); await page.waitForTimeout(300);
+    const zeile = page.locator('.such-table tr', { hasText: 'QUELLE-1' });
+    await zeile.locator('button.bk-ein').click();
+    await page.waitForTimeout(1800);
+    await zeile.locator('button.bk-ein').click();
+    await page.waitForTimeout(800);
+    gleich(menge('A2', 'QUELLE-1'), 12, 'Bestand nach zwei bewussten Buchungen');
+  });
+  await test('#7 Umlagern: Doppelklick mit 300 ms Abstand, schnelles Netz → eine Umlagerung', async page => {
+    await page.click('button[data-t="umlagern"]');
+    await page.fill('#u-artnr', 'A1'); await page.press('#u-artnr', 'Tab');
+    await page.waitForSelector('#u-von option:has-text("Regal 4")', { state: 'attached' });
+    await page.selectOption('#u-von', 'Regal 4');
+    await page.selectOption('#u-nach', 'Regal 3');
+    await mausDoppel(page, page.locator('#u-btn'), 300);
+    await page.waitForTimeout(1200);
+    gleich(sql("select count(*) from buchungen where typ='Umlagerung'"), 1, 'Anzahl Umlagerungen');
+  });
+
   await test('#33 Suche: Tabelle zeigt nach Schnellbuchung den neuen Bestand ohne Komplett-Neuladen', async page => {
     await page.fill('#suche', 'Offline'); await page.waitForTimeout(300);
     const anfragen = [];

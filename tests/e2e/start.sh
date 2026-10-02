@@ -19,6 +19,8 @@ $P -d lp -c "do \$\$ begin if not exists (select 1 from pg_roles where rolname='
           -c "grant anon, authenticated, service_role to authenticator"
 stopp() { [ -f "$1" ] && kill "$(cat "$1")" 2>/dev/null || true; }
 stopp /var/tmp/lp-e2e/postgrest.pid
+# warten, bis der Port wirklich frei ist (sonst „Address in use“)
+for i in $(seq 50); do (exec 3<>/dev/tcp/127.0.0.1/54330) 2>/dev/null || break; sleep 0.2; done
 cat > /var/tmp/lp-e2e/postgrest.conf <<CONF
 db-uri = "postgres://authenticator@/lp?host=/tmp&port=54329"
 db-schemas = "public"
@@ -29,6 +31,7 @@ CONF
 nohup /var/tmp/postgrest /var/tmp/lp-e2e/postgrest.conf > /var/tmp/lp-e2e/postgrest.log 2>&1 &
 echo $! > /var/tmp/lp-e2e/postgrest.pid
 stopp /var/tmp/lp-e2e/server.pid
+for i in $(seq 50); do (exec 3<>/dev/tcp/127.0.0.1/54331) 2>/dev/null || break; sleep 0.2; done
 nohup node tests/e2e/server.js > /var/tmp/lp-e2e/server.log 2>&1 &
 echo $! > /var/tmp/lp-e2e/server.pid
 sleep 2
