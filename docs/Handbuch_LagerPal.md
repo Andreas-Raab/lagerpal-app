@@ -214,11 +214,9 @@ Dieselbe Darstellung als Text (für den Ausdruck):
 
 **Bewusst NICHT enthalten** (laut Kopfkommentar der Datei):
 
-- `02_data.sql` – alte, migrierte Daten.
-- `06_cron_backup.sql` – der Zeitplan für das tägliche Backup (siehe [3.12](#k3-12)).
-- `21b_jtl_artikelliste_daten.sql` – die **Daten** der JTL-Artikelliste (siehe [3.4](#k3-4)).
-
-> **Hinweis: bitte prüfen** – Die Dateien `02_data.sql`, `06_cron_backup.sql` und `21b_jtl_artikelliste_daten.sql` liegen **nicht** in diesem Repository. Bitte klären, wo sie aufbewahrt werden.
+- `02_data.sql` – alte, migrierte Daten (Ersteinpflege der Artikel; für eine Neueinrichtung nicht nötig, liegt nicht im Repository).
+- `06_cron_backup.sql` – der Zeitplan für das tägliche Backup. Liegt im Repository unter `supabase/06_cron_backup.sql` (siehe [3.12](#k3-12)).
+- `21b_jtl_artikelliste_daten.sql` – die **Daten** der JTL-Artikelliste (optional, siehe [3.4](#k3-4); liegt nicht im Repository).
 
 > **Warnung:** Die SQL-Datei ist für ein **leeres, neues Projekt** gedacht. Die Lese-Regeln für die fünf Haupttabellen werden mit `create policy` **ohne** vorheriges `drop policy if exists` angelegt. Ein zweiter Lauf auf einer bereits eingerichteten Datenbank bricht deshalb voraussichtlich mit „policy … already exists" ab. Tabellen werden mit `create table if not exists` angelegt – bestehende Tabellen und Daten bleiben unverändert, aber geänderte Tabellenstrukturen würden so auch **nicht** übernommen. Siehe [Kapitel 8](#kap-8).
 
@@ -231,7 +229,7 @@ Die Tabelle `jtl_artikelliste` (Artikelnummer, Artikelname, GTIN) enthält laut 
 - Schreiben ist nur per SQL-Editor möglich; die App liest die Tabelle nur.
 - Die Tabelle taucht nirgends sonst auf (nicht in Suche, Übersicht, Export oder Backup).
 
-> **Hinweis: bitte prüfen** – Wie `21b_jtl_artikelliste_daten.sql` erzeugt bzw. aktualisiert wird (Export aus JTL, Umwandlung in SQL), geht aus dem vorliegenden Code nicht hervor.
+> **Hinweis:** Ohne diese Daten funktioniert LagerPal vollständig – nur das automatische Anlegen unbekannter Artikel beim Scannen entfällt (unbekannte EANs werden dann als Klärfall `WE-0-…` gebucht). Die Datei `21b_jtl_artikelliste_daten.sql` diente der Ersteinpflege und liegt nicht im Repository.
 
 <a id="k3-5"></a>
 ### 3.5 Benutzer anlegen – Anmeldung und Rollen
@@ -366,7 +364,9 @@ supabase functions deploy lagerpal-backup
 
 `<PROJEKT-REF>` ist der Teil vor `.supabase.co` in der Project URL. Beim `link` fragt die CLI ggf. nach dem Datenbank-Passwort.
 
-> **Hinweis: bitte prüfen** – Im Repository gibt es keine `supabase/config.toml`. Damit gilt die Standardeinstellung: die Function verlangt beim Aufruf einen gültigen JWT im `Authorization`-Header (z. B. den anon-Key). Falls die bestehende Installation mit `--no-verify-jwt` deployt wurde, bitte hier vermerken.
+> **Wichtig:** Nach dem Deploy im Dashboard unter **Edge Functions → lagerpal-backup → Settings** die Option **„Verify JWT with legacy secret“ AUSSCHALTEN** (alternativ per CLI: `supabase functions deploy lagerpal-backup --no-verify-jwt`). Der Zeitplan ([3.12](#k3-12)) ruft die Function bewusst **ohne** Schlüssel auf. Hintergrund (laut `06_cron_backup.sql`): Ein früher mitgeschickter `sb_secret_…`-Schlüssel wurde von Supabase mit „Invalid API key“ (401) abgelehnt – das automatische Backup lief vom 23.09. bis 27.09.2026 deshalb nie.
+>
+> **Folge:** Wer die Adresse der Function kennt, kann ein Backup auslösen. Daten werden dabei nicht preisgegeben (die Antwort enthält nur Zeilenzahlen und Dateipfade), es wird lediglich die Tagessicherung bzw. die JTL-Datei neu geschrieben.
 
 **Secrets setzen** – entweder im Dashboard unter **Edge Functions → Secrets** (so steht es im Code-Kommentar) oder per CLI:
 
@@ -426,57 +426,67 @@ Ablauf: Nach jedem Lauf sendet die Function den Ergebnistext (max. 10 000 Zeiche
 <a id="k3-12"></a>
 ### 3.12 Zeitplan (Cron) für das tägliche Backup
 
-**Befund aus dem Code:** Die SQL-Datei `00_KOMPLETT_neu_aufsetzen.sql` enthält **keinen** Zeitplan und benutzt **weder `pg_cron` noch `pg_net`**. Der Zeitplan steckt laut Kopfkommentar in der separaten Datei `06_cron_backup.sql`, die nicht im Repository liegt.
+Der Zeitplan steht in der Datei **`supabase/06_cron_backup.sql`**. Voraussetzungen: Die Edge Function ist deployt ([3.10](#k3-10)) und „Verify JWT with legacy secret“ ist **ausgeschaltet**.
 
-Aus der Edge Function geht hervor:
+**Einrichten:** Supabase → **SQL Editor** → neue Query → Inhalt von `06_cron_backup.sql` einfügen → in beiden Aufträgen die Projektadresse prüfen (`https://<PROJEKT-REF>.supabase.co/functions/v1/lagerpal-backup`) → **Run**.
 
-- Der Lauf ist für **täglich 03:00 Uhr nachts** (deutsche Zeit) gedacht.
-- Es gibt offenbar **zwei** Cron-Aufträge, um die Sommer-/Winterzeit abzudecken („an den Tagen der Zeitumstellung, wo beide Cron-Jobs greifen"). Hintergrund: `pg_cron` rechnet in UTC; 03:00 Uhr deutscher Zeit ist im Winter 02:00 UTC, im Sommer 01:00 UTC.
+**Was die Datei anlegt:**
 
-**Beispiel für eine Einrichtung** (im SQL-Editor ausführen; Platzhalter ersetzen):
+- Erweiterungen `pg_cron` (Zeitplan) und `pg_net` (Web-Aufruf aus der Datenbank).
+- Auftrag **`lagerpal-daily-backup-sommer`**: `0 1 * 4-10 *` → April bis Oktober um 01:00 UTC = **03:00 Uhr MESZ**.
+- Auftrag **`lagerpal-daily-backup-winter`**: `0 2 * 11,12,1,2,3 *` → November bis März um 02:00 UTC = **03:00 Uhr MEZ**.
+- Aufruf **ohne Schlüssel**, Wartezeit 60 Sekunden (`timeout_milliseconds := 60000`), damit das Ergebnis in `net._http_response` sichtbar ist.
+
+Die Aufträge richten sich nach Kalendermonaten, nicht nach den exakten Umstellungstagen. In den letzten Märztagen (nach der Umstellung) läuft das Backup daher um 04:00 Uhr, in den letzten Oktobertagen um 02:00 Uhr. Für ein nächtliches Backup ist das unkritisch.
+
+**Warum nachts:** Das Backup liest die Tabellen nacheinander; wird währenddessen gebucht, kann die Sicherung leicht unstimmig werden. Die Datei heißt nach dem Tag, an dem sie nachts entsteht: `lagerpal_backup_2026-09-28` enthält den Stand vom Abend des 27.09. Der JTL-Export läuft im selben Lauf und liegt morgens bereit.
 
 ```sql
--- Erweiterungen einschalten (alternativ: Dashboard → Database → Extensions)
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
 
--- Sommerzeit: 01:00 UTC = 03:00 MESZ
-select cron.schedule('lagerpal-backup-sommer', '0 1 * * *', $$
+-- Sommerzeit-Fenster (April–Oktober): 01:00 UTC = 03:00 Uhr MESZ
+select cron.schedule(
+  'lagerpal-daily-backup-sommer',
+  '0 1 * 4-10 *',
+  $$
   select net.http_post(
-    url     := 'https://<PROJEKT-REF>.supabase.co/functions/v1/lagerpal-backup',
-    headers := jsonb_build_object('Content-Type','application/json',
-                                  'Authorization','Bearer <ANON_KEY>'),
-    body    := '{}'::jsonb,
-    timeout_milliseconds := 120000)
-  where extract(hour from now() at time zone 'Europe/Berlin') = 3;
-$$);
+    url := 'https://<PROJEKT-REF>.supabase.co/functions/v1/lagerpal-backup',
+    headers := jsonb_build_object('Content-Type', 'application/json'),
+    body := '{}'::jsonb, timeout_milliseconds := 60000);
+  $$
+);
 
--- Winterzeit: 02:00 UTC = 03:00 MEZ
-select cron.schedule('lagerpal-backup-winter', '0 2 * * *', $$
+-- Winterzeit-Fenster (November–März): 02:00 UTC = 03:00 Uhr MEZ
+select cron.schedule(
+  'lagerpal-daily-backup-winter',
+  '0 2 * 11,12,1,2,3 *',
+  $$
   select net.http_post(
-    url     := 'https://<PROJEKT-REF>.supabase.co/functions/v1/lagerpal-backup',
-    headers := jsonb_build_object('Content-Type','application/json',
-                                  'Authorization','Bearer <ANON_KEY>'),
-    body    := '{}'::jsonb,
-    timeout_milliseconds := 120000)
-  where extract(hour from now() at time zone 'Europe/Berlin') = 3;
-$$);
+    url := 'https://<PROJEKT-REF>.supabase.co/functions/v1/lagerpal-backup',
+    headers := jsonb_build_object('Content-Type', 'application/json'),
+    body := '{}'::jsonb, timeout_milliseconds := 60000);
+  $$
+);
 ```
-
-Die Bedingung `… = 3` sorgt dafür, dass jeweils nur der passende Auftrag die Function aufruft. Selbst wenn beide laufen, entsteht kein Schaden: die Tagessicherung wird überschrieben.
 
 Kontrolle und Pflege:
 
 ```sql
-select jobid, jobname, schedule, active from cron.job;                                -- Aufträge anzeigen
-select * from cron.job_run_details order by start_time desc limit 10;                  -- letzte Läufe
-select * from net._http_response order by created desc limit 10;                       -- Antworten der Function
-select cron.unschedule('lagerpal-backup-sommer');                                      -- Auftrag entfernen
+-- Aufträge anzeigen
+select jobid, jobname, schedule, active from cron.job order by jobname;
+-- Letzte Läufe
+select j.jobname, d.status, d.start_time from cron.job_run_details d join cron.job j using (jobid) order by d.start_time desc limit 5;
+-- Antworten der Function
+select id, status_code, left(coalesce(error_msg, content::text), 300), created from net._http_response order by id desc limit 5;
+-- Uhrzeit ändern (statt neu anlegen)
+select cron.alter_job((select jobid from cron.job where jobname = 'lagerpal-daily-backup-sommer'), schedule := '0 1 * 4-10 *');
+-- Auftrag entfernen
+select cron.unschedule('lagerpal-daily-backup-sommer');
+select cron.unschedule('lagerpal-daily-backup-winter');
 ```
 
-> **Hinweis: bitte prüfen** – Das obige SQL ist ein **Beispiel**, nicht der Inhalt der fehlenden Datei `06_cron_backup.sql`. Bitte mit der Originaldatei abgleichen (Auftragsnamen, Uhrzeiten, ob ein Uhrzeit-Filter benutzt wird und welcher Schlüssel im `Authorization`-Header steht). Ab einer gewissen Datenmenge kann auch ein höheres `timeout_milliseconds` nötig sein.
-
-> **Hinweis:** Der Schlüssel im Cron-Auftrag ist für alle sichtbar, die die Tabelle `cron.job` lesen können (Datenbank-Administratoren). Dort genügt der **anon-Key**; den Service-Role-Key dort nicht verwenden.
+> **Hinweis:** Die Datei ist **nicht** wiederholbar: Ein zweiter Lauf legt die Aufträge erneut an (`cron.schedule` mit gleichem Namen ersetzt den Auftrag in neueren pg_cron-Versionen, ältere melden einen Fehler). Zum Ändern besser `cron.alter_job` verwenden.
 
 <a id="k3-13"></a>
 ### 3.13 Alle Zugangsdaten und wo sie eingetragen werden
@@ -1281,21 +1291,17 @@ Alle Funktionen sind nur für angemeldete Benutzer ausführbar und laufen jeweil
 ### D – Liste aller „bitte prüfen"-Stellen
 
 1. **[3.2]** Menübezeichnungen/Schlüsselformate bei Supabase (anon public key vs. neue `sb_publishable_…`-Schlüssel).
-2. **[3.3]** Die Dateien `02_data.sql`, `06_cron_backup.sql` und `21b_jtl_artikelliste_daten.sql` fehlen im Repository.
-3. **[3.4]** Erzeugung/Aktualisierung der JTL-Artikelliste-Daten ist nicht dokumentiert.
-4. **[3.5]** Menübezeichnungen im Supabase-Dashboard für Benutzer und Selbstregistrierung.
-5. **[3.6]** Tatsächlicher Hosting-Dienst und Adresse der App.
-6. **[3.9]** Dropbox-Zugriffsart („Full Dropbox") und Berechtigungen der bestehenden App.
-7. **[3.10]** JWT-Prüfung der Edge Function (kein `config.toml`, evtl. `--no-verify-jwt`).
-8. **[3.12]** Cron-Beispiel ist nicht die Originaldatei `06_cron_backup.sql`; Namen, Zeiten, Schlüssel abgleichen.
-9. **[4.7]** „Paket B" (Zuordnung unbekannter Artikel) ist nicht umgesetzt – wie werden Klärfälle aufgelöst?
-10. **[4.9]** Inventur nur für Plätze mit Bestand auswählbar.
-11. **[4.10]** Palettenfeld bei Karton-Einstellungen ist Freitext; keine Löschfunktion für Paletten.
-12. **[4.13]** Irreführende Meldung „GTIN nicht übernommen" beim Bestandsimport.
-13. **[5.3]** Wiederherstellungsfrist gelöschter Dateien in Dropbox.
-14. **[5.4]** Notfall-Wiederherstellung per SQL-Editor ist ungetestet.
-15. **[6.3]** Import der CSV auf JTL-Seite (Vorlage, Zeitplan, Ordner-Synchronisation).
-16. **[8.5]** Pausieren von Supabase-Projekten im kostenlosen Tarif.
+2. **[3.5]** Menübezeichnungen im Supabase-Dashboard für Benutzer und Selbstregistrierung.
+3. **[3.6]** Tatsächlicher Hosting-Dienst und Adresse der App.
+4. **[3.9]** Dropbox-Zugriffsart („Full Dropbox") und Berechtigungen der bestehenden App.
+5. **[4.7]** „Paket B" (Zuordnung unbekannter Artikel) ist nicht umgesetzt – wie werden Klärfälle aufgelöst?
+6. **[4.9]** Inventur nur für Plätze mit Bestand auswählbar.
+7. **[4.10]** Palettenfeld bei Karton-Einstellungen ist Freitext; keine Löschfunktion für Paletten.
+8. **[4.13]** Irreführende Meldung „GTIN nicht übernommen" beim Bestandsimport.
+9. **[5.3]** Wiederherstellungsfrist gelöschter Dateien in Dropbox.
+10. **[5.4]** Notfall-Wiederherstellung per SQL-Editor ist ungetestet.
+11. **[6.3]** Import der CSV auf JTL-Seite (Vorlage, Zeitplan, Ordner-Synchronisation).
+12. **[8.5]** Pausieren von Supabase-Projekten im kostenlosen Tarif.
 
 ---
 
