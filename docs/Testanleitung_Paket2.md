@@ -12,7 +12,8 @@ Die **alte** App läuft mit der aktualisierten Datenbank unverändert weiter. De
 
 1. GitHub → Branch `claude/cloud-sessions-credits-9xe0tz` → Datei `supabase/updates/2026-10_paket2.sql` öffnen → Knopf **„Copy raw file“** (Symbol mit zwei Blättern).
 2. Supabase → **Testprojekt** → **SQL Editor** → **New query** → einfügen → **Run**.
-   Erwartet: unten erscheinen zwei Zeilen `karton_neu` und `rueckgaengig_eine`.
+   Erwartet: unten erscheinen drei Zeilen `abgleich_buchen`, `karton_neu` und `rueckgaengig_eine`.
+   **Hast du das Update schon einmal eingespielt?** Dann einfach noch einmal ausführen – es ergänzt nur, was neu ist (Reiter „Abgleich“), und übernimmt dabei einmalig die Mehr- und Fehlmengen aus euren bisherigen Sortierungen.
    Kommt eine Fehlermeldung: nichts weiter tun, mir den Text schicken. Das Skript läuft in einer Transaktion, bei einem Fehler wird **nichts** geändert.
 3. Kontrolle: Inhalt von `tests/sql/fingerabdruck.sql` im SQL-Editor ausführen.
    Erwartet: **`161794c13931dbd15bdc14cea7cb3a8c`**. Das ist exakt der Stand, gegen den ich getestet habe.
@@ -46,7 +47,15 @@ Neue `index.html` herunterladen wie bei Paket 1 und mit dem **Testsystem** verbi
       Erwartet: Eine **Fehlermeldung**, nicht „Nicht gefunden“. Nach dem Wiederverbinden funktioniert der nächste Scan normal.
 - [ ] **Glocke** nach einem Sammel-Ausbuchen: Die Meldungen zeigen **Artikel und Platz**, nicht „Einräum-Hinweis“.
 
-### 4. Gegenprobe
+### 4. Neuer Reiter „⚖️ Abgleich“
+- [ ] Reiter **„⚖️ Abgleich“** öffnen. Erwartet: Fälle aus **früheren Sortierungen** sind schon da (Etikett „aus früherer Sortierung“), mit Gesamtbestand.
+- [ ] **Palette sortieren**: einen Artikel mit **mehr** Menge scannen, als auf der Quelle liegt, Rückfrage bestätigen. Erwartet: Meldung „… im Reiter ‚Abgleich‘ vermerkt“, und im Reiter erscheint die Mehrmenge.
+- [ ] Eine Sortierung mit **„✓ Palette fertig“** abschließen, auf der noch etwas übrig ist. Erwartet: Im Abgleich stehen die übrigen Artikel als **Fehlmenge**.
+- [ ] **Ausgleichen** bei einem Artikel mit beiden Seiten: Erwartet: Die Fehlmenge wird auf ihrer Palette ausgebucht, der Karton bleibt unverändert. **Rückgängig** (Leiste unten) stellt alles wieder her.
+- [ ] **Mehr war echt neu** und **Fehlt wirklich → ausbuchen** je einmal ausprobieren, auch mit **Teilmenge** (− / +). Im Protokoll erscheint „Inventurdifferenz“.
+- [ ] **Matrix** ansehen: Spalten = Paletten, grün = zu viel, rot = fehlt.
+
+### 5. Gegenprobe
 - [ ] Scanner Ein-/Ausbuchen, Umlagern, Palette sortieren mit „Palette fertig“ funktionieren wie gewohnt
 - [ ] Alle Reiter öffnen sich ohne Fehlermeldung
 
