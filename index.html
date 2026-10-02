@@ -274,7 +274,7 @@ tbody tr:hover td{background:#eef4fb;}
       <input id="u-nach-neu" placeholder="neuer Lagerplatz…" style="display:none;margin-top:6px;">
       <label>Menge</label>
       <input id="u-menge" type="number" min="1" value="1">
-      <div class="row" style="margin-top:12px;"><button onclick="umlagern()">🔀 Umlagern</button></div>
+      <div class="row" style="margin-top:12px;"><button id="u-btn" onclick="umlagern()">🔀 Umlagern</button></div>
       <div id="u-status" style="margin-top:12px;"></div>
     </div>
   </div>
@@ -526,6 +526,63 @@ tbody tr:hover td{background:#eef4fb;}
 let client = null;
 const el = id => document.getElementById(id);
 
+// ── Schutz gegen Doppelklick / Doppel-Enter ─────────────────────────────────
+// Solange ein Vorgang mit demselben Schlüssel läuft, wird er kein zweites Mal
+// gestartet (z. B. zweimal schnell auf denselben Platz-Knopf getippt).
+const laufend = new Set();
+async function einmalig(key, fn) {
+  if (laufend.has(key)) return undefined;
+  laufend.add(key);
+  try { return await fn(); } finally { laufend.delete(key); }
+}
+// Bricht die Verbindung erst NACH dem Speichern ab, meldet die App trotzdem einen
+// Fehler. Dann ist unklar, ob gebucht wurde - nicht blind wiederholen.
+function istNetzfehler(e) {
+  return /failed to fetch|networkerror|load failed|network request failed|fetch failed/i
+    .test(String((e && e.message) || e || ''));
+}
+function buchFehlerText(e) {
+  return istNetzfehler(e)
+    ? 'Verbindung unterbrochen – unklar, ob gebucht wurde. Bitte erst im Protokoll nachsehen, bevor du es wiederholst.'
+    : String((e && e.message) || e);
+}
+
+// ── Rückfrage, die der Barcode-Scanner nicht „wegdrücken" kann ───────────────
+// Browser-confirm() hat „OK" vorausgewählt; das Enter, das der Handscanner nach
+// jedem Code sendet, hat Rückfragen deshalb ungewollt bestätigt. Hier zählt nur
+// Tippen/Klicken (Esc = Nein). Alle Tasten - also auch ein Scan - werden
+// geschluckt; ob in der Zeit gescannt wurde, steht danach in .gescannt.
+let scanFrageOffen = null;
+function scanFrage(text, jaText, neinText, ansage) {
+  return new Promise(resolve => {
+    const bg = el('scan-frage');
+    el('scan-frage-text').textContent = text;
+    el('scan-frage-ja').textContent = jaText || 'Ja';
+    el('scan-frage-nein').textContent = neinText || 'Nein';
+    const fertig = ja => {
+      if (!scanFrageOffen) return;
+      const gescannt = scanFrageOffen.gescannt;
+      scanFrageOffen = null;
+      bg.style.display = 'none';
+      resolve({ ja, gescannt });
+    };
+    scanFrageOffen = { fertig, gescannt: false };
+    el('scan-frage-ja').onclick = () => fertig(true);
+    el('scan-frage-nein').onclick = () => fertig(false);
+    bg.style.display = 'flex';
+    if (document.activeElement) document.activeElement.blur();
+    bg.querySelector('.modal-box').focus();
+    ssWarnen(ansage || 'Bitte bestätigen');
+  });
+}
+document.addEventListener('keydown', e => {
+  if (!scanFrageOffen) return;
+  e.preventDefault(); e.stopPropagation();
+  if (e.key === 'Escape') { scanFrageOffen.fertig(false); return; }
+  if (e.key === 'Enter' || e.key.length === 1) scanFrageOffen.gescannt = true;
+}, true);
+const SCAN_VERWORFEN_HINWEIS = '<div class="ss-block" style="margin-top:6px;">⛔ Während der Rückfrage wurde gescannt – dieser Artikel wurde <b>nicht</b> gebucht. Bitte noch einmal scannen.</div>';
+
 function verbinden() {
   let url = el('url').value.trim();
   const key = el('key').value.trim();
@@ -653,13 +710,22 @@ async function rueckgaengigJetzt() {
 // Plätze (Bestand einmal >0, jetzt 0), damit man schnell wieder dorthin buchen kann.
 let allePlaetze = [];
 async function ladeAllePlaetze() {
-  const [lpData, bestNamen] = await Promise.all([
-    client.from('v_lagerplaetze').select('name'),
-    fetchAll('bestaende', 'lagerplatz')
+  const [lps, leer] = await Promise.all([
+    fetchAll('v_lagerplaetze', 'name'),
+    // Plätze mit Bestand stehen schon in v_lagerplaetze - aus bestaende werden nur
+    // noch die früheren, inzwischen leeren Plätze gebraucht (vorher: ALLE Zeilen)
+    fetchAll('bestaende', 'lagerplatz', { eq: { menge: 0 } })
   ]);
-  const namen = new Set((lpData.data || []).map(x => x.name));
-  bestNamen.forEach(b => namen.add(b.lagerplatz));
+  const namen = new Set(lps.map(x => x.name));
+  leer.forEach(b => namen.add(b.lagerplatz));
   allePlaetze = [...namen].sort((a,b) => a.localeCompare(b));
+}
+// Nach einer Buchung nur den (evtl. neuen) Platznamen lokal ergänzen, statt alles
+// neu zu laden - Buchungen lassen keine Plätze verschwinden.
+function plaetzeMerken(...namen) {
+  let neu = false;
+  namen.forEach(n => { if (n && !allePlaetze.includes(n)) { allePlaetze.push(n); neu = true; } });
+  if (neu) allePlaetze.sort((a,b) => a.localeCompare(b));
 }
 // Plätze, auf denen ein Artikel aktuell liegt (Bestand > 0)
 async function artikelPlaetze(artnr) {
@@ -691,21 +757,45 @@ function amaBadge(online) {
   if (online === 2) return '<span class="badge b-off" style="text-decoration:line-through;">AMA</span>';
   return '<span class="badge b-unk">AMA ?</span>';
 }
-function sucheUid(artnr, lp) { return (artnr + '__' + lp).replace(/[^a-zA-Z0-9_]/g, '_'); }
-
+let sucheLadeSeq = 0;       // verwirft Antworten überholter Ladevorgänge
+let sucheLaedtSeq = 0;      // laufender Ladevorgang (0 = keiner)
+let sucheNachladen = false; // während des Ladens lokal gebucht → danach erneut laden
 async function ladeSucheDaten() {
+  const seq = ++sucheLadeSeq;
+  sucheLaedtSeq = seq;
   const box = el('such-tabelle');
   if (box) box.innerHTML = '<span class="hint">Wird geladen…</span>';
-  const [arts, best, lps] = await Promise.all([
-    fetchAll('artikel', 'artikelnummer,artikelname,gtin,online,ist_set', { order: { col: 'artikelname', asc: true } }),
-    fetchAll('bestaende', 'artikelnummer,lagerplatz,menge'),   // auch 0-Mengen (frühere Lagerorte)
-    fetchAll('v_lagerplaetze', 'name,palette')
-  ]);
+  let arts, best, lps;
+  try {
+    [arts, best, lps] = await Promise.all([
+      fetchAll('artikel', 'artikelnummer,artikelname,gtin,online,ist_set', { order: { col: 'artikelname', asc: true } }),
+      fetchAll('bestaende', 'artikelnummer,lagerplatz,menge'),   // auch 0-Mengen (frühere Lagerorte)
+      fetchAll('v_lagerplaetze', 'name,palette')
+    ]);
+  } finally { if (sucheLaedtSeq === seq) sucheLaedtSeq = 0; }
+  // Eine spätere Ladeanfrage war schneller fertig → diese (ältere) Antwort verwerfen
+  if (seq !== sucheLadeSeq) return;
   sucheArtikelCache = arts.map(a => ({ ...a, istSet: !!a.ist_set }));
   sucheBestandCache = best;
   sucheLagerplaetzeCache = lps;
   sucheBuildFilterUI();
   sucheRender();
+  if (sucheNachladen) { sucheNachladen = false; ladeSucheDaten(); }
+}
+// Nach einer Schnellbuchung nur die betroffene Zeile im Cache aktualisieren
+// (buchen() liefert den neuen Bestand) statt Artikel + Bestände komplett neu zu laden
+function sucheNachBuchung(artnr, lp, mengeNeu) {
+  const row = sucheBestandCache.find(b => b.artikelnummer === artnr && b.lagerplatz === lp);
+  if (row) row.menge = mengeNeu;
+  else sucheBestandCache.push({ artikelnummer: artnr, lagerplatz: lp, menge: mengeNeu });
+  if (!sucheLagerplaetzeCache.some(x => x.name === lp)) {
+    sucheLagerplaetzeCache.push({ name: lp, palette: '' });
+    sucheBuildFilterUI();
+  }
+  plaetzeMerken(lp);
+  // lief gerade ein Komplett-Laden, enthält dessen Antwort evtl. noch den alten Stand
+  if (sucheLaedtSeq) sucheNachladen = true;
+  sucheRender(true);
 }
 // öffentlicher Refresh-Punkt nach Schreibaktionen (Bearbeiten/Löschen/Rückgängig/Buchen)
 function sucheRefresh() { ladeSucheDaten(); }
@@ -777,8 +867,11 @@ function sucheUpdateSammelbar() {
   if (!bar) return;
   const n = sucheSelektion.size;
   if (!n) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  // Auswahl bleibt über Such-/Filterwechsel bestehen (so lassen sich Artikel aus
+  // mehreren Suchen sammeln) - dann aber deutlich zeigen, dass Ausgeblendete dabei sind
+  const versteckt = sucheVersteckteAuswahl().length;
   bar.style.display = 'flex';
-  bar.innerHTML = `<span><b>${n}</b> ausgewählt</span>
+  bar.innerHTML = `<span><b>${n}</b> ausgewählt${versteckt ? ` <span class="err">(davon ${versteckt} durch Suche/Filter ausgeblendet)</span>` : ''}</span>
     <button class="sec" onclick="suchePickliste()">🧾 Pickliste</button>
     <button style="background:var(--red);" onclick="sucheSammelAusbuchen()">− Komplett ausbuchen</button>
     <button class="sec" style="margin-left:auto;" onclick="sucheClearSelektion()">✕ Alle abwählen (${n})</button>`;
@@ -822,10 +915,18 @@ function suchePickliste() {
   if (!w) { alert('Bitte Pop-ups für diese Seite erlauben'); return; }
   w.document.open(); w.document.write(html); w.document.close();
 }
+// ausgewählte Artikel, die die aktuelle Suche/Filterung gerade nicht anzeigt
+let sucheGefiltertSet = new Set();
+function sucheVersteckteAuswahl() { return [...sucheSelektion].filter(nr => !sucheGefiltertSet.has(nr)); }
 async function sucheSammelAusbuchen() {
   const arr = [...sucheSelektion];
   if (!arr.length) return;
-  if (!confirm(`${arr.length} Artikel komplett ausbuchen?\n\nDer gesamte Bestand dieser Artikel wird auf ALLEN Lagerplätzen auf 0 gesetzt.\nDas ist nicht mit einem Klick rückgängig zu machen (nur einzeln über das Protokoll) — am besten vorher „Sicherung jetzt" im Import/Export-Tab.`)) return;
+  const versteckt = sucheVersteckteAuswahl();
+  const name = nr => { const a = sucheArtikelCache.find(x => x.artikelnummer === nr); return (a && a.artikelname) || nr; };
+  const liste = arr.slice(0, 15).map(nr => '• ' + name(nr) + (versteckt.includes(nr) ? '  (ausgeblendet!)' : '')).join('\n')
+    + (arr.length > 15 ? `\n… und ${arr.length - 15} weitere` : '');
+  const warnung = versteckt.length ? `\n\n⚠️ ${versteckt.length} davon sind durch die aktuelle Suche/Filterung gerade NICHT sichtbar.` : '';
+  if (!confirm(`${arr.length} Artikel komplett ausbuchen?\n\n${liste}${warnung}\n\nDer gesamte Bestand dieser Artikel wird auf ALLEN Lagerplätzen auf 0 gesetzt.\nDas ist nicht mit einem Klick rückgängig zu machen (nur einzeln über das Protokoll) — am besten vorher „Sicherung jetzt" im Import/Export-Tab.`)) return;
   const { data, error } = await client.rpc('sammel_ausbuchen', { p_artikelnummern: arr });
   if (error) { alert('Fehler: ' + error.message); return; }
   alert(`Komplett ausgebucht: ${data.artikel} Artikel · ${data.stueck} Stück (${data.plaetze} Plätze)`);
@@ -835,26 +936,36 @@ async function sucheSammelAusbuchen() {
 }
 
 // ── Schnellbuchen direkt aus der Suche (± je Lagerplatz-Zeile) ──────────────
-async function sucheBuchen(artnr, lp, typ) {
-  const uid = sucheUid(artnr, lp);
-  const inp = el('bk-m-' + uid);
-  const menge = parseInt(inp.value, 10);
-  if (!Number.isInteger(menge) || menge < 1) { alert('Menge muss eine ganze Zahl ≥ 1 sein.'); return; }
-  let zielLp = lp;
-  if (zielLp === '—') {
-    zielLp = (prompt('Auf welchen Lagerplatz buchen?') || '').trim();
-    if (!zielLp) return;
-  }
-  const a = sucheArtikelCache.find(x => x.artikelnummer === artnr);
-  if (a && a.istSet) {
-    const hinweis = typ === 'ein' ? 'mehrere Einheiten = 1 Stück' : 'mehrere Einheiten ins Paket legen!';
-    if (!confirm('⚠️ SET-ARTIKEL\n\n' + (a.artikelname||artnr) + '\n\n' + hinweis + '\n\nFortfahren?')) return;
-  }
-  const { data, error } = await client.rpc('buchen', { p_artikelnummer: artnr, p_lagerplatz: zielLp, p_typ: typ, p_menge: menge, p_kommentar: '' });
-  if (error) { alert('Fehler: ' + error.message); return; }
-  await ladeAllePlaetze();
-  refreshUndo(); refreshLeer();
-  sucheRefresh();
+// btn = der geklickte Knopf; das Mengenfeld steht in derselben Zelle. (Vorher wurde
+// es über eine aus dem Platznamen gebildete ID gesucht - „Regal-1" und „Regal 1"
+// ergaben dieselbe ID, gelesen wurde dann das falsche Feld.)
+async function sucheBuchen(artnr, lp, typ, btn) {
+  const zelle = btn && btn.parentElement;
+  const inp = zelle && zelle.querySelector('input[type=number]');
+  if (!inp) return;
+  // eine Schnellbuchung nach der anderen - ein Doppelklick bucht nicht doppelt
+  return einmalig('suche-buchen', async () => {
+    const menge = parseInt(inp.value, 10);
+    if (!Number.isInteger(menge) || menge < 1) { alert('Menge muss eine ganze Zahl ≥ 1 sein.'); return; }
+    let zielLp = lp;
+    if (zielLp === '—') {
+      zielLp = (prompt('Auf welchen Lagerplatz buchen?') || '').trim();
+      if (!zielLp) return;
+    }
+    const a = sucheArtikelCache.find(x => x.artikelnummer === artnr);
+    if (a && a.istSet) {
+      const hinweis = typ === 'ein' ? 'mehrere Einheiten = 1 Stück' : 'mehrere Einheiten ins Paket legen!';
+      if (!(await scanFrage('⚠️ SET-ARTIKEL\n\n' + (a.artikelname||artnr) + '\n\n' + hinweis + '\n\nFortfahren?', 'Fortfahren', 'Abbrechen', 'Set, bitte bestätigen')).ja) return;
+    }
+    const knoepfe = zelle.querySelectorAll('button');
+    knoepfe.forEach(b => b.disabled = true);
+    try {
+      const { data, error } = await client.rpc('buchen', { p_artikelnummer: artnr, p_lagerplatz: zielLp, p_typ: typ, p_menge: menge, p_kommentar: '' });
+      if (error) { alert('Fehler: ' + buchFehlerText(error)); return; }
+      sucheNachBuchung(artnr, zielLp, data.lp_bestand_neu);
+      refreshUndo(); refreshLeer();
+    } finally { knoepfe.forEach(b => b.disabled = false); }
+  });
 }
 
 function sucheRender(behalteLimit) {
@@ -907,6 +1018,7 @@ function sucheRender(behalteLimit) {
   st.textContent = (scopeLabel ? scopeLabel + ': ' : '') + gesamtGefiltert + ' Artikel · ' + gesamtStk + ' Stück'
     + (onlineFilter!==''||setFilter!==''||raw ? ' (gefiltert)' : '');
 
+  sucheGefiltertSet = new Set(liste.map(a => a.artikelnummer));
   if (!liste.length) { box.innerHTML = '<div class="hint" style="padding:10px 0;">Keine Treffer.</div>'; sucheSichtbar = []; sucheUpdateSammelbar(); return; }
 
   const hits = liste.slice(0, sucheLimit);
@@ -942,7 +1054,6 @@ function sucheRender(behalteLimit) {
     const cbCell = (rs) => `<td class="col-cb"${rs>1?` rowspan="${rs}"`:''}>${cb}</td>`;
 
     if (!plaetze.length) {
-      const uid = sucheUid(a.artikelnummer, '—');
       return [`<tr${grpAttr}>
         ${cbCell(1)}
         <td class="col-name">${nameHtml}</td>
@@ -952,14 +1063,13 @@ function sucheRender(behalteLimit) {
         <td><span class="lp lp-leer">—</span></td>
         <td class="num">0</td>
         <td class="buchen-cell">
-          <input type="number" id="bk-m-${uid}" value="1" min="1">
-          <button class="bk-ein" title="Einbuchen" onclick="sucheBuchen('${jsAttr(a.artikelnummer)}','—','ein')">+ Ein</button>
+          <input type="number" value="1" min="1">
+          <button class="bk-ein" title="Einbuchen" onclick="sucheBuchen('${jsAttr(a.artikelnummer)}','—','ein',this)">+ Ein</button>
         </td>
       </tr>`];
     }
     return plaetze.map((p, i) => {
       const leer = p.menge === 0;
-      const uid = sucheUid(a.artikelnummer, p.lagerplatz);
       const rs = plaetze.length;
       return `<tr${grpAttr}>
         ${i===0 ? cbCell(rs) : ''}
@@ -970,9 +1080,9 @@ function sucheRender(behalteLimit) {
         <td><span class="lp${leer?' lp-leer':''}" title="${leer?'Früherer Lagerort (leer)':''}">${esc(p.lagerplatz)}</span></td>
         <td class="num"${leer?' style="color:var(--text-3);"':''}>${p.menge}</td>
         <td class="buchen-cell">
-          <input type="number" id="bk-m-${uid}" value="1" min="1">
-          <button class="bk-ein" title="Einbuchen" onclick="sucheBuchen('${jsAttr(a.artikelnummer)}','${jsAttr(p.lagerplatz)}','ein')">+ Ein</button>
-          ${leer ? '' : `<button class="bk-aus" title="Ausbuchen" onclick="sucheBuchen('${jsAttr(a.artikelnummer)}','${jsAttr(p.lagerplatz)}','aus')">− Aus</button>`}
+          <input type="number" value="1" min="1">
+          <button class="bk-ein" title="Einbuchen" onclick="sucheBuchen('${jsAttr(a.artikelnummer)}','${jsAttr(p.lagerplatz)}','ein',this)">+ Ein</button>
+          ${leer ? '' : `<button class="bk-aus" title="Ausbuchen" onclick="sucheBuchen('${jsAttr(a.artikelnummer)}','${jsAttr(p.lagerplatz)}','aus',this)">− Aus</button>`}
         </td>
       </tr>`;
     });
@@ -1272,71 +1382,115 @@ function erZeigeFlash(kanal, sub) {
   box.style.animation = 'erPulse .32s ease';
 }
 function erVersteckeFlash() { const box = el('er-flash'); if (box) box.style.display = 'none'; }
+// Wie beim Scanner-Reiter: Code sofort aus dem Feld nehmen und sperren, solange
+// der vorige Scan noch läuft. Vorher wurde der nächste Code an den noch stehenden
+// angehängt, als „nicht gefunden" abgewiesen und die Meldung gleich wieder von
+// der Erfolgsmeldung des ersten Scans überschrieben - der Artikel lag im Karton,
+// war aber nicht gebucht.
+let erLaeuft = false;
+let erVerworfen = false;   // während eines laufenden Scans wurde erneut gescannt
 async function erScan() {
   if (!erSession) return;
-  const code = el('er-scan').value.trim(); const menge = parseInt(el('er-menge').value,10);
+  const feld = el('er-scan');
+  if (erLaeuft) {
+    if (feld.value.trim()) { erVerworfen = true; ssWarnen('Moment, bitte nochmal scannen'); }
+    feld.value = '';
+    return;
+  }
+  erLaeuft = true; erVerworfen = false;
+  try { await erScanIntern(); }
+  finally {
+    erLaeuft = false;
+    // kam der abgewiesene Scan erst nach der Ergebnismeldung, Hinweis jetzt anhängen
+    el('er-status').insertAdjacentHTML('beforeend', erVerworfenHtml());
+  }
+}
+const ZWISCHENSCAN_HINWEIS = '<div class="ss-block" style="margin-top:6px;">⛔ Ein weiterer Scan kam, während der vorige noch lief – er wurde <b>nicht</b> gebucht. Bitte noch einmal scannen.</div>';
+// Hinweis auf einen abgewiesenen Zwischen-Scan; wird mit der Ergebnismeldung
+// zusammen geschrieben, damit sie ihn nicht überschreibt
+function erVerworfenHtml() {
+  if (!erVerworfen) return '';
+  erVerworfen = false;
+  return ZWISCHENSCAN_HINWEIS;
+}
+// Bei Fehlern den Code zum Korrigieren zurück ins Feld - aber nur, wenn dort nicht
+// schon der nächste Scan steht
+function erFeldZurueck(code) {
+  const feld = el('er-scan');
+  if (!feld.value) { feld.value = code; feld.select(); } else feld.focus();
+}
+async function erScanIntern() {
+  const feld = el('er-scan');
+  const code = feld.value.trim(); const menge = parseInt(el('er-menge').value,10);
+  feld.value = '';
   const st = el('er-status');
   if (!code) return;
   // Nach JEDEM Scan wieder 1 - die eingestellte Menge gilt nur für diesen einen
   // Artikel, egal ob der Scan klappt. Sonst räumt man beim nächsten Artikel
   // versehentlich die alte Menge ein.
   el('er-menge').value = 1;
-  if (!Number.isInteger(menge) || menge < 1) { st.innerHTML='<span class="err">Menge ≥ 1</span>'; return; }
-  let g = await resolveArtikel(code);
-  // Nicht in LagerPal, aber in der JTL-Artikelliste → echten Artikel anlegen
-  // (nicht online → geht ganz normal in den Offline-Karton)
-  let neuAngelegt = null;
-  if (!g && istEan(code)) {
-    g = await ausListeAnlegen(code);
-    if (g && g.neu) neuAngelegt = g;
-  }
-  // Unbekannt (neue EAN oder schon angelegter Platzhalter) → Klärfall-Karton,
-  // Ansage „Unbekannt" statt online/offline
-  if ((!g && istEan(code)) || (g && g.unbekannt)) {
-    const r = await unbEinbuchen(g ? g.gtin : code, g ? g.artnr : '', menge,
-      'Unbekannter Artikel (Palette sortieren, Quelle ' + erSession.quelle + ')');
-    if (r.error) { st.innerHTML='<span class="err">❌ '+esc(r.error.message)+'</span>'; erVersteckeFlash(); el('er-scan').select(); return; }
-    const d = r.data;
-    erZeigeFlash('unbekannt', d.artikelname + ' → ' + d.karton);
-    st.innerHTML = unbMeldungHtml(d, menge);
-    erSession.gebucht.push({artnr:d.artikelnummer, name:d.artikelname, gtin:d.gtin||'', menge, ziel:d.karton});
-    erSession.stk += menge;
-    erSpeichern();
-    el('er-scan').value=''; el('er-scan').focus();
-    await erInhaltLaden(); erRenderCtx(); erLogRender(); refreshUndo();
-    return;
-  }
-  if (!g) { st.innerHTML='<span class="err">❌ Nicht gefunden: '+esc(code)+'</span>'; erVersteckeFlash(); el('er-scan').select(); return; }
-  if (g.mehrdeutig) { st.innerHTML='<span class="err">EAN mehrdeutig – Artikelnummer eingeben</span>'; erVersteckeFlash(); el('er-scan').select(); return; }
-  let ziel, label, kanal;
-  if (g.online === 1) { ziel = erSession.aktivOnline; label='🟢 ONLINE'; kanal='online'; }
-  else if (g.online === 2) { ziel = erSession.aktivOffline; label='🔴 NICHT ONLINE'; kanal='offline'; }
-  else { st.innerHTML='<span class="err">❔ '+esc(g.name||code)+': Amazon-Status unbekannt. Bitte erst Status setzen/importieren.</span>'; erVersteckeFlash(); el('er-scan').select(); return; }
-  const verf = await erBestandAuf(g.artnr, erSession.quelle);
+  if (!Number.isInteger(menge) || menge < 1) { st.innerHTML='<span class="err">Menge ≥ 1</span>'; erFeldZurueck(code); return; }
   try {
+    let g = await resolveArtikel(code);
+    // Nicht in LagerPal, aber in der JTL-Artikelliste → echten Artikel anlegen
+    // (nicht online → geht ganz normal in den Offline-Karton)
+    let neuAngelegt = null;
+    if (!g && istEan(code)) {
+      g = await ausListeAnlegen(code);
+      if (g && g.neu) neuAngelegt = g;
+    }
+    // Unbekannt (neue EAN oder schon angelegter Platzhalter) → Klärfall-Karton,
+    // Ansage „Unbekannt" statt online/offline
+    if ((!g && istEan(code)) || (g && g.unbekannt)) {
+      const r = await unbEinbuchen(g ? g.gtin : code, g ? g.artnr : '', menge,
+        'Unbekannter Artikel (Palette sortieren, Quelle ' + erSession.quelle + ')');
+      if (r.error) { st.innerHTML='<span class="err">❌ '+esc(buchFehlerText(r.error))+'</span>'; erVersteckeFlash(); erFeldZurueck(code); return; }
+      const d = r.data;
+      erZeigeFlash('unbekannt', d.artikelname + ' → ' + d.karton);
+      st.innerHTML = unbMeldungHtml(d, menge) + erVerworfenHtml();
+      erSession.gebucht.push({artnr:d.artikelnummer, name:d.artikelname, gtin:d.gtin||'', menge, ziel:d.karton});
+      erSession.stk += menge;
+      erSpeichern();
+      plaetzeMerken(d.karton);
+      feld.focus();
+      await erInhaltLaden(); erRenderCtx(); erLogRender(); refreshUndo();
+      return;
+    }
+    if (!g) { st.innerHTML='<span class="err">❌ Nicht gefunden: '+esc(code)+'</span>'; erVersteckeFlash(); erFeldZurueck(code); return; }
+    if (g.mehrdeutig) { st.innerHTML='<span class="err">EAN mehrdeutig – Artikelnummer eingeben</span>'; erVersteckeFlash(); erFeldZurueck(code); return; }
+    let ziel, label, kanal;
+    if (g.online === 1) { ziel = erSession.aktivOnline; label='🟢 ONLINE'; kanal='online'; }
+    else if (g.online === 2) { ziel = erSession.aktivOffline; label='🔴 NICHT ONLINE'; kanal='offline'; }
+    else { st.innerHTML='<span class="err">❔ '+esc(g.name||code)+': Amazon-Status unbekannt. Bitte erst Status setzen/importieren.</span>'; erVersteckeFlash(); erFeldZurueck(code); return; }
+    const verf = await erBestandAuf(g.artnr, erSession.quelle);
+    let frageVerworfen = false;
     // Neu aus der JTL-Liste angelegt → lag sicher nicht auf der Quelle, keine Rückfrage
     if (menge > verf && !neuAngelegt) {
       const surplus = menge - verf;
-      if (!confirm(`Auf „${erSession.quelle}" sind nur ${verf} Stk von „${g.name||g.artnr}" gebucht — du räumst ${menge} ein.\n\nDie ${surplus} zusätzlichen als Inventur-Zugang in Karton ${ziel} buchen?`)) { st.innerHTML='<span class="err">Abgebrochen.</span>'; el('er-scan').select(); return; }
+      const r = await scanFrage(`Auf „${erSession.quelle}" sind nur ${verf} Stk von „${g.name||g.artnr}" gebucht — du räumst ${menge} ein.\n\nDie ${surplus} zusätzlichen als Inventur-Zugang in Karton ${ziel} buchen?`,
+        `Ja, ${surplus} zusätzlich buchen`, 'Nein, abbrechen', 'Mehrmenge, bitte bestätigen');
+      if (!r.ja) { st.innerHTML='<span class="err">Abgebrochen – nichts gebucht.</span>' + (r.gescannt ? SCAN_VERWORFEN_HINWEIS : ''); feld.focus(); return; }
+      frageVerworfen = r.gescannt;
     }
     // ein einziger atomarer Aufruf statt zwei getrennter (umlagern + buchen) —
     // damit bei Verbindungsabbruch nie ein halb fertiger Zustand entsteht
     const { error } = await client.rpc('einraeumen_scan', { p_artikelnummer:g.artnr, p_quelle:erSession.quelle, p_ziel:ziel, p_menge:menge });
-    if (error) { st.innerHTML='<span class="err">❌ '+esc(error.message)+'</span>'; el('er-scan').select(); return; }
+    if (error) { st.innerHTML='<span class="err">❌ '+esc(buchFehlerText(error))+'</span>'; erFeldZurueck(code); return; }
     const extra = menge > verf ? ` (davon ${menge-verf} als Inventur-Zugang)` : '';
     erZeigeFlash(kanal, (neuAngelegt ? '🆕 NEU · ' : '') + (g.istSet ? '⚠️ SET – mehrere Teile zusammen lassen · ' : '') + (g.name||g.artnr) + ' → ' + ziel);
     if (neuAngelegt) neuAnsage(g.online);
     else if (g.istSet) ansageImmer('Set, ' + (kanal === 'online' ? 'online' : 'offline'));
     else sprich(kanal === 'online' ? 'online' : 'offline');
     st.innerHTML = `<span class="ok">${label} → Karton ${esc(ziel)}<br>${menge}× ${esc(g.name||'')} (${esc(g.artnr)})${extra}</span>` + (neuAngelegt ? NEU_HINWEIS(neuAngelegt) : '')
-      + (g.istSet ? `<div style="margin-top:6px;padding:8px 10px;border:2px solid var(--red);border-radius:8px;background:#fdecea;color:#9b2c2c;font-weight:700;">⚠️ SET-ARTIKEL: mehrere Teile = 1 Stück – Teile zusammen lassen!</div>` : '');
+      + (g.istSet ? `<div style="margin-top:6px;padding:8px 10px;border:2px solid var(--red);border-radius:8px;background:#fdecea;color:#9b2c2c;font-weight:700;">⚠️ SET-ARTIKEL: mehrere Teile = 1 Stück – Teile zusammen lassen!</div>` : '')
+      + (frageVerworfen ? SCAN_VERWORFEN_HINWEIS : '') + erVerworfenHtml();
     erSession.gebucht.push({artnr:g.artnr, name:g.name||'', gtin:g.gtin||'', menge, ziel});
     erSession.stk += menge;
     erSpeichern();
-    el('er-scan').value=''; el('er-scan').focus();
+    feld.focus();
     await erInhaltLaden();
     erRenderCtx(); erLogRender(); refreshUndo();
-  } catch(e) { st.innerHTML='<span class="err">Verbindungsfehler</span>'; }
+  } catch(e) { st.innerHTML='<span class="err">❌ '+esc(buchFehlerText(e))+'</span>'; erFeldZurueck(code); }
 }
 function erKartonSpalte(farbe, titel, ziel) {
   const liste = (erSession.inhalt && erSession.inhalt[ziel]) || [];
@@ -1368,7 +1522,7 @@ function erLogRender() {
 }
 async function erKartonVoll(channel) {
   const name = channel==='online' ? erSession.aktivOnline : erSession.aktivOffline;
-  await kartonBlattDrucken(name);
+  await kartonBlattDrucken(name, druckFensterOeffnen(name));
   let neu;
   try { neu = await erNeuerKarton(channel==='online' ? 1 : 2); }
   catch (e) { alert('Fehler: ' + (e.message || e)); return; }
@@ -1378,10 +1532,13 @@ async function erKartonVoll(channel) {
 }
 async function erFertig() {
   if (erSession) {
+    // Fenster sofort öffnen; welche Kartons etwas enthalten, steht erst nach dem
+    // Laden fest. Beide Blätter kommen in EIN Fenster (je Karton eine Seite) -
+    // zwei Pop-ups aus einem Klick blockiert der Browser.
+    const w = druckFensterOeffnen('Karton-Blätter');
     await erInhaltLaden();
-    for (const nm of [erSession.aktivOnline, erSession.aktivOffline]) {
-      if (erKartonStueck(nm) > 0) await kartonBlattDrucken(nm);
-    }
+    const volle = [erSession.aktivOnline, erSession.aktivOffline].filter(nm => erKartonStueck(nm) > 0);
+    await kartonBlattDrucken(volle, w);
     await client.rpc('einraeumen_rest_melden', { p_quelle: erSession.quelle, p_palette: erSession.pal });
   }
   erSession = null;
@@ -1616,18 +1773,55 @@ function code128svg(text, unit, height) {
   const W=total*unit;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${height}" viewBox="0 0 ${W} ${height}" fill="#000">${rects}</svg>`;
 }
-async function kartonBlattDrucken(name) {
-  const { data: arts } = await client.from('bestaende')
+// Druckfenster SOFORT beim Klick öffnen (vor jedem await) - Browser lassen ein
+// Pop-up nur direkt nach einer Nutzeraktion zu. Vorher wurde erst geladen und dann
+// geöffnet; das zweite Blatt bei „Palette fertig" wurde dadurch meist blockiert.
+function druckFensterOeffnen(titel) {
+  const w = window.open('', '_blank');
+  if (!w) { alert('Bitte Pop-ups erlauben, damit das Karton-Blatt gedruckt werden kann.'); return null; }
+  w.document.open();
+  w.document.write('<!doctype html><html lang="de"><head><meta charset="utf-8"><title>' + esc(titel) + '</title></head>'
+    + '<body style="font-family:Arial,sans-serif;padding:20px;">⏳ Karton-Blatt wird geladen…</body></html>');
+  w.document.close();
+  return w;
+}
+// Ein oder mehrere Kartons (dann je Karton eine eigene Seite) in EINEM Fenster drucken.
+// w = schon geöffnetes Fenster (siehe druckFensterOeffnen), sonst wird hier eins geöffnet.
+async function kartonBlattDrucken(namen, w) {
+  namen = (Array.isArray(namen) ? namen : [namen]).filter(Boolean);
+  if (!namen.length) { if (w) w.close(); return; }
+  // undefined = noch kein Fenster → hier öffnen; null = Öffnen ist schon gescheitert
+  if (w === undefined) w = druckFensterOeffnen(namen.join(', '));
+  if (!w) return;
+  let html;
+  try {
+    const blaetter = [];
+    for (const n of namen) blaetter.push(await kartonBlattTeil(n));
+    html = kartonBlattSeite(namen.join(', '), blaetter);
+  } catch (e) {
+    // nie ein leeres Blatt drucken, nur weil die Verbindung kurz weg war
+    html = '<!doctype html><html lang="de"><head><meta charset="utf-8"><title>Fehler</title></head><body style="font-family:Arial,sans-serif;padding:20px;color:#9b2c2c;">'
+      + '❌ Karton-Blatt konnte nicht geladen werden: ' + esc((e && e.message) || e)
+      + '<br><br>Bitte dieses Fenster schließen und unter „Lagerplätze" → „Nachdruck" erneut drucken.</body></html>';
+  }
+  if (w.closed) return;
+  w.document.open(); w.document.write(html); w.document.close();
+}
+async function kartonBlattTeil(name) {
+  const { data: arts, error: e1 } = await client.from('bestaende')
     .select('artikelnummer, menge, artikel(artikelname,gtin)').eq('lagerplatz', name).gt('menge',0);
-  const { data: metaRows } = await client.from('v_lagerplaetze').select('palette,kanal').eq('name', name).limit(1);
+  if (e1) throw e1;
+  const { data: metaRows, error: e2 } = await client.from('v_lagerplaetze').select('palette,kanal').eq('name', name).limit(1);
+  if (e2) throw e2;
   const meta = (metaRows && metaRows[0]) || { palette:'', kanal:0 };
   // Für "Weitere Lagerplätze": alle anderen Plätze, auf denen dieselben Artikel
   // noch liegen (Karton ist sortenrein — Online/Offline daher nicht mehr relevant).
   const artnrs = [...new Set((arts||[]).map(r => r.artikelnummer))];
   const weitereMap = {};
   if (artnrs.length) {
-    const { data: alle } = await client.from('bestaende').select('artikelnummer,lagerplatz,menge')
+    const { data: alle, error: e3 } = await client.from('bestaende').select('artikelnummer,lagerplatz,menge')
       .in('artikelnummer', artnrs).neq('lagerplatz', name).gt('menge',0);
+    if (e3) throw e3;
     (alle||[]).forEach(r => { (weitereMap[r.artikelnummer] = weitereMap[r.artikelnummer] || []).push(r.lagerplatz + ' (' + r.menge + ')'); });
   }
   const rows = (arts||[]).map(r => ({ artnr:r.artikelnummer, name:(r.artikel&&r.artikel.artikelname)||'', gtin:(r.artikel&&r.artikel.gtin)||'', menge:r.menge,
@@ -1641,9 +1835,17 @@ async function kartonBlattDrucken(name) {
   const punkt = punktFarbe ? `<span class="dot" style="background:${punktFarbe};"></span>` : '';
   const body = rows.map(a => `<tr><td class="mono">${esc(a.gtin)}</td><td class="t">${esc(a.name)}</td><td class="r m">${a.menge}</td><td class="w">${esc(a.weitere)}</td></tr>`).join('')
     || '<tr><td colspan="4" style="text-align:center;color:#888;padding:8mm;">(leer)</td></tr>';
-  const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${esc(name)}</title><style>
+  return `<div class="blatt">
+    <div class="kopf"><div class="kar">${esc(name)}</div>${punkt}</div>
+    <table><colgroup><col class="c-ean"><col><col class="c-m"><col class="c-w"></colgroup><thead><tr><th>EAN</th><th>Artikelname</th><th class="r">Menge</th><th>Weitere Lagerplätze</th></tr></thead><tbody>${body}</tbody></table>
+  </div>`;
+}
+function kartonBlattSeite(titel, blaetter) {
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${esc(titel)}</title><style>
     *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
     body{margin:0;padding:7mm;font-family:Arial,sans-serif;color:#000;}
+    .blatt + .blatt{break-before:page;page-break-before:always;}
+    @media screen{.blatt + .blatt{margin-top:12mm;padding-top:6mm;border-top:3px dashed #999;}}
     .kopf{display:flex;align-items:center;justify-content:center;gap:8mm;border-bottom:2px solid #000;padding-bottom:3mm;margin-bottom:3mm;}
     .kar{font-size:90pt;font-weight:800;line-height:1;letter-spacing:-1px;}
     .dot{display:inline-block;width:56pt;height:56pt;border-radius:50%;flex:none;}
@@ -1658,9 +1860,8 @@ async function kartonBlattDrucken(name) {
     @page{size:A4;margin:7mm 12mm 12mm 12mm;}
     @media print{.hint{display:none;} body{padding:0;}}
   </style></head><body>
-    <div class="hint">Karton-Blatt. Druck startet automatisch — sonst Strg/Cmd+P.</div>
-    <div class="kopf"><div class="kar">${esc(name)}</div>${punkt}</div>
-    <table><colgroup><col class="c-ean"><col><col class="c-m"><col class="c-w"></colgroup><thead><tr><th>EAN</th><th>Artikelname</th><th class="r">Menge</th><th>Weitere Lagerplätze</th></tr></thead><tbody>${body}</tbody></table>
+    <div class="hint">${blaetter.length > 1 ? blaetter.length + ' Karton-Blätter (je eine Seite)' : 'Karton-Blatt'}. Druck startet automatisch — sonst Strg/Cmd+P.</div>
+    ${blaetter.join('')}
     <script>
       // Artikelname: bleibt 8pt; passt er nicht in eine Zeile, wird die Schrift
       // schrittweise kleiner (bis 5.5pt). Reicht auch das nicht, wird umgebrochen.
@@ -1674,9 +1875,6 @@ async function kartonBlattDrucken(name) {
       window.onload=function(){namenEinpassen();setTimeout(function(){window.print();},150);};
     <\/script>
   </body></html>`;
-  const w = window.open('', '_blank');
-  if (!w) { alert('Bitte Pop-ups erlauben, damit das Karton-Blatt gedruckt werden kann.'); return; }
-  w.document.open(); w.document.write(html); w.document.close();
 }
 
 // Öffnet eine Druckseite mit je einem kleinen Etikett (Name + Barcode) pro Lagerplatz
@@ -1803,7 +2001,14 @@ async function umlagernArtikelGeladen() {
     ? stock.map(s => `<option value="${escAttr(s.lagerplatz)}">${esc(s.lagerplatz)} (${s.menge})</option>`).join('')
     : '<option value="">— kein Bestand —</option>';
 }
+// Knopf bleibt während des Aufrufs gesperrt - ein Doppelklick lagert nicht doppelt um
 async function umlagern() {
+  return einmalig('umlagern', async () => {
+    el('u-btn').disabled = true;
+    try { await umlagernIntern(); } finally { el('u-btn').disabled = false; }
+  });
+}
+async function umlagernIntern() {
   const eingabe = el('u-artnr').value.trim();
   const von = el('u-von').value, nach = chosenLp('u-nach','u-nach-neu');
   const menge = parseInt(el('u-menge').value, 10);
@@ -1815,7 +2020,8 @@ async function umlagern() {
   if (!g || g.mehrdeutig) { st.innerHTML = '<span class="err">Artikel nicht eindeutig/gefunden.</span>'; return; }
   st.textContent = 'Lagere um…';
   const { data, error } = await client.rpc('umlagern', { p_artikelnummer: g.artnr, p_von: von, p_nach: nach, p_menge: menge });
-  if (error) { st.innerHTML = '<span class="err">Fehler: ' + esc(error.message) + '</span>'; return; }
+  if (error) { st.innerHTML = '<span class="err">Fehler: ' + esc(buchFehlerText(error)) + '</span>'; return; }
+  plaetzeMerken(nach);
   st.innerHTML = `<span class="ok">🔀 ${menge}× ${esc(data.artikelname||g.artnr)} umgelagert<br>`
     + `${esc(von)}: <b>${data.von_nachher}</b> · ${esc(nach)}: <b>${data.nach_nachher}</b></span>`;
   el('u-menge').value = 1;
@@ -1922,10 +2128,11 @@ async function unbKartonVoll() {
   if (!unbKarton) { alert('Es gibt noch keinen Unbekannt-Karton - er wird beim ersten unbekannten Artikel angelegt.'); return; }
   if (!confirm(`Karton „${unbKarton}" ist voll?\n\nKarton-Blatt wird gedruckt, danach geht es mit dem nächsten Unbekannt-Karton weiter.`)) return;
   const alt = unbKarton;
+  const w = druckFensterOeffnen(alt);
   const { data, error } = await client.rpc('unbekannt_karton_naechster');
-  if (error) { alert('Fehler: ' + error.message); return; }
+  if (error) { if (w) w.close(); alert('Fehler: ' + error.message); return; }
   unbKarton = data.neu;
-  await kartonBlattDrucken(alt);
+  await kartonBlattDrucken(alt, w);
   await ladeAllePlaetze();
   if (erSession) { await erInhaltLaden(); erRenderCtx(); erLogRender(); }
   ssUnbRender();
@@ -2056,37 +2263,59 @@ function ssMenge() {
 }
 async function ssBook(artnr, lp, typ, menge, name) {
   const { data, error } = await client.rpc('buchen', { p_artikelnummer: artnr, p_lagerplatz: lp, p_typ: typ, p_menge: menge, p_kommentar: '' });
-  if (error) { ssStatus('Fehler: ' + esc(error.message), 'err'); return null; }
+  if (error) { ssStatus('Fehler: ' + esc(buchFehlerText(error)), 'err'); return null; }
   const wort = typ === 'ein' ? '✚ Eingebucht' : '− Ausgebucht';
   const wohin = typ === 'aus' ? ' von ' + esc(lp) : ' auf ' + esc(lp);
   ssStatus(`${wort}: <b>${menge} Stk</b>${wohin} — ${esc(name||artnr)}<br>Bestand auf ${esc(lp)}: <b>${data.lp_bestand_neu}</b> · Gesamt: <b>${data.bestand_gesamt_neu}</b>`, 'ok');
+  el('ss-status').insertAdjacentHTML('beforeend', ssVerworfenHtml());
   el('ss-menge').value = 1;
-  await ladeAllePlaetze(); refreshUndo();
+  plaetzeMerken(lp); refreshUndo();
   return data;
 }
 // menge wird beim Scan gemerkt und hier übergeben: das Mengenfeld steht nach
 // jedem Scan schon wieder auf 1 (sonst würde eine versehentlich stehen
 // gebliebene Menge beim nächsten Artikel mitgebucht).
+// Platz-Knöpfe sind während der Buchung gesperrt: zweimal schnell auf
+// „Regal 3" getippt bucht nicht zweimal.
 async function ssBookPick(artnr, lp, typ, name, menge) {
-  if (!Number.isInteger(menge) || menge < 1) { menge = ssMenge(); if (menge === null) return; }
-  // Das Mengenfeld steht seit dem Scan schon auf 1; hat der Nutzer während der
-  // offenen Platzwahl schon die Menge für den NÄCHSTEN Artikel eingetippt, soll
-  // die nicht durch ssBook wieder auf 1 gesetzt werden.
-  const mengeFeld = el('ss-menge').value;
-  const ok = await ssBook(artnr, lp, typ, menge, name);
-  el('ss-menge').value = mengeFeld;
-  // Nur bei Erfolg schließen - bei einem Fehler bleibt die Platzwahl offen
-  if (ok) { ssOffen = null; el('ss-pick-section').style.display = 'none'; }
-  el('ss-scan').focus();
+  return einmalig('ss-pick', async () => {
+    if (!ssOffen) return;   // Platzwahl inzwischen erledigt/abgebrochen
+    if (!Number.isInteger(menge) || menge < 1) { menge = ssMenge(); if (menge === null) return; }
+    const knoepfe = el('ss-pick-btns').querySelectorAll('button');
+    knoepfe.forEach(b => b.disabled = true);
+    try {
+      // Das Mengenfeld steht seit dem Scan schon auf 1; hat der Nutzer während der
+      // offenen Platzwahl schon die Menge für den NÄCHSTEN Artikel eingetippt, soll
+      // die nicht durch ssBook wieder auf 1 gesetzt werden.
+      const mengeFeld = el('ss-menge').value;
+      const ok = await ssBook(artnr, lp, typ, menge, name);
+      el('ss-menge').value = mengeFeld;
+      // Nur bei Erfolg schließen - bei einem Fehler bleibt die Platzwahl offen
+      if (ok) { ssOffen = null; el('ss-pick-section').style.display = 'none'; }
+    } finally { knoepfe.forEach(b => b.disabled = false); }
+    el('ss-scan').focus();
+  });
 }
 // Schutz gegen schnelles Doppel-Scannen: solange der vorige Scan noch nachschlägt
 // (Datenbank-Abfrage), wird der nächste nicht angenommen - sonst könnte er an der
 // noch nicht angezeigten Platzwahl vorbeirutschen.
 let ssLaeuft = false;
+// Hinweis „nicht gebucht" für einen abgewiesenen Scan; wird an die nächste
+// Ergebnismeldung angehängt, damit diese ihn nicht überschreibt
+let ssVerworfen = '';
+function ssVerworfenHtml() { const h = ssVerworfen; ssVerworfen = ''; return h; }
 async function ssScan() {
-  if (ssLaeuft) { el('ss-scan').value = ''; ssWarnen('Moment, bitte nochmal scannen'); ssStatus('⏳ Moment – vorheriger Scan läuft noch. Bitte gleich nochmal scannen.', 'err'); return; }
+  if (ssLaeuft) {
+    if (el('ss-scan').value.trim()) ssVerworfen = ZWISCHENSCAN_HINWEIS;
+    el('ss-scan').value = ''; ssWarnen('Moment, bitte nochmal scannen');
+    ssStatus('⏳ Moment – vorheriger Scan läuft noch. Bitte gleich nochmal scannen.', 'err'); return;
+  }
   ssLaeuft = true;
-  try { await ssScanIntern(); } finally { ssLaeuft = false; }
+  try { await ssScanIntern(); }
+  finally {
+    ssLaeuft = false;
+    el('ss-status').insertAdjacentHTML('beforeend', ssVerworfenHtml());
+  }
 }
 async function ssScanIntern() {
   if (!ssMode) { ssStatus('Bitte zuerst „− Ausbuchen" oder „＋ Einbuchen" wählen.', 'err'); return; }
@@ -2114,19 +2343,20 @@ async function ssScanIntern() {
   // Unbekannte Artikel beim Einbuchen: nicht abweisen, sondern in den Klärfall-Karton
   if (ssMode === 'ein' && ((!g && istEan(code)) || (g && g.unbekannt))) {
     const r = await unbEinbuchen(g ? g.gtin : code, g ? g.artnr : '', menge, 'Unbekannter Artikel (Scanner)');
-    if (r.error) { ssStatus('Fehler: ' + esc(r.error.message), 'err'); el('ss-scan').focus(); return; }
+    if (r.error) { ssStatus('Fehler: ' + esc(buchFehlerText(r.error)), 'err'); el('ss-scan').focus(); return; }
     ssStatus(unbMeldungHtml(r.data, menge)
       + (ssLp ? `<div class="hint" style="margin-top:4px;">Hinweis: unbekannte Artikel gehen immer in den Unbekannt-Karton, nicht auf ${esc(ssLp)}.</div>` : ''));
-    await ladeAllePlaetze(); refreshUndo(); ssUnbRender();
+    plaetzeMerken(r.data.karton); refreshUndo(); ssUnbRender();
     el('ss-scan').focus();
     return;
   }
   if (!g)            { ssStatus('❌ Nicht gefunden: ' + esc(code), 'err'); el('ss-scan').focus(); return; }
   if (g.mehrdeutig)  { ssStatus('⚠️ EAN mehrdeutig — bitte die Artikelnummer eingeben.', 'err'); el('ss-scan').focus(); return; }
   if (g.istSet) {
-    ansageImmer('Set');
     const hinweis = ssMode === 'ein' ? 'mehrere Einheiten = 1 Stück' : 'mehrere Einheiten ins Paket legen!';
-    if (!confirm('⚠️ SET-ARTIKEL\n\n' + (g.name||g.artnr) + '\n\n' + hinweis + '\n\nFortfahren?')) { ssStatus('Abgebrochen (Set-Artikel).'); el('ss-scan').focus(); return; }
+    const r = await scanFrage('⚠️ SET-ARTIKEL\n\n' + (g.name||g.artnr) + '\n\n' + hinweis + '\n\nFortfahren?', 'Fortfahren', 'Abbrechen', 'Set, bitte bestätigen');
+    if (!r.ja) { ssStatus('Abgebrochen (Set-Artikel) – nichts gebucht.' + (r.gescannt ? SCAN_VERWORFEN_HINWEIS : '')); el('ss-scan').focus(); return; }
+    if (r.gescannt) { ssVerworfen = SCAN_VERWORFEN_HINWEIS; ssWarnen('Bitte nochmal scannen'); }
   }
 
   // ── Einbuchen ──
@@ -3134,6 +3364,17 @@ window.addEventListener('load', () => {
     <div class="row" style="margin-top:14px;justify-content:flex-end;">
       <button class="sec" onclick="el('etikett-modal').style.display='none'">Abbrechen</button>
       <button onclick="etikettDrucken()">🖨️ Drucken</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="scan-frage" style="z-index:60;">
+  <div class="modal-box" tabindex="-1" style="border:3px solid var(--amber);outline:none;">
+    <div id="scan-frage-text" style="white-space:pre-line;font-weight:600;"></div>
+    <div class="hint" style="margin-top:8px;">Der Scanner ist gesperrt, bis du hier tippst.</div>
+    <div class="row" style="margin-top:14px;justify-content:flex-end;gap:8px;">
+      <button class="sec" id="scan-frage-nein">Nein</button>
+      <button id="scan-frage-ja">Ja</button>
     </div>
   </div>
 </div>
