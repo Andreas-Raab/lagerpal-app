@@ -1,0 +1,630 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LagerPal Befunde</title>
+<style>
+:root{
+  --bg:#f6f7f9; --card:#ffffff; --text:#1d2330; --muted:#5d6675; --line:#e2e5ea; --accent:#2f5fd0;
+  --krit:#b3122e; --krit-bg:#fde8ec; --hoch:#c2560c; --hoch-bg:#fdeedd; --mittel:#8a6a00; --mittel-bg:#fbf3d2;
+  --niedrig:#3a6b45; --niedrig-bg:#e3f2e6; --code:#eef0f4;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14171c; --card:#1d2128; --text:#e6e8ec; --muted:#9aa3b2; --line:#2e333c; --accent:#7ea2ff;
+    --krit:#ff8597; --krit-bg:#3d1a21; --hoch:#ffad70; --hoch-bg:#3b2614; --mittel:#e7c75a; --mittel-bg:#353016;
+    --niedrig:#8fd19e; --niedrig-bg:#1b3222; --code:#2a2f38;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14171c; --card:#1d2128; --text:#e6e8ec; --muted:#9aa3b2; --line:#2e333c; --accent:#7ea2ff;
+  --krit:#ff8597; --krit-bg:#3d1a21; --hoch:#ffad70; --hoch-bg:#3b2614; --mittel:#e7c75a; --mittel-bg:#353016;
+  --niedrig:#8fd19e; --niedrig-bg:#1b3222; --code:#2a2f38;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:980px;margin:0 auto;padding:24px 16px 80px}
+h1{font-size:1.75rem;margin:0 0 4px}
+h2{font-size:1.3rem;margin:40px 0 12px;padding-top:8px;border-top:1px solid var(--line)}
+h3{font-size:1.05rem;margin:0}
+p{margin:.5em 0}
+.muted{color:var(--muted)}
+code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:.88em;word-break:break-word}
+a{color:var(--accent)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin:12px 0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:16px 0}
+.stat{border-radius:10px;padding:12px;border:1px solid var(--line);background:var(--card)}
+.stat b{display:block;font-size:1.7rem;line-height:1.1}
+.stat.krit b{color:var(--krit)} .stat.hoch b{color:var(--hoch)} .stat.mittel b{color:var(--mittel)} .stat.niedrig b{color:var(--niedrig)}
+.badge{display:inline-block;font-size:.75rem;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.b-krit{background:var(--krit-bg);color:var(--krit)} .b-hoch{background:var(--hoch-bg);color:var(--hoch)}
+.b-mittel{background:var(--mittel-bg);color:var(--mittel)} .b-niedrig{background:var(--niedrig-bg);color:var(--niedrig)}
+.b-neutral{background:var(--code);color:var(--muted)}
+.callout{border-left:4px solid var(--krit);background:var(--krit-bg);padding:12px 14px;border-radius:6px;margin:16px 0}
+.callout.info{border-color:var(--accent);background:var(--code)}
+.toolbar{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.toolbar input,.toolbar select{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);min-width:0}
+.toolbar input{flex:1 1 200px}
+.chip{font:inherit;font-size:.85rem;padding:5px 10px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--accent);color:#fff;border-color:var(--accent)}
+.theme-head{display:flex;align-items:baseline;gap:10px;margin:28px 0 4px}
+.theme-head h3{font-size:1.1rem}
+details.f{background:var(--card);border:1px solid var(--line);border-radius:10px;margin:8px 0}
+details.f>summary{list-style:none;cursor:pointer;padding:12px 14px;display:flex;gap:10px;align-items:flex-start}
+details.f>summary::-webkit-details-marker{display:none}
+details.f>summary .nr{font-weight:700;color:var(--muted);min-width:2.2em}
+details.f>summary .tt{flex:1}
+details.f>summary .meta{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+details.f[open]>summary{border-bottom:1px solid var(--line)}
+.body{padding:4px 16px 14px}
+.body h4{font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:14px 0 2px}
+.decide{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);align-items:center}
+.decide span{font-size:.85rem;color:var(--muted);margin-right:4px}
+.decide button{font:inherit;font-size:.85rem;padding:4px 10px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer}
+.decide button[aria-pressed="true"].d-ja{background:var(--niedrig);color:#fff;border-color:var(--niedrig)}
+.decide button[aria-pressed="true"].d-spaeter{background:var(--mittel);color:#fff;border-color:var(--mittel)}
+.decide button[aria-pressed="true"].d-nein{background:var(--muted);color:#fff;border-color:var(--muted)}
+.decide button[aria-pressed="true"].d-frage{background:var(--accent);color:#fff;border-color:var(--accent)}
+.mark{font-size:.75rem;padding:2px 8px;border-radius:999px;background:var(--code);color:var(--muted)}
+table{border-collapse:collapse;width:100%;font-size:.93rem}
+th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:600}
+.tablewrap{overflow-x:auto}
+ol.plan>li{margin:6px 0}
+.ref{font-size:.82rem;color:var(--muted)}
+.empty{color:var(--muted);padding:20px;text-align:center}
+#auswahl-out{width:100%;min-height:140px;font:13px/1.4 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--card);color:var(--text)}
+.btn{font:inherit;padding:7px 14px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
+.btn.sec{background:var(--card);color:var(--accent)}
+@media (max-width:600px){
+  details.f>summary{flex-wrap:wrap}
+  details.f>summary .meta{width:100%;justify-content:flex-start;padding-left:2.2em}
+}
+@media print{
+  .toolbar,.decide,#auswahl-bereich,.no-print{display:none!important}
+  details.f{break-inside:avoid}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<main>
+<h1>LagerPal: Alle Prüfbefunde im Überblick</h1>
+<p class="muted">Stand 02.10.2026 · Zusammenfassung von zwei Prüfberichten: <b>L</b> = Logik &amp; Architektur (37 Funde), <b>C</b> = Codequalität (45 Funde). Überschneidungen sind zusammengeführt. Am Code wurde nichts geändert.</p>
+
+<div class="stats" id="stats"></div>
+
+<div class="callout">
+<b>Bitte sofort prüfen (ohne Programmierung, 2 Minuten):</b> Supabase-Dashboard → <i>Authentication → Sign In / Providers</i> → „Allow new users to sign up“ muss <b>aus</b> sein. Danach unter <i>Authentication → Users</i> nachsehen, ob dort nur bekannte Konten stehen. Siehe Befund 1.
+</div>
+
+<div class="card">
+<h3>Gesamturteil in drei Sätzen</h3>
+<p>Der Kern der App ist <b>solide</b>: Jede Buchung läuft als geschlossene Datenbank-Transaktion, negative Bestände sind ausgeschlossen, der Browser darf nicht direkt in Tabellen schreiben, und gegen eingeschleusten Schadcode ist die Oberfläche geschützt. Toter Code aus früheren Versionen ist kaum vorhanden: Alle Funktionen werden noch benutzt, übrig sind nur einige CSS-Regeln, Kommentare und Reste im SQL-Skript.</p>
+<p>Die Schwächen liegen bei den <b>Zugriffsrechten</b> (jeder darf alles), der <b>Bedienung im Lageralltag</b> (Doppelklick und Scanner-Enter können doppelt oder ungewollt buchen), dem <b>Arbeiten mit mehreren Geräten gleichzeitig</b> und beim <b>Wachstum</b> (vieles wird komplett geladen, das Einspielen eines Backups ist nicht erprobt).</p>
+</div>
+
+<div class="card no-print">
+<h3>So nutzt du diese Seite</h3>
+<p>Klicke einen Befund an, um Details zu sehen: <i>Was passiert</i>, ein <i>Beispiel</i> aus dem Lager, den <i>Lösungsvorschlag</i> und den geschätzten <i>Aufwand</i>. Unter jedem Befund kannst du markieren: <b>Beheben</b>, <b>Später</b>, <b>Nicht nötig</b> oder <b>Frage</b>. Ganz unten erzeugt „Meine Auswahl“ daraus einen Text, den du mir in den Chat kopieren kannst. Deine Markierungen bleiben nur in diesem Browser gespeichert.</p>
+<p class="muted">Aufwand: <b>S</b> = unter 1 Stunde · <b>M</b> = etwa ein halber Tag · <b>L</b> = ein Tag oder mehr (grobe Schätzung inkl. Testen).</p>
+</div>
+
+<h2 id="befunde">Alle Befunde nach Thema</h2>
+<div class="toolbar">
+  <input id="q" type="search" placeholder="Suchen (z. B. Karton, Import, Rückgängig)…" aria-label="Befunde durchsuchen">
+  <button class="chip" data-sev="Kritisch" aria-pressed="false">Kritisch</button>
+  <button class="chip" data-sev="Hoch" aria-pressed="false">Hoch</button>
+  <button class="chip" data-sev="Mittel" aria-pressed="false">Mittel</button>
+  <button class="chip" data-sev="Niedrig" aria-pressed="false">Niedrig</button>
+  <select id="dec" aria-label="Nach Markierung filtern">
+    <option value="">Alle Markierungen</option>
+    <option value="none">Noch nicht markiert</option>
+    <option value="ja">Beheben</option>
+    <option value="spaeter">Später</option>
+    <option value="nein">Nicht nötig</option>
+    <option value="frage">Frage</option>
+  </select>
+  <button class="chip" id="alle-auf">Alle aufklappen</button>
+</div>
+<div id="liste"></div>
+
+<h2 id="fragen">Entscheidungen, die nur du treffen kannst</h2>
+<p>Diese Fragen bestimmen, welche Lösung passt. Am besten besprechen wir sie, bevor wir etwas umbauen.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>#</th><th>Frage</th><th>Betrifft</th></tr></thead>
+<tbody>
+<tr><td>F1</td><td><b>Rollen:</b> Wer soll „Admin“ sein (Reset, Backup einspielen, Komplett-Import, Artikel löschen)? Hat jeder Mitarbeiter ein eigenes Konto, oder teilen sich Geräte ein Konto?</td><td>2, 6, 15</td></tr>
+<tr><td>F2</td><td><b>JTL-Import des Lagerbestands:</b> Liest JTL die Spalte „Einzubuchende Menge“ als absoluten Bestand oder als Differenz? Was passiert mit Plätzen, die in der Datei nicht vorkommen?</td><td>26</td></tr>
+<tr><td>F3</td><td><b>Leermeldungen:</b> Sollen sie nur für echte Pickplätze kommen und beim absichtlichen Leerräumen (Palette sortieren, Sammel-Ausbuchen) wegfallen?</td><td>31, 32</td></tr>
+<tr><td>F4</td><td><b>Inventur:</b> Sollen auch leere Plätze und frei eingetippte Plätze gezählt werden können?</td><td>16</td></tr>
+<tr><td>F5</td><td><b>Reset:</b> Soll „Alles löschen“ auch die Palettenliste löschen?</td><td>43</td></tr>
+<tr><td>F6</td><td><b>Platzhalter-Nummern:</b> Vergibt JTL jemals Artikelnummern, die mit „WE-0-“ beginnen?</td><td>29</td></tr>
+<tr><td>F7</td><td><b>Testumgebung:</b> Dürfen wir ein zweites, kostenloses Supabase-Projekt zum Testen anlegen? Dort könnten wir Änderungen und eine Probe-Wiederherstellung gefahrlos ausprobieren.</td><td>40 und alle Umbauten</td></tr>
+<tr><td>F8</td><td><b>Umfang:</b> Nur die schnellen Korrekturen (Paket 1–2) oder auch die größeren Umbauten am Datenmodell (Paket 4)?</td><td>alle</td></tr>
+<tr><td>F9</td><td><b>Mengengerüst:</b> Ungefähr wie viele Artikel, Lagerplätze/Kartons und Scans pro Tag? Davon hängt ab, wie dringend die Performance-Punkte sind.</td><td>33–36, 40, 41</td></tr>
+</tbody></table></div>
+
+<h2 id="plan">Vorschlag für die Reihenfolge</h2>
+<ol class="plan">
+<li><b>Paket 0: Sofort, ohne Code.</b> Selbstregistrierung prüfen (1), Nutzerliste prüfen.</li>
+<li><b>Paket 1: Schnelle Korrekturen mit großer Wirkung (ca. 1–2 Tage).</b> Doppelbuchungen sperren (7), Scanner-Enter in Rückfragen abfangen (8), Folge-Scans beim Palette-Sortieren (9), Komplettladen nach jedem Scan abstellen (33), Rückgängig bei geteilter EAN (19), Excel-Nullen (25), Amazon-Status (24), falsche Texte (47), Setup-Skript wiederholbar machen (42), Bibliotheken festschreiben (4), toten Code entfernen (48).</li>
+<li><b>Paket 2: Mehrere Geräte und Robustheit (ca. 2–4 Tage).</b> Kartonnummer in der Datenbank vergeben (14), Fehler sichtbar machen (45), Karton-Blätter ohne Popup-Blocker (10), Teil-Import mit Vorschau (23), Protokollsuche in der Datenbank (35), 1000-Zeilen-Grenze (34), Rückgängig vollständig (20, 21, 22).</li>
+<li><b>Paket 3: Rechte, Nachvollziehbarkeit und Notfall (ca. 2–3 Tage).</b> Admin-Rolle (2), Benutzer im Protokoll (6) und darauf aufbauend „eigenes Rückgängig“ (15), Probe-Wiederherstellung und Zeitlimits (40, 36), konsistentes Backup (41), Edge Function absichern (3, 44).</li>
+<li><b>Paket 4: Umbau bei Gelegenheit.</b> Datenmodell mit festen Lagerplatz-/Palettenlisten (30), Inventur überarbeiten (16), Leermeldungen neu regeln (31), Doppelte Logik zusammenführen (49–51), JTL-Export klären (26).</li>
+</ol>
+<p class="muted">Jedes Paket würde ich auf einem eigenen Branch umsetzen und erst nach deinem Test live schalten.</p>
+
+<h2 id="ok">Geprüft und in Ordnung</h2>
+<ul>
+<li><b>Bestandsrechnung:</b> Vorher-/Nachher-Werte und Gesamtbestände in allen Buchungsfunktionen stimmen. Ausbuchen zieht nur ab, wenn genug da ist; negative Bestände verhindert die Datenbank selbst.</li>
+<li><b>Atomarität:</b> Jede Buchung ist eine Transaktion, also ganz oder gar nicht.</li>
+<li><b>Unbekannte Artikel:</b> Nummern- und Kartonvergabe laufen unter einer Datenbanksperre und sind sicher bei gleichzeitiger Nutzung.</li>
+<li><b>Rechte:</b> Tabellen sind für den Browser nur lesbar, Nicht-Angemeldete sehen nichts, alle Funktionen sind korrekt abgesichert.</li>
+<li><b>Schadcode (XSS):</b> Alle Ausgaben von Nutzerdaten werden maskiert, eine Lücke wurde nicht gefunden.</li>
+<li><b>JTL-Lagerbestandskommentar:</b> Die Datei aus der App und die aus dem nächtlichen Lauf sind nachweislich identisch.</li>
+<li><b>Zeitzonen:</b> Tagesgrenzen, Datumsfilter, Backup-Dateinamen und das JTL-Archivdatum rechnen korrekt mit deutscher Zeit.</li>
+<li><b>Aufbewahrung:</b> 30 Tage täglich plus das letzte Backup jedes Monats dauerhaft, korrekt umgesetzt.</li>
+<li><b>Keine toten Funktionen:</b> Alle 26 Datenbankfunktionen und alle JavaScript-Funktionen werden tatsächlich benutzt.</li>
+</ul>
+
+<h2 id="auswahl-bereich">Meine Auswahl</h2>
+<div id="auswahl-bereich-inhalt" class="no-print">
+<p>Erzeugt eine Liste deiner Markierungen, die du mir in den Chat kopieren kannst.</p>
+<p><button class="btn" id="auswahl-btn">Auswahl erzeugen</button> <button class="btn sec" id="copy-btn">In Zwischenablage kopieren</button> <button class="btn sec" id="reset-btn">Markierungen löschen</button></p>
+<textarea id="auswahl-out" readonly aria-label="Meine Auswahl als Text"></textarea>
+</div>
+
+<p class="ref" style="margin-top:40px">Ausführliche Berichte mit Zeilennummern: <code>docs/Pruefbericht_Logik_und_Architektur.md</code> und <code>docs/Pruefbericht_Codequalitaet.md</code>. Bezüge wie „L3 · C3“ verweisen auf die Fundnummern dort.</p>
+</main>
+
+<script>
+const THEMEN = {
+  A: "Sicherheit und Zugriff",
+  B: "Buchen und Bedienung im Lager",
+  C: "Mehrere Geräte gleichzeitig",
+  D: "Rückgängig-Funktion",
+  E: "Import und Export",
+  F: "Datenmodell und Leermeldungen",
+  G: "Geschwindigkeit und Wachstum",
+  H: "Backup und Notfall",
+  I: "Fehlermeldungen und Texte",
+  J: "Code aufräumen (Wartbarkeit)"
+};
+const F = [
+// ── A Sicherheit
+{n:1,t:"A",s:"Kritisch",a:"S",q:"L1",pr:true,
+ title:"Offene Selbstregistrierung würde Fremden vollen Zugriff geben",
+ was:"Die ganze Absicherung beruht darauf, dass nur Mitarbeiter ein Konto haben. Supabase erlaubt bei neuen Projekten standardmäßig, dass sich jeder selbst registriert. Der öffentliche Schlüssel steht in jedem Lagergerät im Browser. Ob die Registrierung bei dir abgeschaltet ist, steht nicht im Code.",
+ bsp:"Ein ehemaliger Aushilfsmitarbeiter kennt Adresse und Schlüssel, legt sich ein Konto an und ruft „Alles löschen“ auf. Die nötige Bestätigungsphrase steht im Quelltext.",
+ loe:"Im Dashboard „Allow new users to sign up“ ausschalten, Nutzer nur noch per Einladung anlegen, Nutzerliste prüfen. Zusätzlich Befund 2 (Rollen) umsetzen.",
+ wo:"SQL alles_loeschen, backup_wiederherstellen (für alle Angemeldeten freigegeben)"},
+{n:2,t:"A",s:"Hoch",a:"M",q:"L2",
+ title:"Keine Rollen: jeder angemeldete Nutzer darf alles",
+ was:"Ein Lagerhelfer hat dieselben Rechte wie du: Komplett-Import, Backup einspielen, alles löschen, Artikel mit Bestand löschen, Amazon-Vollabgleich.",
+ bsp:"Jemand probiert „nur mal“ den Komplett-Import mit einer Teilliste. Alle Plätze, die nicht in der Datei stehen, werden auf 0 gesetzt. Rückgängig geht nicht, nur ein Backup hilft, und dabei gehen alle späteren Buchungen verloren.",
+ loe:"Eine Rolle „admin“ einführen. Die gefährlichen Datenbankfunktionen prüfen die Rolle selbst, und die Oberfläche blendet die Bereiche für Nicht-Admins aus.",
+ wo:"SQL bestand_csv_import, alles_loeschen, backup_wiederherstellen, artikel_loeschen, lagerplatz_loeschen, amazon_status_setzen"},
+{n:3,t:"A",s:"Niedrig",a:"S",q:"L34 · C44",
+ title:"Backup-Funktion ist von außen ohne Schlüssel auslösbar",
+ was:"Damit der nächtliche Zeitplan funktioniert, ist die Schlüsselprüfung der Edge Function abgeschaltet (so steht es in 06_cron_backup.sql). Wer die Adresse kennt, kann ein Backup auslösen. Daten werden dabei nicht verraten.",
+ bsp:"Wiederholte Aufrufe verbrauchen Dropbox-Kontingent und schreiben die JTL-Datei mitten am Tag neu, während JTL sie vielleicht gerade liest.",
+ loe:"Ein eigenes Geheimwort als Header (z. B. x-cron-secret), das nur der Zeitplan kennt. Die Function lehnt alle anderen Aufrufe ab.",
+ wo:"index.ts Deno.serve; 06_cron_backup.sql"},
+{n:4,t:"A",s:"Mittel",a:"S",q:"L21",
+ title:"Fremdbibliotheken nicht auf feste Versionen festgelegt; Excel-Bibliothek mit bekannten Lücken",
+ was:"Die Supabase-Bibliothek lädt immer die neueste 2.x-Version. Ein Update kann die App über Nacht verändern. Die Excel-Bibliothek (xlsx 0.18.5) hat bekannte Sicherheitslücken, und keine Bibliothek wird auf Echtheit geprüft.",
+ bsp:"Supabase veröffentlicht eine neue Version mit geändertem Verhalten. Am nächsten Morgen funktioniert das Scannen nicht mehr, obwohl niemand etwas geändert hat.",
+ loe:"Genaue Versionen eintragen und eine Prüfsumme (integrity) ergänzen. xlsx auf eine aktuelle Version vom SheetJS-Server umstellen.",
+ wo:"index.html Zeilen 7–9"},
+{n:5,t:"A",s:"Niedrig",a:"S",q:"L35",
+ title:"Härtung: Maskierung ohne Anführungszeichen, Excel-Formeln in CSV-Exporten",
+ was:"Aktuell keine Lücke. Eine spätere Änderung könnte aber versehentlich unsicher werden. Ein Artikelname wie „=HYPERLINK(…)“ würde in Excel als Formel ausgeführt.",
+ bsp:"Ein Artikelname beginnt mit „=“. Wer den Export in Excel öffnet, sieht eine Formel statt des Namens.",
+ loe:"Die Maskierung um Anführungszeichen erweitern. In normalen CSV-Exporten Zellen, die mit = + - @ beginnen, absichern (JTL-Dateien vorher prüfen).",
+ wo:"index.html esc(), csvZelle()"},
+{n:6,t:"A",s:"Mittel",a:"M",q:"L16",
+ title:"Protokoll speichert nicht, wer gebucht hat",
+ was:"Bei mehreren Mitarbeitern ist nicht nachvollziehbar, wer gebucht, importiert oder gelöscht hat. Das ist auch die Voraussetzung für ein „eigenes Rückgängig“ (Befund 15).",
+ bsp:"Nach einem Komplett-Import mit falscher Datei weiß niemand, von welchem Gerät oder Konto er kam.",
+ loe:"Benutzerspalte im Protokoll, die automatisch befüllt und angezeigt wird. Jedem Mitarbeiter ein eigenes Konto geben.",
+ wo:"SQL Tabelle buchungen und alle Schreibfunktionen"},
+
+// ── B Bedienung
+{n:7,t:"B",s:"Hoch",a:"M",q:"L3 · C3",
+ title:"Doppelbuchungen durch Doppelklick oder Wiederholung nach Netzfehler",
+ was:"Nur der Scanner-Reiter hat eine Sperre gegen doppelte Auslösung. Platzwahl-Knöpfe im Scanner, „+ Ein/− Aus“ in der Suche, Umlagern und „Buchen“ in Palette sortieren buchen bei schnellem zweiten Klick zweimal. Bricht das WLAN nach dem Speichern ab, meldet die App „Fehler“, obwohl gebucht wurde.",
+ bsp:"Ausbuchen, Artikel liegt auf zwei Plätzen, zweimal schnell auf „Regal 3 (12)“ getippt: zwei Ausgänge, Bestand 10 statt 11. Oder in der Suche 5 eingebucht, Netzfehler, nochmal geklickt: 10 statt 5.",
+ loe:"Sofort: Knöpfe während der Buchung sperren. Gründlich: Jede Buchung bekommt eine eindeutige Vorgangsnummer, und die Datenbank ignoriert eine Wiederholung. Bei Netzfehlern melden: „Unklar, ob gebucht – bitte Protokoll prüfen“.",
+ wo:"index.html ssBookPick, sucheBuchen, umlagern, erScan; SQL buchen, umlagern, einraeumen_scan"},
+{n:8,t:"B",s:"Hoch",a:"M",q:"L4",
+ title:"Das Enter des Barcode-Scanners bestätigt Rückfragen ungewollt",
+ was:"Rückfragen (z. B. „3 zusätzliche als Inventur-Zugang buchen?“ oder Set-Warnungen) sind Browser-Dialoge mit vorausgewähltem OK. Der Handscanner sendet nach jedem Code ein Enter.",
+ bsp:"Beim Palette-Sortieren erscheint die Mehrmengen-Rückfrage. Der Mitarbeiter schaut nicht hin und scannt den nächsten Artikel. Das Enter bestätigt die Rückfrage (Phantom-Zugang), und der nächste Artikel wird nicht gebucht, liegt aber im Karton.",
+ loe:"Eigenes Rückfrage-Fenster, das Enter und Ziffern ignoriert und nur per Tippen oder einer bestimmten Taste bestätigt wird. Dazu ein Warnton und eine Ansage.",
+ wo:"index.html erScan, ssScanIntern, Suche (confirm-Dialoge)"},
+{n:9,t:"B",s:"Mittel",a:"S",q:"L6",
+ title:"„Palette sortieren“: schnelle Folge-Scans gehen still verloren",
+ was:"Das Scanfeld wird erst nach der Antwort der Datenbank geleert. Ein zweiter, schneller Scan wird an den ersten angehängt und als „nicht gefunden“ abgewiesen. Die Fehlermeldung wird kurz danach von der Erfolgsmeldung des ersten Scans überschrieben.",
+ bsp:"Langsames WLAN, zwei Artikel zügig gescannt. Auf dem Bildschirm steht nur „ONLINE → Karton P01-K03“. Der zweite Artikel liegt im Karton, ist aber nicht gebucht.",
+ loe:"Wie im Scanner-Reiter: Feld sofort leeren, Sperre setzen, bei laufendem Scan Warnton und „bitte nochmal scannen“.",
+ wo:"index.html erScan"},
+{n:10,t:"B",s:"Mittel",a:"S",q:"C4",
+ title:"Karton-Blätter werden vom Popup-Blocker gestoppt",
+ was:"Das Druckfenster wird erst nach mehreren Datenbankabfragen geöffnet. Browser erlauben Popups aber nur direkt nach einem Klick.",
+ bsp:"Bei „Palette fertig“ öffnet sich das erste Karton-Blatt, beim zweiten kommt „Bitte Pop-ups erlauben“. Das fehlende Blatt muss man über „Nachdruck“ suchen.",
+ loe:"Fenster sofort beim Klick öffnen und danach befüllen, oder beide Kartons in einem Druckdokument ausgeben.",
+ wo:"index.html erFertig, erKartonVoll, unbKartonVoll, kartonBlattDrucken"},
+{n:11,t:"B",s:"Niedrig",a:"S",q:"L28 · C13",
+ title:"Suche: Menge kann aus dem falschen Feld gelesen werden",
+ was:"Die Mengenfelder bekommen eine aus dem Platznamen gebildete Kennung. Ähnliche Namen („Regal-1“ und „Regal 1“, Umlaute) ergeben dieselbe Kennung.",
+ bsp:"Artikel liegt auf „Lager Süd“ und „Lager Söd“. Beim zweiten Platz 5 eingetragen, die App liest das erste Feld und bucht 1.",
+ loe:"Das Mengenfeld direkt neben dem Knopf ermitteln statt über die Kennung.",
+ wo:"index.html sucheUid()"},
+{n:12,t:"B",s:"Niedrig",a:"S",q:"L32",
+ title:"Suche: alte Antwort überschreibt neue; Auswahl bleibt über Filterwechsel bestehen",
+ was:"Kommen zwei Aktualisierungen in falscher Reihenfolge an, zeigt die Tabelle den älteren Stand. Ausgewählte Artikel bleiben ausgewählt, auch wenn sie nach einem Filterwechsel nicht mehr sichtbar sind.",
+ bsp:"Artikel ausgewählt, Filter auf Karton P01-K03 gewechselt, weitere gewählt, „Komplett ausbuchen“: Auch die unsichtbaren Artikel werden ausgebucht, und zwar auf allen Plätzen.",
+ loe:"Laufnummer für Antworten wie bei der Rückgängig-Leiste. Auswahl beim Filterwechsel leeren oder unsichtbar Ausgewählte deutlich anzeigen.",
+ wo:"index.html ladeSucheDaten, Auswahl in der Suche"},
+{n:13,t:"B",s:"Niedrig",a:"S",q:"L37",
+ title:"Gleichzeitiger Scan derselben neuen EAN: zweites Gerät bekommt einen Fehler",
+ was:"Nichts wird falsch gebucht, aber das zweite Gerät zeigt eine verwirrende Fehlermeldung und muss neu scannen.",
+ bsp:"Zwei Mitarbeiter scannen gleichzeitig denselben neuen Artikel.",
+ loe:"Die Datenbank gibt dann den inzwischen angelegten Artikel zurück statt „nicht gefunden“.",
+ wo:"SQL artikel_aus_liste"},
+
+// ── C Mehrere Geräte
+{n:14,t:"C",s:"Mittel",a:"M",q:"L7 · C5",
+ title:"Kartonnummern werden im Browser vergeben; Kartons können überschrieben werden",
+ was:"Die nächste Kartonnummer berechnet jedes Gerät selbst aus seiner zuletzt geladenen Liste. Beim Anlegen werden Palette und Kanal eines bestehenden Kartons ohne Rückfrage überschrieben. Außerdem wird ein „leerer“ Karton vorausgewählt, den gerade ein anderes Gerät befüllen will.",
+ bsp:"Zwei Mitarbeiter sortieren auf Palette P05 und bekommen beide „P05-K07“. Einer legt ihn als online an, der andere als nicht online, und Online-Ware landet in einem als „nicht online“ gedruckten Karton.",
+ loe:"Neue Kartonnummer in der Datenbank unter einer Sperre vergeben (wie bei den Klärfall-Kartons bereits gelöst). Bestehende Kartons nicht stillschweigend umwidmen.",
+ wo:"index.html erNaechsteNummer, erNeuerKarton; SQL karton_setzen"},
+{n:15,t:"C",s:"Mittel",a:"M",q:"L9",
+ title:"Rückgängig-Leiste gilt für das ganze Lager, nicht für den eigenen Nutzer",
+ was:"Die Leiste zeigt die letzte Aktion aller Geräte. Sobald irgendwer bucht, ist die eigene Aktion nicht mehr rückgängig zu machen. Man kann sogar die Buchung eines Kollegen zurücknehmen.",
+ bsp:"A bucht versehentlich 50 statt 5. Inzwischen scannt B einen Artikel. A bekommt „Rückgängig nicht mehr möglich“, oder nimmt aus Versehen B's Scan zurück.",
+ loe:"Benutzer im Protokoll speichern (6), Rückgängig nur für eigene Aktionen anbieten und nur blockieren, wenn danach derselbe Artikel auf demselben Platz geändert wurde.",
+ wo:"index.html refreshUndo; SQL rueckgaengig"},
+{n:16,t:"C",s:"Mittel",a:"M",q:"L10",pr:true,
+ title:"Inventur: leere Plätze nicht zählbar; Zwischenbuchungen gehen verloren",
+ was:"Es lassen sich nur Plätze mit Bestand auswählen. Bucht ein anderes Gerät zwischen dem Laden der Liste und „Inventur übernehmen“, überschreibt die Inventur diese Buchung.",
+ bsp:"A zählt Regal 7. Währenddessen nimmt B 3 Stück mit. Hat A eine Abweichung eingetragen, setzt die Inventur den gezählten Wert, und B's Ausgang ist „vergessen“.",
+ loe:"Alle Plätze (auch leere) anbieten. Beim Übernehmen prüfen, ob sich der Sollwert seit dem Laden geändert hat, und dann nachfragen.",
+ wo:"index.html Inventur; SQL inventur_anwenden"},
+{n:17,t:"C",s:"Niedrig",a:"S",q:"L26",
+ title:"Sammel-Ausbuchen protokolliert eventuell eine veraltete Menge",
+ was:"Bucht ein anderes Gerät während des Sammel-Ausbuchens etwas auf denselben Platz, wird der Platz auf 0 gesetzt, aber die alte Menge protokolliert.",
+ bsp:"Ein späteres Rückgängig stellt dann 5 Stück zu wenig wieder her.",
+ loe:"Zeilen beim Lesen sperren oder den tatsächlich abgezogenen Wert protokollieren.",
+ wo:"SQL sammel_ausbuchen"},
+{n:18,t:"C",s:"Niedrig",a:"S",q:"L27 · C23",
+ title:"Doppelte offene Leermeldungen möglich",
+ was:"Es gibt keine Datenbankregel, die zwei offene Meldungen für denselben Artikel und Platz verhindert. Dazu fehlt ein passender Index für diese Abfrage.",
+ bsp:"Zwei Geräte buchen gleichzeitig die letzten Stücke, und die Glocke zeigt zwei Meldungen.",
+ loe:"Eindeutiger Index für offene Meldungen. Damit wird die Abfrage zugleich schneller.",
+ wo:"SQL Tabelle leermeldungen"},
+
+// ── D Rückgängig
+{n:19,t:"D",s:"Mittel",a:"S",q:"C1 · L24",
+ title:"Rückgängig „Artikeländerung“ blockiert, wenn die EAN bei einem zweiten Artikel steht",
+ was:"Mehrfache EANs sind inzwischen erlaubt (z. B. Defekt-Zweitartikel). Die Rückgängig-Prüfung stammt aber noch aus der Zeit eindeutiger EANs.",
+ bsp:"Bei Artikel A nur den Namen geändert und sofort Rückgängig: „ursprüngliche GTIN ist inzwischen anderweitig vergeben“.",
+ loe:"Die veraltete Prüfung entfernen (wenige Zeilen).",
+ wo:"SQL rueckgaengig, Abschnitt Artikeländerung"},
+{n:20,t:"D",s:"Mittel",a:"M",q:"C2 · L23",
+ title:"Rückgängig „Zusammenlegung“ / „Lagerplatz gelöscht“ verliert Palette, Kanal und leere Kartons",
+ was:"Beim Zurücknehmen kommen nur die Bestände zurück, nicht die Zuordnung zu Palette und Kanal. Ein leerer Quell-Karton verschwindet ganz, und ein neu angelegter Zielplatz bleibt stehen.",
+ bsp:"P03-K01 (online) und P03-K02 (nicht online) zusammengelegt und zurückgenommen. P03-K02 steht danach unter „Ohne Palette“ und fehlt in Palette sortieren.",
+ loe:"Beim Zusammenlegen und Löschen auch die Platz-Einstellungen mitsichern und beim Rückgängig wiederherstellen.",
+ wo:"SQL lagerplatz_zusammenlegen, lagerplatz_loeschen, rueckgaengig"},
+{n:21,t:"D",s:"Niedrig",a:"S",q:"L25 · C42",
+ title:"Rückgängig nimmt bei manchen Aktionen nur einen Teil zurück",
+ was:"Ein Scan beim Palette-Sortieren mit Mehrmenge erzeugt zwei Protokollzeilen, Rückgängig nimmt nur eine zurück. Beim Sammel-Ausbuchen sagt der Dialog „nicht rückgängig zu machen“, die Leiste bietet aber die letzte Teilbuchung an.",
+ bsp:"5 gescannt, 2 lagen auf der Quelle. Rückgängig nimmt nur die 3 Zugänge zurück, der Nutzer glaubt aber, der ganze Scan sei weg.",
+ loe:"Zusammengehörende Buchungen gemeinsam zurücknehmen (über die Vorgangsnummer aus Befund 7) oder die Texte anpassen.",
+ wo:"SQL einraeumen_scan, sammel_ausbuchen"},
+{n:22,t:"D",s:"Niedrig",a:"S",q:"C16",
+ title:"Einige Änderungen werden nicht protokolliert und stören das Rückgängig",
+ was:"Karton-Einstellungen, Rest-Meldungen und das Anlegen von Klärfall-Kartons schreiben keine Protokollzeile.",
+ bsp:"Platz A in B umbenannt, danach per Karton-Einstellungen wieder ein A angelegt. Das Rückgängig der Umbenennung scheitert mit einer technischen Fehlermeldung.",
+ loe:"Diese Änderungen protokollieren, und beim Rückgängig verständlich prüfen.",
+ wo:"SQL karton_setzen, unbekannt_karton_naechster, rueckgaengig"},
+
+// ── E Import / Export
+{n:23,t:"E",s:"Mittel",a:"M",q:"L12",
+ title:"Teil-Import schreibt sofort beim Auswählen der Datei, ohne Vorschau",
+ was:"Der Amazon-Import hat eine Vorschau, der Komplett-Import eine Rückfrage, der Teil-Import keins von beidem. Rückgängig ist nicht möglich.",
+ bsp:"Versehentlich die Exportdatei vom Vormonat ausgewählt, und alle darin enthaltenen Plätze stehen sofort auf den alten Werten.",
+ loe:"Vorschau wie beim Amazon-Import („X Plätze ändern sich, Summe vorher/nachher“) und danach ein Knopf „Import ausführen“.",
+ wo:"index.html Bestandsimport"},
+{n:24,t:"E",s:"Mittel",a:"S",q:"L13 · C15",
+ title:"Amazon-Import: unbekannte Statuswerte werden als „online“ übernommen",
+ was:"Erkennt die App einen Status nicht (z. B. „Unvollständig“, „Gesperrt“), bleibt der Artikel online. Zusätzlich zählt die Erfolgsmeldung auch unveränderte Artikel als „geändert“.",
+ bsp:"Gesperrte Angebote landen beim Palette-Sortieren im Online-Karton.",
+ loe:"Unbekannte Werte in der Vorschau auflisten und zuordnen lassen. Nur echte Änderungen zählen.",
+ wo:"index.html statusAusWert; SQL amazon_status_setzen"},
+{n:25,t:"E",s:"Mittel",a:"S",q:"L14 · C17",
+ title:"Excel-Import verliert führende Nullen und überschreibt dadurch EANs",
+ was:"Ist die EAN-Spalte in Excel als Zahl formatiert, wird aus „0012345678905“ „12345678905“. Mit „Unbekannte Artikel neu anlegen“ wird die korrekte EAN damit überschrieben.",
+ bsp:"Danach werden Artikel mit EAN-Präfix 0 (z. B. US-Ware) beim Scannen nicht mehr gefunden und landen als „unbekannt“ im Klärfall-Karton.",
+ loe:"Excel-Zellen als Text lesen (eine Option), EANs auf gültige Länge und Prüfziffer prüfen.",
+ wo:"index.html XLSX.sheet_to_json; SQL bestand_csv_import"},
+{n:26,t:"E",s:"Mittel",a:"M",q:"L17",pr:true,
+ title:"JTL-Lagerbestand-Export: gelöschte oder umbenannte Plätze fehlen",
+ was:"Der Export enthält nur Plätze, die es gerade gibt. Wird ein Platz gelöscht, umbenannt oder zusammengelegt, taucht der alte Platz nicht mehr auf, auch nicht mit 0. Ob das ein Problem ist, hängt davon ab, wie JTL importiert (Frage F2).",
+ bsp:"„Regal 5“ heißt jetzt „R05“. Nach dem nächsten JTL-Import steht der Bestand in JTL doppelt: auf „Regal 5“ und auf „R05“.",
+ loe:"Erst klären, wie JTL importiert. Falls nötig, alte Plätze einmalig mit Menge 0 mitexportieren.",
+ wo:"index.html JTL-Lagerbestand-Export"},
+{n:27,t:"E",s:"Niedrig",a:"S",q:"L29 · C11",
+ title:"Artikel-Export: falscher Gesamtbestand, wenn ein Platzname „:“ enthält",
+ was:"Der Gesamtbestand wird aus einem zusammengesetzten Text zurückgerechnet.",
+ bsp:"Platz „A:1“ mit 5 Stück ergibt Gesamtbestand 1 (oder „NaN“).",
+ loe:"Summe direkt aus den Zahlen bilden.",
+ wo:"index.html Artikel-Export"},
+{n:28,t:"E",s:"Niedrig",a:"M",q:"L31 · C41",
+ title:"Import ändert Stammdaten ohne Protokoll; Kennzahlen teilweise verfälscht",
+ was:"Der Import ändert Name, EAN und Set-Kennzeichen, ohne es zu protokollieren. Das Set-Kennzeichen ändert er auch ohne „neu anlegen“. Protokollzeilen sind uneinheitlich befüllt (Gesamtbestand fehlt teils). Der Inventur-Zugang beim Einräumen zählt als „Heute ein“.",
+ bsp:"Eine EAN wurde geändert, und niemand kann nachvollziehen, wann und wodurch.",
+ loe:"Stammdatenänderungen als „Artikeländerung (Import)“ protokollieren. Protokollzeilen über eine gemeinsame Hilfsfunktion einheitlich schreiben.",
+ wo:"SQL bestand_csv_import, einraeumen_scan, sammel_ausbuchen, v_dashboard"},
+{n:29,t:"E",s:"Niedrig",a:"S",q:"L36",pr:true,
+ title:"Platzhalter-Nummern „WE-0-…“ sind nicht gegen JTL-Nummern abgesichert",
+ was:"Falls JTL jemals Nummern mit „WE-0-“ vergibt, kann ein Platzhalter dieselbe Nummer wie ein echter Artikel bekommen (Frage F6).",
+ bsp:"Ein Platzhalter würde dann als echter JTL-Artikel behandelt.",
+ loe:"Wenn JTL diesen Nummernkreis nutzt: eindeutiges Präfix (z. B. „LP-UNB-“) verwenden.",
+ wo:"SQL unbekannt_einbuchen, artikel_aus_liste"},
+
+// ── F Datenmodell
+{n:30,t:"F",s:"Mittel",a:"L",q:"L15 · C14 · C39",
+ title:"Lagerplätze und Paletten sind freier Text ohne feste Liste",
+ was:"Ein Platz „existiert“, sobald irgendwo Bestand mit diesem Namen gebucht wird. Schreibweisen (Leerzeichen, groß/klein) werden nicht vereinheitlicht. Paletten lassen sich in den Karton-Einstellungen frei eintippen, ohne in der Palettenliste zu stehen.",
+ bsp:"„regal 3“ statt „Regal 3“ eingegeben, und es entsteht ein zweiter Platz. Palette „P41“ getippt: erscheint in der Suche, fehlt aber in Palette sortieren.",
+ loe:"Kurzfristig: Namen überall trimmen und prüfen, Palette als Auswahlliste. Langfristig: feste Verknüpfung (Fremdschlüssel) zwischen Beständen, Plätzen und Paletten.",
+ wo:"SQL bestaende, lagerplaetze, buchen, umlagern, karton_setzen; index.html Karton-Einstellungen"},
+{n:31,t:"F",s:"Mittel",a:"M",q:"L11",pr:true,
+ title:"Leermeldungs-Flut beim Palette-Sortieren und Sammel-Ausbuchen",
+ was:"Jeder Artikel, der beim absichtlichen Leerräumen von einem Platz verschwindet, erzeugt eine Meldung.",
+ bsp:"Eine Quelle mit 150 Artikelsorten wird sortiert: 150 Meldungen. Alle werden weggeklickt, und echte Leermeldungen gehen unter.",
+ loe:"Beim absichtlichen Leerräumen keine Meldung erzeugen, oder Meldungen nur für Pickplätze (Frage F3).",
+ wo:"SQL einraeumen_scan, sammel_ausbuchen, umlagern"},
+{n:32,t:"F",s:"Niedrig",a:"S",q:"C8",
+ title:"Leermeldungen aus Sammel-Ausbuchen erscheinen als „Einräum-Hinweis“ ohne Artikel und Platz",
+ was:"Die Glocke erkennt sie falsch.",
+ bsp:"Nach dem Sammel-Ausbuchen von 20 Artikeln zeigt die Glocke 40× „Einräum-Hinweis – Sammel-Ausbuchen“, ohne zu sagen, welcher Platz leer ist.",
+ loe:"Einräum-Hinweise eindeutig erkennen (Kleinigkeit).",
+ wo:"index.html renderLeerPanel; SQL sammel_ausbuchen"},
+
+// ── G Performance
+{n:33,t:"G",s:"Hoch",a:"M",q:"C19 · C20 · L18",
+ title:"Nach jedem Scan wird die komplette Bestandstabelle neu geladen",
+ was:"Um nur die Platznamen zu bekommen, lädt die App nach jeder Buchung alle Bestandszeilen in 1000er-Paketen nacheinander. Eine Buchung in der Suche lädt zusätzlich alle Artikel und Plätze neu. Das wird mit jedem Monat langsamer.",
+ bsp:"Bei 20 000 Bestandszeilen sind das 20 Anfragen pro Scan. Drei Geräte bei schwachem WLAN machen das Scannen träge, und die Wartezeit begünstigt Doppelklicks (Befund 7).",
+ loe:"Nur die Platznamen abfragen und nur dann neu laden, wenn Plätze entstehen oder verschwinden. Nach einer Buchung nur die betroffene Zeile lokal aktualisieren.",
+ wo:"index.html ladeAllePlaetze (18 Aufrufstellen), sucheRefresh, ladeSucheDaten"},
+{n:34,t:"G",s:"Mittel",a:"S",q:"L8",
+ title:"Ab 1000 Lagerplätzen werden Listen ohne Hinweis abgeschnitten",
+ was:"Supabase liefert pro Anfrage höchstens 1000 Zeilen. An einigen Stellen fehlt das Nachladen, und dann kommt eine zufällige Teilmenge.",
+ bsp:"Bei 1100 Plätzen fehlen ca. 100 in „Lagerplätze verwalten“, der Inventur-Auswahl und den Scanner-Knöpfen. Kartonnummern können doppelt vergeben werden.",
+ loe:"Überall das vorhandene Nachladen (fetchAll) verwenden oder gezielt in der Datenbank filtern.",
+ wo:"index.html ladeAllePlaetze, initEinraeumen, Lagerplätze-Reiter, Inventur"},
+{n:35,t:"G",s:"Mittel",a:"S",q:"L20 · C6",
+ title:"Protokollsuche durchsucht nur die neuesten 200 Einträge",
+ was:"Findet die Suche nichts, steht dort „Keine Einträge“, ohne Hinweis auf die Begrenzung.",
+ bsp:"Wann wurde Artikel X zuletzt ausgebucht? Vor drei Tagen, seitdem 500 Scans, und die App meldet „Keine Einträge“.",
+ loe:"Suchbegriff direkt in der Datenbank suchen, „Mehr laden“ anbieten.",
+ wo:"index.html Protokoll (limit 200)"},
+{n:36,t:"G",s:"Mittel",a:"M",q:"C21",
+ title:"Komplett-Import arbeitet Zeile für Zeile und kann am Zeitlimit scheitern",
+ was:"Der Import fragt je Artikel einzeln ab. Supabase bricht Anfragen angemeldeter Nutzer standardmäßig nach 8 Sekunden ab. Es bleibt dann zwar alles konsistent, der Import ist aber nicht durchführbar.",
+ bsp:"Komplett-Import mit einigen tausend Artikeln: „canceling statement due to statement timeout“.",
+ loe:"Import mengenbasiert umschreiben und für diese Funktion ein längeres Zeitlimit setzen.",
+ wo:"SQL bestand_csv_import"},
+{n:37,t:"G",s:"Niedrig",a:"S",q:"C22",
+ title:"Glocke fragt alle 15 Sekunden ab, auch wenn sie geschlossen oder der Tab im Hintergrund ist",
+ was:"Tablets im Lager laufen den ganzen Tag und erzeugen so unnötig Datenverkehr.",
+ bsp:"",
+ loe:"Liste nur bei offener Glocke laden, im Hintergrund pausieren.",
+ wo:"index.html refreshLeer"},
+{n:38,t:"G",s:"Niedrig",a:"S",q:"C23",
+ title:"Ein überflüssiger Index, ein fehlender Index",
+ was:"Ein Index auf bestaende ist doppelt vorhanden (kostet Schreibzeit). Für offene Leermeldungen fehlt ein passender Index.",
+ bsp:"",
+ loe:"Den doppelten Index entfernen und einen passenden Index für offene Leermeldungen anlegen (zusammen mit 18).",
+ wo:"SQL idx_bestaende_artnr, leermeldungen"},
+{n:39,t:"G",s:"Niedrig",a:"M",q:"C24",
+ title:"„Palette sortieren“: 6–8 Anfragen nacheinander pro Scan",
+ was:"Bei schwachem WLAN in der Halle merkt man das deutlich.",
+ bsp:"",
+ loe:"Abfragen zusammenfassen; die Datenbank liefert den neuen Karton-Inhalt direkt mit.",
+ wo:"index.html erScan, erInhaltLaden"},
+
+// ── H Backup
+{n:40,t:"H",s:"Hoch",a:"M",q:"L5",pr:true,
+ title:"Backup einspielen ist bei wachsender Datenmenge nicht abgesichert und nie erprobt",
+ was:"Das Einspielen schickt die ganze Sicherung in einer Anfrage, die unter dem 8-Sekunden-Limit laufen muss. Das Protokoll wächst mit jedem Scan. Eine Probe-Wiederherstellung ist nicht dokumentiert.",
+ bsp:"Nach einem Jahr hat das Protokoll ca. 365 000 Zeilen. Nach einem Datenunfall bricht das Einspielen nach 8 Sekunden ab, also genau dann, wenn man es braucht.",
+ loe:"Jetzt eine Probe-Wiederherstellung in einem Testprojekt machen und die Dauer messen (Frage F7). Für diese Funktion ein längeres Zeitlimit setzen. Notfallweg über den SQL-Editor dokumentieren.",
+ wo:"index.html Backup einspielen; SQL backup_wiederherstellen"},
+{n:41,t:"H",s:"Mittel",a:"M",q:"L19",
+ title:"Backup ist keine exakte Momentaufnahme",
+ was:"Die Tabellen werden nacheinander und seitenweise gelesen. Wird währenddessen gebucht, können Zeilen doppelt oder gar nicht in der Sicherung landen. Der nächtliche Termin (03:00) entschärft das, die manuelle Sicherung am Tag aber nicht. Mit wachsendem Protokoll wird das Lesen langsamer und braucht mehr Speicher.",
+ bsp:"Manuelle Sicherung während laufender Scans: Ein Artikel fehlt in der Datei, und beim Einspielen werden seine Bestände verworfen.",
+ loe:"Eine Datenbankfunktion, die alles in einer Transaktion exportiert. Protokoll ab einer bestimmten Größe getrennt sichern.",
+ wo:"index.ts fetchAllRows; index.html manuelle Sicherung"},
+{n:42,t:"H",s:"Mittel",a:"S",q:"L22 · C18",
+ title:"Neuaufbau im Notfall unvollständig; Setup-Skript bricht beim zweiten Lauf ab",
+ was:"Das Setup-Skript läuft nur auf einer leeren Datenbank fehlerfrei: Fünf Regeln werden ohne vorheriges Löschen angelegt. Benutzerkonten, Secrets und die JTL-Artikelliste sind nicht gesichert. <i>Teilweise erledigt: Der Zeitplan (06_cron_backup.sql) liegt jetzt im Repo und steht im Handbuch.</i>",
+ bsp:"Jemand führt das Skript erneut aus, um eine Funktion zu aktualisieren: „policy already exists“, und nichts wird übernommen.",
+ loe:"„drop policy if exists“ ergänzen (5 Zeilen). Liste der Nutzer und Secret-Namen dokumentieren. Notfall-Anleitung im Handbuch ergänzen.",
+ wo:"SQL Zeilen 150–154"},
+{n:43,t:"H",s:"Niedrig",a:"S",q:"C43",pr:true,
+ title:"Backup und Reset nicht ganz einheitlich",
+ was:"„Alles löschen“ lässt die Palettenliste stehen, das Einspielen ersetzt sie (Frage F5). Die Sicherung aus der App und die aus der Edge Function benennen ein Feld unterschiedlich. Das Anlegedatum von Plätzen ist als Text gespeichert.",
+ bsp:"",
+ loe:"Einheitliches Backup-Format mit Versionsnummer, Verhalten beim Reset festlegen.",
+ wo:"SQL alles_loeschen, backup_wiederherstellen; index.ts"},
+{n:44,t:"H",s:"Niedrig",a:"S",q:"C44 · C37",
+ title:"Edge Function: kleine Robustheitslücken",
+ was:"Fehlgeschlagene Löschungen alter Backups werden nur ins Log geschrieben, nicht an den Healthcheck gemeldet. Fehlende Secrets führen erst zu einer unverständlichen Dropbox-Fehlermeldung. Die Komprimierung wartet nicht sauber auf alle Schritte.",
+ bsp:"Die Aufbewahrung räumt wochenlang nicht auf, und niemand merkt es.",
+ loe:"Löschfehler im Ergebnis zählen, Secrets beim Start prüfen, Komprimierung vereinfachen.",
+ wo:"index.ts dropboxDelete, gzip"},
+
+// ── I Fehler / Texte
+{n:45,t:"I",s:"Mittel",a:"M",q:"C7 · C10 · L33",
+ title:"Fehler beim Laden werden still verschluckt",
+ was:"An vielen Stellen wird ein Datenbankfehler (Netz, abgelaufene Anmeldung) wie „keine Daten“ behandelt. Beim Start kann so die Glocke dauerhaft ausfallen.",
+ bsp:"Kurzer WLAN-Aussetzer bei „Karton voll → drucken“, und es wird ein Karton-Blatt „(leer)“ gedruckt und auf den vollen Karton geklebt. Oder die Inventur zeigt keine Plätze, und man glaubt, es gebe keine.",
+ loe:"Ein kleiner gemeinsamer Helfer, der Fehler sichtbar meldet und einen „Erneut laden“-Knopf anbietet.",
+ wo:"index.html kartonBlattDrucken, resolveArtikel, Inventur, refreshLeer, zeigeApp u. a."},
+{n:46,t:"I",s:"Niedrig",a:"S",q:"C12",
+ title:"Beim ersten Verbinden ist die Fehlermeldung unsichtbar",
+ was:"Die Meldung wird in einen Bereich geschrieben, der in diesem Moment ausgeblendet ist.",
+ bsp:"„Verbinden“ mit leerem Schlüssel geklickt, und nichts passiert.",
+ loe:"Meldung im sichtbaren Bereich anzeigen.",
+ wo:"index.html verbinden()"},
+{n:47,t:"I",s:"Niedrig",a:"S",q:"L30 · C9 · C28 · C40",
+ title:"Falsche oder irreführende Texte in der Oberfläche",
+ was:"„GTIN nicht übernommen“, obwohl sie übernommen wird. „Backdatei“ statt Backup-Datei. Der Sicherungstext erwähnt die tägliche Dropbox-Sicherung und die Paletten nicht. Der Reset-Text verschweigt, dass die Palettenliste bleibt. Der Protokollfilter kennt „Artikel angelegt“, „Palette angelegt/umbenannt“ nicht. Eine Fehlermeldung verweist auf eine nicht existierende Datei „alles_loeschen.sql“.",
+ bsp:"",
+ loe:"Texte korrigieren, fehlende Protokolltypen ergänzen.",
+ wo:"index.html (mehrere Stellen, Liste im Bericht L30 und C28)"},
+
+// ── J Aufräumen
+{n:48,t:"J",s:"Niedrig",a:"S",q:"C25–C30",
+ title:"Toter Code: kann gefahrlos entfernt werden",
+ was:"Ungenutzte CSS-Regeln (z. B. .buchung-box, .leer-item), ein wirkungsloser Übergangs-Fallback in der Glocke, überflüssige Prüfungen, Migrationsreste im Setup-Skript, veraltete Kommentare, technische Kürzel im Protokoll („NEWLP“, „PALETTE_NEU“). Ungenutzte Funktionen gibt es keine.",
+ bsp:"",
+ loe:"Entfernen bzw. Kommentare an den Ist-Zustand anpassen. Die vollständige Liste steht im Bericht C, Abschnitt 4.",
+ wo:"index.html, SQL, index.ts"},
+{n:49,t:"J",s:"Mittel",a:"M",q:"C31 · C32",
+ title:"Gleiche Logik in der Datenbank vielfach kopiert",
+ was:"Die Regeln für die Glocke stehen 8× im SQL, der Protokoll-Eintrag ca. 20×. „Palette sortieren“ ist eine dritte Kopie der Umlager-Logik. Die Kopien weichen schon voneinander ab (siehe 28, 32).",
+ bsp:"",
+ loe:"Gemeinsame Hilfsfunktionen in der Datenbank. Palette sortieren nutzt die vorhandenen Funktionen umlagern und buchen.",
+ wo:"SQL (viele Funktionen)"},
+{n:50,t:"J",s:"Niedrig",a:"M",q:"C33–C37 · C45",
+ title:"Gleiche Logik in der Oberfläche mehrfach kopiert",
+ was:"Druckfenster 5×, Ton/Sprachausgabe in 4 Varianten mit 2 Audio-Kontexten, Fehlerausgabe ca. 40×, doppelte Bestätigung beim Löschen, eine globale Hilfsvariable.",
+ bsp:"",
+ loe:"Wenige gemeinsame Helfer (Druck, Ansage, Fehleranzeige). Der Druck-Helfer löst nebenbei Befund 10.",
+ wo:"index.html"},
+{n:51,t:"J",s:"Mittel",a:"M",q:"C38",
+ title:"Zwei Stellen, die immer gleich bleiben müssen",
+ was:"Der JTL-Kommentar-Export ist in der App und in der Edge Function getrennt programmiert (aktuell identisch). Die Rückgängig-Regeln stehen in App und Datenbank doppelt.",
+ bsp:"Bei einer späteren Änderung wird nur eine Stelle angepasst, und die nächtliche Datei weicht vom Knopf in der App ab.",
+ loe:"Die Logik einmal in der Datenbank ablegen und von beiden Seiten nutzen.",
+ wo:"index.html exportJtlKommentarCsv / index.ts jtlKommentarCsv; UNDO_TYPEN"}
+];
+
+const SEVCLS = {Kritisch:"krit",Hoch:"hoch",Mittel:"mittel",Niedrig:"niedrig"};
+const DEC = {ja:"Beheben",spaeter:"Später",nein:"Nicht nötig",frage:"Frage"};
+const KEY = "lagerpal-befunde-v1";
+let marks = {};
+try { marks = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch(e) { marks = {}; }
+function save(){ try { localStorage.setItem(KEY, JSON.stringify(marks)); } catch(e) {} }
+
+const sevFilter = new Set();
+const $ = s => document.querySelector(s);
+
+function stats(){
+  const c = {Kritisch:0,Hoch:0,Mittel:0,Niedrig:0};
+  F.forEach(f => c[f.s]++);
+  $("#stats").innerHTML =
+    `<div class="stat"><b>${F.length}</b>Befunde gesamt</div>` +
+    Object.keys(c).map(k => `<div class="stat ${SEVCLS[k]}"><b>${c[k]}</b>${k}</div>`).join("");
+}
+
+function card(f){
+  const m = marks[f.n];
+  const btns = Object.keys(DEC).map(k =>
+    `<button class="d-${k}" data-n="${f.n}" data-d="${k}" aria-pressed="${m===k}">${DEC[k]}</button>`).join("");
+  return `<details class="f" data-n="${f.n}">
+  <summary><span class="nr">${f.n}</span><span class="tt">${f.title}</span>
+    <span class="meta">${f.pr?'<span class="badge b-neutral">deine Entscheidung</span>':''}
+    ${m?`<span class="mark">${DEC[m]}</span>`:''}
+    <span class="badge b-neutral">Aufwand ${f.a}</span>
+    <span class="badge b-${SEVCLS[f.s]}">${f.s}</span></span></summary>
+  <div class="body">
+    <h4>Was passiert</h4><p>${f.was}</p>
+    ${f.bsp?`<h4>Beispiel</h4><p>${f.bsp}</p>`:''}
+    <h4>Lösungsvorschlag</h4><p>${f.loe}</p>
+    <h4>Wo im Code</h4><p class="ref">${f.wo} · Bericht: ${f.q}</p>
+    <div class="decide"><span>Meine Einschätzung:</span>${btns}</div>
+  </div></details>`;
+}
+
+function render(){
+  const q = $("#q").value.trim().toLowerCase();
+  const d = $("#dec").value;
+  const open = new Set([...document.querySelectorAll("details.f[open]")].map(x => x.dataset.n));
+  let html = "", total = 0;
+  for (const t of Object.keys(THEMEN)) {
+    const items = F.filter(f => f.t === t)
+      .filter(f => !sevFilter.size || sevFilter.has(f.s))
+      .filter(f => !d || (d === "none" ? !marks[f.n] : marks[f.n] === d))
+      .filter(f => !q || (f.title+" "+f.was+" "+f.bsp+" "+f.loe+" "+f.wo).toLowerCase().includes(q));
+    if (!items.length) continue;
+    total += items.length;
+    html += `<div class="theme-head"><h3>${THEMEN[t]}</h3><span class="muted">${items.length}</span></div>` + items.map(card).join("");
+  }
+  $("#liste").innerHTML = html || '<div class="empty">Keine Befunde für diese Filter.</div>';
+  open.forEach(n => { const el = document.querySelector(`details.f[data-n="${n}"]`); if (el) el.open = true; });
+}
+
+document.addEventListener("click", e => {
+  const b = e.target.closest(".decide button");
+  if (b) {
+    const n = b.dataset.n, d = b.dataset.d;
+    if (marks[n] === d) delete marks[n]; else marks[n] = d;
+    save(); render(); return;
+  }
+  const c = e.target.closest(".chip[data-sev]");
+  if (c) {
+    const s = c.dataset.sev;
+    if (sevFilter.has(s)) sevFilter.delete(s); else sevFilter.add(s);
+    c.setAttribute("aria-pressed", sevFilter.has(s));
+    render();
+  }
+});
+$("#q").addEventListener("input", render);
+$("#dec").addEventListener("change", render);
+$("#alle-auf").addEventListener("click", () => {
+  const all = document.querySelectorAll("details.f");
+  const anyClosed = [...all].some(x => !x.open);
+  all.forEach(x => x.open = anyClosed);
+  $("#alle-auf").textContent = anyClosed ? "Alle zuklappen" : "Alle aufklappen";
+});
+function auswahlText(){
+  const lines = [];
+  for (const k of Object.keys(DEC)) {
+    const items = F.filter(f => marks[f.n] === k);
+    if (!items.length) continue;
+    lines.push(DEC[k] + ":");
+    items.forEach(f => lines.push(`  ${f.n}. ${f.title.replace(/<[^>]+>/g,"")}`));
+    lines.push("");
+  }
+  const offen = F.filter(f => !marks[f.n]).map(f => f.n);
+  if (offen.length) lines.push("Noch nicht markiert: " + offen.join(", "));
+  return lines.join("\n") || "Noch nichts markiert.";
+}
+$("#auswahl-btn").addEventListener("click", () => { $("#auswahl-out").value = auswahlText(); });
+$("#copy-btn").addEventListener("click", async () => {
+  const t = auswahlText(); $("#auswahl-out").value = t;
+  try { await navigator.clipboard.writeText(t); $("#copy-btn").textContent = "Kopiert ✓"; }
+  catch(e) { $("#auswahl-out").select(); $("#copy-btn").textContent = "Bitte manuell kopieren"; }
+  setTimeout(() => $("#copy-btn").textContent = "In Zwischenablage kopieren", 2500);
+});
+$("#reset-btn").addEventListener("click", () => {
+  if (!confirm("Alle Markierungen löschen?")) return;
+  marks = {}; save(); render(); $("#auswahl-out").value = "";
+});
+window.addEventListener("beforeprint", () => document.querySelectorAll("details.f").forEach(x => x.open = true));
+stats(); render();
+</script>
+</body>
+</html>
