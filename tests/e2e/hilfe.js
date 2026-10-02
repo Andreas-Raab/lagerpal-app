@@ -12,7 +12,7 @@ const CDN = {
 };
 const sql = q => execSync(`psql -h /tmp -p 54329 -U postgres -d lp -Atc "${q.replace(/"/g, '\\"')}"`).toString().trim();
 const reset = () => {
-  sql('truncate buchungen, leermeldungen, bestaende, lagerplaetze, artikel restart identity cascade');
+  sql('truncate buchungen, leermeldungen, bestaende, lagerplaetze, artikel, mengen_abweichungen restart identity cascade');
   execSync(`psql -h /tmp -p 54329 -U postgres -d lp -q -f ${path.join(__dirname, '../sql/01_testdaten.sql')}`);
 };
 const menge = (art, lp) => sql(`select coalesce((select menge from bestaende where artikelnummer='${art}' and lagerplatz='${lp}'),0)`);

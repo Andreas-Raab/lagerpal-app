@@ -141,6 +141,57 @@ tbody tr:hover td{background:#eef4fb;}
 .so-kachel.aktiv{border-color:var(--so-fg);}
 .so-table tbody tr td{background:#fff;}
 .so-table tbody tr:hover td{background:#eef4fb;}
+/* ── Reiter „Abgleich" ── */
+.abg-summe{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:10px;}
+.abg-kpi{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff;}
+.abg-kpi .z{font-size:1.5rem;font-weight:800;line-height:1.2;font-variant-numeric:tabular-nums;}
+.abg-kpi .l{color:var(--text-2);font-size:.8rem;}
+.abg-mehr{color:#0f7a6c;} .abg-fehlt{color:var(--red);} .abg-ok{color:var(--green);}
+.abg-leiste{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px;}
+.abg-leiste input[type=search]{flex:1 1 220px;min-width:0;}
+.abg-seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
+.abg-seg button{border:0;border-radius:0;background:#fff;color:var(--text);padding:6px 12px;height:auto;}
+.abg-seg button.aktiv{background:var(--blue);color:#fff;}
+.abg-pill{display:inline-flex;font-size:.74rem;font-weight:700;padding:2px 9px;border-radius:999px;white-space:nowrap;}
+.abg-p-ok{background:#e5f3e5;color:var(--green);} .abg-p-teil{background:#fbf1d6;color:#9a6a00;}
+.abg-p-ohne{background:#eeebf9;color:#6b5bb5;} .abg-p-erl{background:var(--line-soft);color:var(--text-2);}
+.abg-p-alt{background:var(--line-soft);color:var(--text-2);font-weight:500;}
+.abg-fall{border:1px solid var(--line);border-radius:12px;background:#fff;margin-top:12px;overflow:hidden;}
+.abg-fall.erledigt{opacity:.7;}
+.abg-kopf{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:10px 14px;border-bottom:1px solid var(--line);}
+.abg-kopf .rechts{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;}
+.abg-balken{display:flex;height:8px;margin:10px 14px 0;border-radius:4px;overflow:hidden;background:var(--line-soft);}
+.abg-balken .bm{background:#0f7a6c;} .abg-balken .bf{background:var(--red);}
+.abg-btxt{display:flex;justify-content:space-between;padding:3px 14px 0;font-size:.75rem;color:var(--text-2);}
+.abg-seiten{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;padding:12px 14px;}
+.abg-spalte{display:grid;gap:8px;align-content:start;min-width:0;}
+.abg-spalte h4{font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-2);}
+.abg-e{border-radius:8px;padding:8px 10px;display:grid;gap:2px;min-width:0;}
+.abg-e.mehr{background:#e3f4f1;border-left:4px solid #0f7a6c;} .abg-e.fehlt{background:#fbe9e4;border-left:4px solid var(--red);}
+.abg-e .m{font-weight:800;} .abg-e .o{font-size:.85rem;overflow-wrap:anywhere;} .abg-e .t{font-size:.75rem;color:var(--text-2);}
+.abg-e.leer{background:transparent;border:1px dashed var(--line);color:var(--text-2);font-size:.85rem;}
+.abg-pfeil{display:grid;place-items:center;color:var(--text-3);font-size:1.3rem;}
+.abg-akt{display:flex;flex-wrap:wrap;gap:8px;padding:0 14px 14px;}
+.abg-akt button{height:auto;padding:6px 12px;}
+.abg-gruen{background:var(--green);} .abg-rot{background:#fff;color:var(--red);border:1px solid var(--red);}
+.abg-best{margin:0 14px 14px;padding:10px 12px;border-radius:8px;background:var(--line-soft);display:grid;gap:8px;}
+.abg-best .row{gap:8px;}
+.abg-step{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff;}
+.abg-step button{border:0;border-radius:0;background:var(--line-soft);color:var(--text);width:30px;height:32px;padding:0;}
+.abg-step span{min-width:40px;text-align:center;font-weight:800;}
+.abg-matrix{overflow-x:auto;margin-top:12px;border:1px solid var(--line);border-radius:12px;background:#fff;}
+.abg-matrix table{min-width:600px;}
+.abg-matrix td,.abg-matrix th{text-align:center;white-space:nowrap;}
+.abg-matrix td.art{text-align:left;white-space:normal;min-width:200px;}
+.abg-z{display:inline-block;min-width:42px;padding:2px 6px;border-radius:6px;font-weight:800;}
+.abg-z.mehr{background:#e3f4f1;color:#0f7a6c;} .abg-z.fehlt{background:#fbe9e4;color:var(--red);}
+/* die allgemeine Knopf-Regel oben hat sehr hohe Spezifität (viele :not(#id)) – hier gezielt übersteuern */
+#tab-abgleich .abg-seg button{background:#fff!important;color:var(--text)!important;box-shadow:none!important;height:auto!important;padding:6px 12px!important;border-radius:0!important;}
+#tab-abgleich .abg-seg button.aktiv{background:var(--blue)!important;color:#fff!important;}
+#tab-abgleich button.abg-gruen{background:var(--green)!important;color:#fff!important;}
+#tab-abgleich button.abg-rot{background:#fff!important;color:var(--red)!important;border:1px solid var(--red)!important;box-shadow:none!important;}
+#tab-abgleich .abg-step button{background:var(--line-soft)!important;color:var(--text)!important;box-shadow:none!important;border-radius:0!important;width:30px!important;height:32px!important;padding:0!important;}
+@media (max-width:640px){ .abg-seiten{grid-template-columns:1fr;} .abg-pfeil{transform:rotate(90deg);height:18px;} }
 </style>
 </head>
 <body>
@@ -188,6 +239,7 @@ tbody tr:hover td{background:#eef4fb;}
     <button class="tab" data-t="import" onclick="showTab('import')">🔄 Import/Export</button>
     <button class="tab" data-t="uebersicht" onclick="showTab('uebersicht')">📊 Übersicht</button>
     <button class="tab" data-t="einraeumen" onclick="showTab('einraeumen')">🧺 Palette sortieren</button>
+    <button class="tab" data-t="abgleich" onclick="showTab('abgleich')">⚖️ Abgleich</button>
   </div>
   <div class="container" id="main-container">
 
@@ -400,6 +452,7 @@ tbody tr:hover td{background:#eef4fb;}
             <option>Lagerplatz angelegt</option><option>Lagerplatz gelöscht</option>
             <option>Umbenennung</option><option>Zusammenlegung</option><option>Rückgängig</option>
             <option>CSV-Import</option><option>Artikel gelöscht</option>
+            <option>Inventurdifferenz</option><option>Abgleich</option>
           </select>
           <span class="hint" style="margin:0;">von</span>
           <input type="date" id="prot-von" onchange="protokollLaden()" style="width:150px;">
@@ -504,6 +557,23 @@ tbody tr:hover td{background:#eef4fb;}
         <button id="restore-btn" style="background:var(--red);" disabled onclick="backupEinspielen()">📥 Backup jetzt einspielen</button>
       </div>
       <div id="restore-status" style="margin-top:12px;"></div>
+    </div>
+  </div>
+
+  <div id="tab-abgleich" class="tabpanel" style="display:none;">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;"><b>⚖️ Abgleich nach dem Sortieren</b>
+        <button class="sec" onclick="abgleichLaden()">↻ Aktualisieren</button></div>
+      <div class="hint" style="margin-top:6px;">Beim Palette-Sortieren <b>zu viel</b> gefunden (in den Karton gebucht) und bei „Palette fertig" <b>nicht gefunden</b> (laut System noch auf der Palette). Gleicher Artikel auf beiden Seiten heißt meist: Er lag in Wahrheit auf der anderen Palette. Jede Buchung hier lässt sich über die Rückgängig-Leiste unten zurücknehmen.</div>
+      <div id="abg-summe" class="abg-summe"></div>
+      <div class="abg-leiste">
+        <input type="search" id="abg-suche" placeholder="Artikel, Nummer, EAN oder Palette…" oninput="abgleichRender()">
+        <span class="abg-seg"><button data-abgf="offen" class="aktiv" onclick="abgleichFilter('offen')">Offen</button><button data-abgf="erledigt" onclick="abgleichFilter('erledigt')">Erledigt</button><button data-abgf="alle" onclick="abgleichFilter('alle')">Alle</button></span>
+        <span class="abg-seg"><button data-abgv="karten" class="aktiv" onclick="abgleichAnsicht('karten')">Karten</button><button data-abgv="matrix" onclick="abgleichAnsicht('matrix')">Matrix</button></span>
+      </div>
+      <div class="hint" style="margin-top:8px;"><span class="abg-pill abg-p-ok">passt</span> zu viel = fehlt · <span class="abg-pill abg-p-teil">teilweise</span> Mengen unterschiedlich · <span class="abg-pill abg-p-ohne">ohne Gegenstück</span> nur eine Seite</div>
+      <div id="abg-status" style="margin-top:8px;"></div>
+      <div id="abg-liste"></div>
     </div>
   </div>
 
@@ -683,7 +753,7 @@ async function zeigeApp(email) {
 }
 
 // ── Rückgängig (Leiste unten) ───────────────────────────────────────────────
-const UNDO_TYPEN = ['Eingang','Ausgang','Umlagerung','Artikeländerung','Lagerplatz angelegt','Lagerplatz gelöscht','Umbenennung','Zusammenlegung'];
+const UNDO_TYPEN = ['Eingang','Ausgang','Umlagerung','Artikeländerung','Lagerplatz angelegt','Lagerplatz gelöscht','Umbenennung','Zusammenlegung','Abgleich','Inventurdifferenz'];
 function beschreibeBuchung(b) {
   if (b.typ === 'Artikeländerung') return 'Artikel geändert · ' + b.artikelnummer;
   if (b.typ === 'Umlagerung') return 'Umlagerung ' + (b.lagerplatz||'') + ' (' + b.menge + ' Stk)';
@@ -691,6 +761,8 @@ function beschreibeBuchung(b) {
   if (b.typ === 'Lagerplatz gelöscht') return 'Lagerplatz gelöscht · ' + (b.lagerplatz||'');
   if (b.typ === 'Umbenennung') return 'Lagerplatz umbenannt · ' + (b.lagerplatz||'');
   if (b.typ === 'Zusammenlegung') return 'Lagerplätze zusammengelegt · ' + (b.lagerplatz||'');
+  if (b.typ === 'Abgleich') return 'Abgleich: ' + b.menge + '× ' + (b.artikelname||b.artikelnummer) + ' als Neufund bestätigt';
+  if (b.typ === 'Inventurdifferenz') return 'Inventurdifferenz: ' + b.menge + '× ' + (b.artikelname||b.artikelnummer) + ' von ' + (b.lagerplatz||'') + ' ausgebucht';
   return (b.typ === 'Eingang' ? 'Eingebucht' : 'Ausgebucht') + ': ' + b.menge + '× ' + (b.artikelname||b.artikelnummer) + ' auf ' + (b.lagerplatz||'');
 }
 // Muss zur Altersgrenze in rueckgaengig() (SQL, v_max_alter) passen. Die Datenbank
@@ -749,6 +821,7 @@ async function rueckgaengigJetzt() {
   el('undo-bar-info').innerHTML = '✅ Rückgängig gemacht: <strong>' + esc((res && res.beschreibung) || '') + '</strong>';
   btn.style.display = 'none';
   setTimeout(refreshUndo, 4100);
+  if (aktuellerTab === 'abgleich') abgleichLaden();
   await ladeAllePlaetze();
   refreshLeer();
   sucheRefresh();
@@ -1166,9 +1239,148 @@ function sucheRender(behalteLimit) {
   box.innerHTML = html;
 }
 
+// ── Abgleich nach dem Sortieren ─────────────────────────────────────────────
+// Mehrmengen (beim Sortieren zu viel gefunden) und Fehlmengen (bei „Palette
+// fertig" nicht gefunden) je Artikel gegenüberstellen und per Knopf klären.
+let abgFaelle = [], abgFilterWert = 'offen', abgAnsichtWert = 'karten', abgAktion = null, abgLadeSeq = 0;
+async function abgleichLaden() {
+  const seq = ++abgLadeSeq;
+  el('abg-liste').innerHTML = '<span class="hint">Wird geladen…</span>';
+  let rows;
+  try { rows = await fetchAll('v_abgleich', '*', { order: { col: 'zeitstempel', asc: true } }); }
+  catch (e) {
+    if (seq !== abgLadeSeq) return;
+    el('abg-liste').innerHTML = '<span class="err">❌ ' + esc(buchFehlerText(e)) + '</span>'
+      + (/v_abgleich/.test(String(e.message || '')) ? '<div class="hint">Ist das Datenbank-Update (Paket 2) schon eingespielt?</div>' : '');
+    return;
+  }
+  if (seq !== abgLadeSeq) return;
+  const map = {};
+  rows.forEach(r => {
+    const f = map[r.artikelnummer] || (map[r.artikelnummer] = { nr: r.artikelnummer, name: r.artikelname || r.artikelnummer,
+      ean: r.gtin || '', gesamt: r.gesamtbestand, alt: false, mehr: [], fehlt: [] });
+    if (r.alt) f.alt = true;
+    f[r.art].push(r);
+  });
+  abgFaelle = Object.values(map);
+  abgAktion = null;
+  abgleichRender();
+}
+const abgSumme = l => l.reduce((s, e) => s + e.offen, 0);
+function abgStatus(f) {
+  const m = abgSumme(f.mehr), x = abgSumme(f.fehlt);
+  if (!m && !x) return 'erledigt';
+  if (m && x) return m === x ? 'ok' : 'teil';
+  return 'ohne';
+}
+const ABG_STATUS = { ok: ['abg-p-ok', 'passt'], teil: ['abg-p-teil', 'teilweise'], ohne: ['abg-p-ohne', 'ohne Gegenstück'], erledigt: ['abg-p-erl', 'erledigt'] };
+const ABG_RANG = { ok: 0, teil: 1, ohne: 2, erledigt: 3 };
+function abgleichFilter(f) { abgFilterWert = f; document.querySelectorAll('[data-abgf]').forEach(b => b.classList.toggle('aktiv', b.dataset.abgf === f)); abgAktion = null; abgleichRender(); }
+function abgleichAnsicht(v) { abgAnsichtWert = v; document.querySelectorAll('[data-abgv]').forEach(b => b.classList.toggle('aktiv', b.dataset.abgv === v)); abgAktion = null; abgleichRender(); }
+function abgSichtbar() {
+  const q = (el('abg-suche').value || '').trim().toLowerCase();
+  return abgFaelle.filter(f => {
+    const st = abgStatus(f);
+    if (abgFilterWert === 'offen' && st === 'erledigt') return false;
+    if (abgFilterWert === 'erledigt' && st !== 'erledigt') return false;
+    if (!q) return true;
+    return [f.nr, f.name, f.ean, ...f.mehr.map(e => (e.quelle || '') + ' ' + (e.karton || '')), ...f.fehlt.map(e => e.quelle || '')]
+      .join(' ').toLowerCase().includes(q);
+  }).sort((a, b) => ABG_RANG[abgStatus(a)] - ABG_RANG[abgStatus(b)] || a.name.localeCompare(b.name));
+}
+function abgEintrag(e, art) {
+  const rest = e.offen !== e.menge ? ` <span class="t">(von ${e.menge})</span>` : '';
+  if (art === 'mehr') return `<div class="abg-e mehr"><span class="m">+${e.offen}${rest} Stk</span>
+      <span class="o">${esc(e.quelle || 'Quelle unbekannt')} → Karton <b class="mono">${esc(e.karton || '?')}</b></span><span class="t">${esc(fmtZeit(e.zeitstempel))}</span></div>`;
+  return `<div class="abg-e fehlt"><span class="m">−${e.offen}${rest} Stk</span>
+      <span class="o">${esc(e.quelle || '?')} <span class="t">· laut System noch dort</span></span><span class="t">${esc(fmtZeit(e.zeitstempel))}</span></div>`;
+}
+function abgKarte(f, i) {
+  const st = abgStatus(f), [cls, txt] = ABG_STATUS[st];
+  const m = abgSumme(f.mehr), x = abgSumme(f.fehlt), ges = Math.max(1, m + x);
+  const mo = f.mehr.filter(e => e.offen), fo = f.fehlt.filter(e => e.offen);
+  // Knöpfe arbeiten immer mit dem ältesten offenen Eintrag je Seite
+  const ausMax = mo.length && fo.length ? Math.min(mo[0].offen, fo[0].offen) : 0;
+  let akt = '';
+  if (st !== 'erledigt') akt = `<div class="abg-akt">
+      ${ausMax ? `<button class="abg-gruen" onclick="abgWaehlen(${i},'ausgleich')">Ausgleichen (${ausMax} Stk)</button>` : ''}
+      ${mo.length ? `<button class="sec" onclick="abgWaehlen(${i},'neu')">Mehr war echt neu (${mo[0].offen})</button>` : ''}
+      ${fo.length ? `<button class="abg-rot" onclick="abgWaehlen(${i},'verlust')">Fehlt wirklich → ausbuchen (${fo[0].offen})</button>` : ''}
+      <button class="sec" onclick="abgSpaeter()">Später</button></div>`;
+  let best = '';
+  if (abgAktion && abgAktion.i === i) {
+    const a = abgAktion;
+    const text = a.art === 'ausgleich'
+      ? `Von <b>${esc(fo[0].quelle)}</b> werden <b>${a.menge} Stk</b> ausgebucht – die Ware liegt im Karton <b class="mono">${esc(mo[0].karton || '?')}</b>. Protokoll: Ausgang „Ausgleich".`
+      : a.art === 'neu'
+      ? `Die Mehrmenge (<b>${a.menge} Stk</b> in <b class="mono">${esc(mo[0].karton || '?')}</b>) bleibt als Bestand. Es wird nichts umgebucht, der Eintrag gilt als erledigt.`
+      : `<b>${a.menge} Stk</b> werden von <b>${esc(fo[0].quelle)}</b> als <b>Inventurdifferenz</b> ausgebucht.`;
+    best = `<div class="abg-best"><div>${text}</div><div class="row">
+      ${a.max > 1 ? `<span class="abg-step"><button onclick="abgMenge(-1)" aria-label="weniger">−</button><span>${a.menge}</span><button onclick="abgMenge(1)" aria-label="mehr">+</button></span>` : ''}
+      <button class="abg-gruen" id="abg-ok" onclick="abgBuchen()">Bestätigen</button><button class="sec" onclick="abgAbbruch()">Abbrechen</button></div></div>`;
+  }
+  return `<div class="abg-fall${st === 'erledigt' ? ' erledigt' : ''}">
+    <div class="abg-kopf"><b>${esc(f.name)}</b><span class="muted mono">${esc(f.nr)}${f.ean ? ' · ' + esc(f.ean) : ''}</span>
+      <span class="muted">Gesamtbestand laut System: <b class="mono">${f.gesamt}</b> Stk</span>
+      <span class="rechts">${f.alt ? '<span class="abg-pill abg-p-alt">aus früherer Sortierung</span>' : ''}<span class="abg-pill ${cls}">${txt}</span></span></div>
+    ${st !== 'erledigt' ? `<div class="abg-balken"><span class="bm" style="width:${m / ges * 100}%"></span><span class="bf" style="width:${x / ges * 100}%"></span></div>
+      <div class="abg-btxt"><span>zu viel +${m}</span><span>fehlt −${x}</span></div>` : ''}
+    <div class="abg-seiten">
+      <div class="abg-spalte"><h4>Zu viel gefunden</h4>${(st === 'erledigt' ? f.mehr : mo).map(e => abgEintrag(e, 'mehr')).join('') || '<div class="abg-e leer">nichts offen</div>'}</div>
+      <div class="abg-pfeil" aria-hidden="true">${m && x ? '⇄' : '·'}</div>
+      <div class="abg-spalte"><h4>Fehlt</h4>${(st === 'erledigt' ? f.fehlt : fo).map(e => abgEintrag(e, 'fehlt')).join('') || '<div class="abg-e leer">nichts offen</div>'}</div>
+    </div>${akt}${best}</div>`;
+}
+function abgMatrix(liste) {
+  const pal = [...new Set(liste.flatMap(f => [...f.mehr, ...f.fehlt].map(e => e.quelle || '?')))].sort((a, b) => a.localeCompare(b));
+  const zelle = (f, p) => {
+    const plus = abgSumme(f.mehr.filter(e => (e.quelle || '?') === p)), minus = abgSumme(f.fehlt.filter(e => (e.quelle || '?') === p));
+    return `<td>${plus ? `<span class="abg-z mehr">+${plus}</span>` : ''}${minus ? `<span class="abg-z fehlt">−${minus}</span>` : ''}</td>`;
+  };
+  return `<div class="abg-matrix"><table><thead><tr><th style="text-align:left;">Artikel</th>${pal.map(p => `<th class="mono">${esc(p)}</th>`).join('')}<th>Gesamt</th><th>Status</th></tr></thead>
+    <tbody>${liste.map(f => { const [c, t] = ABG_STATUS[abgStatus(f)]; return `<tr><td class="art">${esc(f.name)}<br><span class="muted mono">${esc(f.nr)}</span></td>${pal.map(p => zelle(f, p)).join('')}<td class="mono">${f.gesamt}</td><td><span class="abg-pill ${c}">${t}</span></td></tr>`; }).join('')}</tbody></table></div>
+    <div class="hint" style="margin-top:6px;">Spalten = Quell-Paletten. Grün: dort zu viel gefunden, rot: dort fehlt etwas. Grün in einer und Rot in einer anderen Spalte ist fast immer derselbe Fall.</div>`;
+}
+function abgleichRender() {
+  const offen = abgFaelle.filter(f => abgStatus(f) !== 'erledigt');
+  el('abg-summe').innerHTML = `
+    <div class="abg-kpi"><div class="z">${offen.length}</div><div class="l">offene Artikel</div></div>
+    <div class="abg-kpi"><div class="z abg-ok">${offen.filter(f => abgStatus(f) === 'ok').length}</div><div class="l">passende Paare</div></div>
+    <div class="abg-kpi"><div class="z abg-mehr">+${offen.reduce((s, f) => s + abgSumme(f.mehr), 0)}</div><div class="l">Stück zu viel gefunden</div></div>
+    <div class="abg-kpi"><div class="z abg-fehlt">−${offen.reduce((s, f) => s + abgSumme(f.fehlt), 0)}</div><div class="l">Stück fehlen</div></div>`;
+  const liste = abgSichtbar();
+  if (!liste.length) { el('abg-liste').innerHTML = `<div class="hint" style="padding:16px 0;">${abgFilterWert === 'offen' ? 'Keine offenen Fälle – alles abgeglichen.' : 'Keine Treffer.'}</div>`; return; }
+  el('abg-liste').innerHTML = abgAnsichtWert === 'matrix' ? abgMatrix(liste) : liste.map(f => abgKarte(f, abgFaelle.indexOf(f))).join('');
+}
+function abgWaehlen(i, art) {
+  const f = abgFaelle[i], mo = f.mehr.filter(e => e.offen), fo = f.fehlt.filter(e => e.offen);
+  const max = art === 'ausgleich' ? Math.min(mo[0].offen, fo[0].offen) : art === 'neu' ? mo[0].offen : fo[0].offen;
+  abgAktion = { i, art, menge: max, max, mehrId: mo.length ? mo[0].id : null, fehltId: fo.length ? fo[0].id : null };
+  el('abg-status').innerHTML = '';
+  abgleichRender();
+}
+function abgMenge(d) { if (!abgAktion) return; abgAktion.menge = Math.min(abgAktion.max, Math.max(1, abgAktion.menge + d)); abgleichRender(); }
+function abgAbbruch() { abgAktion = null; abgleichRender(); }
+function abgSpaeter() { abgAktion = null; el('abg-status').innerHTML = '<span class="hint">Bleibt offen – du findest den Fall jederzeit wieder unter „Offen".</span>'; abgleichRender(); }
+async function abgBuchen() {
+  const a = abgAktion; if (!a) return;
+  return einmalig('abgleich', async () => {
+    const btn = el('abg-ok'); if (btn) btn.disabled = true;
+    const { data, error } = await client.rpc('abgleich_buchen', { p_aktion: a.art, p_mehr_id: a.art === 'verlust' ? null : a.mehrId,
+      p_fehlt_id: a.art === 'neu' ? null : a.fehltId, p_menge: a.menge });
+    if (error) { el('abg-status').innerHTML = '<span class="err">❌ ' + esc(buchFehlerText(error)) + '</span>'; if (btn) btn.disabled = false; return; }
+    el('abg-status').innerHTML = '<span class="ok">✅ ' + esc(data.beschreibung) + ' – über die Rückgängig-Leiste unten zurücknehmbar.</span>';
+    abgAktion = null;
+    refreshUndo();
+    await abgleichLaden();
+  }, DOPPELKLICK_SPERRE_MS);
+}
+
 // ── Reiter ──────────────────────────────────────────────────────────────────
+let aktuellerTab = 'suche';
 function showTab(name) {
-  ['suche','buchen','umlagern','inventur','kartons','protokoll','import','uebersicht','einraeumen'].forEach(t => {
+  aktuellerTab = name;
+  ['suche','buchen','umlagern','inventur','kartons','protokoll','import','uebersicht','einraeumen','abgleich'].forEach(t => {
     document.querySelector(`.tab[data-t="${t}"]`).classList.toggle('active', t === name);
     el('tab-'+t).style.display = t === name ? 'block' : 'none';
   });
@@ -1176,6 +1388,7 @@ function showTab(name) {
   // Buchungen aus anderen Reitern/Geräten in der Suche nachziehen
   if (name === 'suche' && client) ladeSucheDaten(true).catch(() => {});
   if (name === 'inventur') invInit();
+  if (name === 'abgleich') abgleichLaden();
   if (name === 'kartons') kartonsLaden();
   if (name === 'protokoll') protokollLaden();
   if (name === 'uebersicht') loadDashboard();
@@ -1566,7 +1779,7 @@ async function erScanIntern() {
     // damit bei Verbindungsabbruch nie ein halb fertiger Zustand entsteht
     const { error } = await client.rpc('einraeumen_scan', { p_artikelnummer:g.artnr, p_quelle:erSession.quelle, p_ziel:ziel, p_menge:menge });
     if (error) { st.innerHTML='<span class="err">❌ '+esc(buchFehlerText(error))+'</span>'; erFeldZurueck(code); return; }
-    const extra = menge > verf ? ` (davon ${menge-verf} als Inventur-Zugang)` : '';
+    const extra = menge > verf ? ` (davon ${menge-verf} als Inventur-Zugang – im Reiter „Abgleich" vermerkt)` : '';
     erZeigeFlash(kanal, (neuAngelegt ? '🆕 NEU · ' : '') + (g.istSet ? '⚠️ SET – mehrere Teile zusammen lassen · ' : '') + (g.name||g.artnr) + ' → ' + ziel);
     if (neuAngelegt) neuAnsage(g.online);
     else if (g.istSet) ansageImmer('Set, ' + (kanal === 'online' ? 'online' : 'offline'));
@@ -3049,7 +3262,7 @@ function importReset() { importFile = null; el('imp-file').value = ''; el('imp-r
 // Primärschlüssel je Tabelle/View – eindeutige Sortierung fürs Blättern in fetchAll()
 const FETCH_PK = {
   artikel: ['artikelnummer'], bestaende: ['artikelnummer', 'lagerplatz'], lagerplaetze: ['name'],
-  v_lagerplaetze: ['name'], buchungen: ['id'], leermeldungen: ['id'], paletten: ['name']
+  v_lagerplaetze: ['name'], buchungen: ['id'], leermeldungen: ['id'], paletten: ['name'], v_abgleich: ['id']
 };
 async function fetchAll(table, select, opts) {
   opts = opts || {};
@@ -3148,7 +3361,7 @@ async function exportArtikelCsv() {
 let allProt = [];
 function ptClass(t) {
   return t==='Eingang'?'pt-ein':t==='Ausgang'?'pt-aus':t==='Umlagerung'?'pt-um'
-    :t==='Inventur'?'pt-inv':(t==='Artikeländerung'||t==='Artikel angelegt')?'pt-art':t==='Rückgängig'?'pt-undo'
+    :(t==='Inventur'||t==='Inventurdifferenz'||t==='Abgleich')?'pt-inv':(t==='Artikeländerung'||t==='Artikel angelegt')?'pt-art':t==='Rückgängig'?'pt-undo'
     :t==='Artikel gelöscht'?'pt-art'
     :(t==='Lagerplatz angelegt'||t==='Lagerplatz gelöscht'||t==='Umbenennung'||t==='Zusammenlegung')?'pt-lp':'pt-csv';
 }

@@ -479,6 +479,9 @@ begin
             bestand_lp_vorher, bestand_lp_nachher, kommentar, vorgang)
             values (now(), 'Eingang', p_artikelnummer, v_name, v_gtin, p_ziel, v_surplus,
                 v_ziel_nachher - v_surplus, v_ziel_nachher, 'Inventur-Zugang (Einräumen)', v_vorgang);
+        -- für den Reiter „Abgleich": mehr gefunden, als auf der Quelle gebucht war
+        insert into mengen_abweichungen (art, artikelnummer, menge, offen, quelle, karton, vorgang)
+            values ('mehr', p_artikelnummer, v_surplus, v_surplus, p_quelle, p_ziel, v_vorgang);
     end if;
 
     -- Glocke pflegen: Quelle leer geworden → melden; Ziel wieder befüllt → Meldung weg
@@ -555,8 +558,20 @@ create or replace function einraeumen_rest_melden(p_quelle text, p_palette text)
 returns jsonb
 language plpgsql security definer set search_path = public, pg_temp
 as $$
-declare v_n integer; v_stk integer; v_txt text;
+declare v_n integer; v_stk integer; v_txt text; r record;
 begin
+    -- für den Reiter „Abgleich": jeder Artikel, der laut System noch auf der Quelle
+    -- liegt, aber nicht gefunden wurde, wird als Fehlmenge vermerkt (bei erneutem
+    -- „Palette fertig" wird die offene Fehlmenge auf den aktuellen Stand gesetzt)
+    for r in select b.artikelnummer, b.menge from bestaende b join artikel a using (artikelnummer)
+             where b.lagerplatz = p_quelle and b.menge > 0 and a.unbekannt = 0 loop
+        update mengen_abweichungen set menge = r.menge, offen = r.menge, zeitstempel = now()
+            where art = 'fehlt' and artikelnummer = r.artikelnummer and quelle = p_quelle and offen > 0;
+        if not found then
+            insert into mengen_abweichungen (art, artikelnummer, menge, offen, quelle)
+                values ('fehlt', r.artikelnummer, r.menge, r.menge, p_quelle);
+        end if;
+    end loop;
     select count(*), coalesce(sum(menge),0) into v_n, v_stk
         from bestaende where lagerplatz = p_quelle and menge > 0;
     if v_n > 0 then
@@ -790,7 +805,7 @@ begin
     if b.rueckgaengig_gemacht <> 0 then
         raise exception 'VERALTET: Diese Aktion wurde bereits rückgängig gemacht.';
     end if;
-    if b.typ not in ('Eingang','Ausgang','Umlagerung','Artikeländerung',
+    if b.typ not in ('Eingang','Ausgang','Umlagerung','Artikeländerung','Abgleich','Inventurdifferenz',
                      'Lagerplatz angelegt','Lagerplatz gelöscht','Umbenennung','Zusammenlegung') then
         raise exception 'Aktionen vom Typ „%" können nicht rückgängig gemacht werden.', b.typ;
     end if;
@@ -918,14 +933,25 @@ begin
         end if;
         v_beschr := 'Einbuchung rückgängig: ' || b.menge || ' Stk ' || coalesce(b.artikelname,'') || ' auf ' || b.lagerplatz;
 
-    elsif b.typ = 'Ausgang' then
+    elsif b.typ = 'Abgleich' then
+        -- „Mehr war echt neu": nur die offene Menge wieder öffnen, kein Bestand
+        if b.kommentar is null or left(b.kommentar,9) <> 'ABGLEICH|' then raise exception 'Rückgängig nicht möglich (Daten fehlen)'; end if;
+        perform abgleich_wieder_oeffnen(substr(b.kommentar, 10)::jsonb);
+        v_beschr := 'Abgleich rückgängig: ' || b.menge || ' Stk ' || coalesce(b.artikelname,'') || ' wieder offen';
+
+    elsif b.typ in ('Ausgang', 'Inventurdifferenz') then
         insert into bestaende (artikelnummer, lagerplatz, menge) values (b.artikelnummer, b.lagerplatz, b.menge)
             on conflict (artikelnummer, lagerplatz) do update set menge = bestaende.menge + b.menge
             returning menge into v_neu;
         if v_neu > 0 then
             delete from leermeldungen where artikelnummer=b.artikelnummer and lagerplatz=b.lagerplatz and gesehen=0;
         end if;
-        v_beschr := 'Ausbuchung rückgängig: ' || b.menge || ' Stk ' || coalesce(b.artikelname,'') || ' auf ' || b.lagerplatz;
+        -- aus dem Abgleich (Ausgleich / Fehlt wirklich): Fälle wieder öffnen
+        if b.kommentar like 'ABGLEICH|%' then
+            perform abgleich_wieder_oeffnen(substr(b.kommentar, 10)::jsonb);
+        end if;
+        v_beschr := case when b.typ = 'Inventurdifferenz' then 'Inventurdifferenz rückgängig: ' else 'Ausbuchung rückgängig: ' end
+                    || b.menge || ' Stk ' || coalesce(b.artikelname,'') || ' auf ' || b.lagerplatz;
 
     else
         -- kann nach der Typ-Prüfung oben nicht eintreten; Absicherung für künftige Erweiterungen
@@ -971,6 +997,9 @@ begin
             perform rueckgaengig_eine(v_naechste);
             v_teile := v_teile + 1;
         end loop;
+    end if;
+    if v_vorgang is not null then
+        delete from mengen_abweichungen where vorgang = v_vorgang;   -- Mehrmenge eines zurückgenommenen Scans
     end if;
     if v_teile > 1 then
         v_beschr := v_beschr || ' (+ ' || (v_teile - 1) || ' weitere' || case when v_teile = 2 then 'r Teil' else ' Teile' end || ' desselben Vorgangs)';
@@ -1759,3 +1788,156 @@ revoke all on function palette_umbenennen(text,text) from anon, public;
 grant execute on function palette_umbenennen(text,text) to authenticated;
 
 
+-- ─── Abschnitt: Abgleich nach dem Sortieren (Stand 10/2026) ───
+-- Beim Palette-Sortieren entstehen zwei Arten von Abweichungen:
+--  • mehr:  mehr eingeräumt, als laut System auf der Quelle lag (der Rest wurde als
+--           Inventur-Zugang in den Karton gebucht) - einraeumen_scan()
+--  • fehlt: bei „Palette fertig" noch auf der Quelle gebucht, aber nicht gefunden
+--           - einraeumen_rest_melden()
+-- Im Reiter „Abgleich" werden sie gegeneinander ausgeglichen, als echter Neufund
+-- bestätigt oder als Inventurdifferenz ausgebucht (abgleich_buchen()).
+create table if not exists mengen_abweichungen (
+    id            bigint generated by default as identity primary key,
+    zeitstempel   timestamptz not null default now(),
+    art           text     not null check (art in ('mehr','fehlt')),
+    artikelnummer text     not null,
+    menge         integer  not null check (menge > 0),
+    offen         integer  not null check (offen >= 0),
+    quelle        text,                 -- sortierte Palette/Quelle (bei alten Fällen evtl. unbekannt)
+    karton        text,                 -- nur „mehr": Karton, in den eingeräumt wurde
+    vorgang       uuid,                 -- „mehr": Vorgang des Einräum-Scans
+    alt           boolean  not null default false,   -- aus früheren Sortierungen übernommen
+    check (offen <= menge)
+);
+create index if not exists idx_abw_offen on mengen_abweichungen(artikelnummer) where offen > 0;
+create index if not exists idx_abw_vorgang on mengen_abweichungen(vorgang) where vorgang is not null;
+alter table mengen_abweichungen enable row level security;
+drop policy if exists "auth_read_mengen_abweichungen" on mengen_abweichungen;
+create policy "auth_read_mengen_abweichungen" on mengen_abweichungen for select to authenticated using (true);
+revoke all on mengen_abweichungen from anon;
+revoke insert, update, delete, truncate, references, trigger on mengen_abweichungen from authenticated;
+grant select on mengen_abweichungen to authenticated;
+
+-- Für die Anzeige: mit Artikelname, EAN und aktuellem Gesamtbestand
+create or replace view v_abgleich
+with (security_invoker = true) as
+select m.*, a.artikelname, a.gtin, a.ist_set,
+       coalesce((select sum(b.menge) from bestaende b where b.artikelnummer = m.artikelnummer), 0) as gesamtbestand
+from mengen_abweichungen m
+left join artikel a on a.artikelnummer = m.artikelnummer;
+revoke all on v_abgleich from anon;
+revoke insert, update, delete, truncate, references, trigger on v_abgleich from authenticated;
+grant select on v_abgleich to authenticated;
+
+-- Rückgängig einer Abgleich-Buchung: offene Mengen wieder herstellen
+-- p: {"teile":[{"id":…, "menge":…}, …]}
+create or replace function abgleich_wieder_oeffnen(p jsonb)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare t record;
+begin
+    for t in select (x->>'id')::bigint as id, (x->>'menge')::integer as menge
+             from jsonb_array_elements(coalesce(p->'teile', '[]'::jsonb)) x loop
+        update mengen_abweichungen set offen = least(menge, offen + t.menge) where id = t.id;
+    end loop;
+end; $$;
+revoke all on function abgleich_wieder_oeffnen(jsonb) from anon, authenticated, public;
+
+-- Abgleich buchen. p_aktion:
+--  'ausgleich' - Mehrmenge (p_mehr_id) gegen Fehlmenge (p_fehlt_id) desselben
+--                Artikels: die Fehlmenge wird von ihrer Quelle ausgebucht, die Ware
+--                liegt ja im Karton der Mehrmenge.
+--  'neu'       - Mehrmenge war ein echter Neufund: nur als erledigt markieren.
+--  'verlust'   - Fehlmenge fehlt wirklich: als Inventurdifferenz ausbuchen.
+-- Jede Buchung ist über die Rückgängig-Leiste umkehrbar.
+create or replace function abgleich_buchen(p_aktion text, p_mehr_id bigint, p_fehlt_id bigint, p_menge integer)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+    m record; f record; v_name text; v_gtin text; v_vorher integer; v_nachher integer; v_gesamt integer;
+    v_info jsonb; v_typ text; v_lp text; v_beschr text; v_artnr text;
+begin
+    if p_aktion not in ('ausgleich','neu','verlust') then raise exception 'Unbekannte Aktion'; end if;
+    if p_menge is null or p_menge <= 0 then raise exception 'Menge muss eine positive ganze Zahl sein'; end if;
+    if p_aktion in ('ausgleich','neu') then
+        select * into m from mengen_abweichungen where id = p_mehr_id and art = 'mehr' for update;
+        if not found then raise exception 'Mehrmenge nicht gefunden'; end if;
+        if m.offen < p_menge then raise exception 'Bei der Mehrmenge sind nur noch % Stk offen', m.offen; end if;
+        v_artnr := m.artikelnummer;
+    end if;
+    if p_aktion in ('ausgleich','verlust') then
+        select * into f from mengen_abweichungen where id = p_fehlt_id and art = 'fehlt' for update;
+        if not found then raise exception 'Fehlmenge nicht gefunden'; end if;
+        if f.offen < p_menge then raise exception 'Bei der Fehlmenge sind nur noch % Stk offen', f.offen; end if;
+        if v_artnr is not null and v_artnr <> f.artikelnummer then
+            raise exception 'Mehr- und Fehlmenge gehören zu verschiedenen Artikeln';
+        end if;
+        v_artnr := f.artikelnummer;
+    end if;
+
+    select artikelname, gtin into v_name, v_gtin from artikel where artikelnummer = v_artnr;
+
+    if p_aktion = 'neu' then
+        update mengen_abweichungen set offen = offen - p_menge where id = m.id;
+        v_info := jsonb_build_object('teile', jsonb_build_array(jsonb_build_object('id', m.id, 'menge', p_menge)));
+        insert into buchungen (zeitstempel, typ, artikelnummer, artikelname, gtin, lagerplatz, menge, kommentar)
+            values (now(), 'Abgleich', m.artikelnummer, v_name, v_gtin, m.karton, p_menge,
+                    'ABGLEICH|' || v_info::text);
+        return jsonb_build_object('ok', true, 'beschreibung', p_menge || ' Stk als Neufund bestätigt');
+    end if;
+
+    -- ausgleich / verlust: Fehlmenge von ihrer Quelle ausbuchen
+    v_lp := f.quelle;
+    update bestaende set menge = menge - p_menge
+        where artikelnummer = f.artikelnummer and lagerplatz = v_lp and menge >= p_menge
+        returning menge into v_nachher;
+    if not found then
+        select menge into v_vorher from bestaende where artikelnummer = f.artikelnummer and lagerplatz = v_lp;
+        raise exception 'Auf „%" liegen laut System nur noch % Stk – bitte erst prüfen (wurde dort inzwischen gebucht?)', v_lp, coalesce(v_vorher, 0);
+    end if;
+    v_vorher := v_nachher + p_menge;
+    select coalesce(sum(menge),0) into v_gesamt from bestaende where artikelnummer = f.artikelnummer;
+    update mengen_abweichungen set offen = offen - p_menge where id = f.id;
+    if p_aktion = 'ausgleich' then
+        update mengen_abweichungen set offen = offen - p_menge where id = m.id;
+        v_info := jsonb_build_object('teile', jsonb_build_array(jsonb_build_object('id', f.id, 'menge', p_menge),
+                                                                jsonb_build_object('id', m.id, 'menge', p_menge)),
+                                     'karton', m.karton);
+        v_typ := 'Ausgang';
+        v_beschr := p_menge || ' Stk ausgeglichen: von ' || v_lp || ' ausgebucht (liegen in ' || coalesce(m.karton, '?') || ')';
+    else
+        v_info := jsonb_build_object('teile', jsonb_build_array(jsonb_build_object('id', f.id, 'menge', p_menge)));
+        v_typ := 'Inventurdifferenz';
+        v_beschr := p_menge || ' Stk als Inventurdifferenz von ' || v_lp || ' ausgebucht';
+    end if;
+    insert into buchungen (zeitstempel, typ, artikelnummer, artikelname, gtin, lagerplatz, menge,
+        bestand_lp_vorher, bestand_lp_nachher, bestand_gesamt_vorher, bestand_gesamt_nachher, kommentar)
+        values (now(), v_typ, f.artikelnummer, v_name, v_gtin, v_lp, p_menge,
+                v_vorher, v_nachher, v_gesamt + p_menge, v_gesamt, 'ABGLEICH|' || v_info::text);
+    return jsonb_build_object('ok', true, 'beschreibung', v_beschr);
+end; $$;
+revoke all on function abgleich_buchen(text,bigint,bigint,integer) from anon, public;
+grant execute on function abgleich_buchen(text,bigint,bigint,integer) to authenticated;
+
+-- Einmalige Übernahme früherer Sortierungen (nur wenn noch nichts übernommen wurde):
+--  • mehr:  alle nicht zurückgenommenen „Inventur-Zugang (Einräumen)"-Buchungen; die
+--           Quelle stammt aus der zeitgleichen Umlagerung desselben Scans (falls vorhanden)
+--  • fehlt: Quellen, für die „Palette fertig" gemeldet wurde (Rest-Hinweis in der Glocke),
+--           mit dem Bestand, der dort heute noch gebucht ist
+do $$
+begin
+    if exists (select 1 from mengen_abweichungen) then return; end if;
+    insert into mengen_abweichungen (zeitstempel, art, artikelnummer, menge, offen, quelle, karton, alt)
+        select e.zeitstempel, 'mehr', e.artikelnummer, e.menge, e.menge,
+               (select (substr(u.kommentar, 6)::jsonb)->>'von' from buchungen u
+                 where u.typ = 'Umlagerung' and u.artikelnummer = e.artikelnummer and u.zeitstempel = e.zeitstempel
+                   and u.kommentar like 'MOVE|%' and u.rueckgaengig_gemacht = 0 limit 1),
+               e.lagerplatz, true
+        from buchungen e
+        where e.typ = 'Eingang' and e.kommentar = 'Inventur-Zugang (Einräumen)' and e.rueckgaengig_gemacht = 0
+          and e.menge > 0;
+    insert into mengen_abweichungen (zeitstempel, art, artikelnummer, menge, offen, quelle, alt)
+        select q.zeit, 'fehlt', b.artikelnummer, b.menge, b.menge, b.lagerplatz, true
+        from (select lagerplatz, max(zeitstempel) as zeit from leermeldungen
+              where artikelnummer = '—' and hinweis like 'Einräumen Palette%' group by lagerplatz) q
+        join bestaende b on b.lagerplatz = q.lagerplatz and b.menge > 0
+        join artikel a on a.artikelnummer = b.artikelnummer and a.unbekannt = 0;
+end $$;
