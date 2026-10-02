@@ -10,7 +10,7 @@ ziel = root / 'supabase/updates/2026-10_paket2.sql'
 u = ziel.read_text(encoding='utf-8')
 namen = ['buchen','umlagern','einraeumen_scan','einraeumen_rest_melden','karton_setzen','karton_neu','sammel_ausbuchen',
          'inventur_anwenden','rueckgaengig_eine','rueckgaengig','lagerplatz_umbenennen','lagerplatz_zusammenlegen',
-         'lagerplatz_loeschen','bestand_csv_import','backup_wiederherstellen','unbekannt_karton_naechster']
+         'lagerplatz_loeschen','bestand_csv_import','alles_loeschen','backup_wiederherstellen','unbekannt_karton_naechster']
 def block(name):
     a = re.search(r'create or replace function ' + name + r'\(', s).start()
     nxt = s.find('create or replace function', a + 10)

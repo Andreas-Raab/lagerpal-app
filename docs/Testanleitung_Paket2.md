@@ -16,7 +16,7 @@ Die **alte** App läuft mit der aktualisierten Datenbank unverändert weiter. De
    **Hast du das Update schon einmal eingespielt?** Dann einfach noch einmal ausführen – es ergänzt nur, was neu ist (Reiter „Abgleich“), und übernimmt dabei einmalig die Mehr- und Fehlmengen aus euren bisherigen Sortierungen.
    Kommt eine Fehlermeldung: nichts weiter tun, mir den Text schicken. Das Skript läuft in einer Transaktion, bei einem Fehler wird **nichts** geändert.
 3. Kontrolle: Inhalt von `tests/sql/fingerabdruck.sql` im SQL-Editor ausführen.
-   Erwartet: **`161794c13931dbd15bdc14cea7cb3a8c`**. Das ist exakt der Stand, gegen den ich getestet habe.
+   Erwartet: **`60aa41f33325a95fbf765677079a1487`**. Das ist exakt der Stand, gegen den ich getestet habe.
 
 ## B. App testen
 
@@ -52,7 +52,8 @@ Neue `index.html` herunterladen wie bei Paket 1 und mit dem **Testsystem** verbi
 - [ ] **Palette sortieren**: einen Artikel mit **mehr** Menge scannen, als auf der Quelle liegt, Rückfrage bestätigen. Erwartet: Meldung „… im Reiter ‚Abgleich‘ vermerkt“, und im Reiter erscheint die Mehrmenge.
 - [ ] Eine Sortierung mit **„✓ Palette fertig“** abschließen, auf der noch etwas übrig ist. Erwartet: Im Abgleich stehen die übrigen Artikel als **Fehlmenge**.
 - [ ] **Ausgleichen** bei einem Artikel mit beiden Seiten: Erwartet: Die Fehlmenge wird auf ihrer Palette ausgebucht, der Karton bleibt unverändert. **Rückgängig** (Leiste unten) stellt alles wieder her.
-- [ ] **Mehr war echt neu** und **Fehlt wirklich → ausbuchen** je einmal ausprobieren, auch mit **Teilmenge** (− / +). Im Protokoll erscheint „Inventurdifferenz“.
+- [ ] **Mehr war echt neu** und **Fehlt wirklich → ausbuchen** je einmal ausprobieren, auch mit **Teilmenge** (− / +). Im Protokoll erscheint „Inventurdifferenz“ bzw. beim Ausgleichen „Ausgleich“.
+- [ ] Liegt auf der Fehl-Palette laut System nichts mehr (z. B. per Inventur korrigiert), gibt es nur **„Fehlmenge ohne Buchung erledigen“**.
 - [ ] **Matrix** ansehen: Spalten = Paletten, grün = zu viel, rot = fehlt.
 
 ### 5. Gegenprobe
@@ -62,7 +63,8 @@ Neue `index.html` herunterladen wie bei Paket 1 und mit dem **Testsystem** verbi
 ## Später: Live schalten (Paket 1 + 2 zusammen)
 
 1. Abends, wenn niemand bucht: in der App **„Sicherung jetzt“** (Import/Export).
-2. `supabase/updates/2026-10_paket2.sql` im **echten** System im SQL-Editor ausführen. Danach den Fingerabdruck prüfen, er muss wieder `161794c1…` sein.
+2. `supabase/updates/2026-10_paket2.sql` im **echten** System im SQL-Editor ausführen. Danach den Fingerabdruck prüfen, er muss wieder `60aa41f3…` sein.
 3. Pull Request mergen → nach 1–2 Minuten haben alle Geräte die neue App (einmal neu laden).
+4. *(Optional, kann auch später)* Die Edge Function `lagerpal-backup` neu deployen (Datei `supabase/functions/lagerpal-backup/index.ts`), damit das nächtliche Backup auch die Abgleich-Fälle enthält. Bis dahin läuft das Backup unverändert weiter, nur ohne diese Tabelle.
 
 **Zurück, falls nötig:** Pull Request „Revert“ genügt. Das Datenbank-Update darf bleiben, die alte App läuft damit.

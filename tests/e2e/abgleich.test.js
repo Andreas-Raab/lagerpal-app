@@ -84,5 +84,19 @@ const offen = (art) => sql(`select coalesce(sum(offen),0) from mengen_abweichung
     gleich(offen('mehr'), 2, 'Mehrmenge erfasst');
   });
 
+  await test('Abgleich: Quelle inzwischen leer → nur „ohne Buchung erledigen"', async page => {
+    szenario();
+    sql(`select inventur_anwenden('Regal 4', '{"A1":0}'::jsonb)`);
+    await page.click('button[data-t="abgleich"]');
+    await page.waitForSelector('.abg-fall');
+    if (await page.isVisible('.abg-fall button:has-text("Fehlt wirklich")')) throw new Error('Ausbuchen angeboten, obwohl nichts mehr da ist');
+    if (await page.isVisible('.abg-fall button:has-text("Ausgleichen")')) throw new Error('Ausgleichen angeboten, obwohl nichts mehr da ist');
+    await page.click('.abg-fall button:has-text("ohne Buchung erledigen")');
+    await page.click('#abg-ok');
+    await page.waitForSelector('#abg-status .ok');
+    gleich(offen('fehlt'), 0, 'Fehlmenge erledigt');
+    gleich(menge('A1', 'Regal 4'), 0, 'Bestand unverändert');
+  });
+
   ende();
 })();

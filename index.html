@@ -452,7 +452,7 @@ tbody tr:hover td{background:#eef4fb;}
             <option>Lagerplatz angelegt</option><option>Lagerplatz gelöscht</option>
             <option>Umbenennung</option><option>Zusammenlegung</option><option>Rückgängig</option>
             <option>CSV-Import</option><option>Artikel gelöscht</option>
-            <option>Inventurdifferenz</option><option>Abgleich</option>
+            <option>Inventurdifferenz</option><option>Ausgleich</option><option>Abgleich</option>
           </select>
           <span class="hint" style="margin:0;">von</span>
           <input type="date" id="prot-von" onchange="protokollLaden()" style="width:150px;">
@@ -753,7 +753,7 @@ async function zeigeApp(email) {
 }
 
 // ── Rückgängig (Leiste unten) ───────────────────────────────────────────────
-const UNDO_TYPEN = ['Eingang','Ausgang','Umlagerung','Artikeländerung','Lagerplatz angelegt','Lagerplatz gelöscht','Umbenennung','Zusammenlegung','Abgleich','Inventurdifferenz'];
+const UNDO_TYPEN = ['Eingang','Ausgang','Umlagerung','Artikeländerung','Lagerplatz angelegt','Lagerplatz gelöscht','Umbenennung','Zusammenlegung','Abgleich','Inventurdifferenz','Ausgleich'];
 function beschreibeBuchung(b) {
   if (b.typ === 'Artikeländerung') return 'Artikel geändert · ' + b.artikelnummer;
   if (b.typ === 'Umlagerung') return 'Umlagerung ' + (b.lagerplatz||'') + ' (' + b.menge + ' Stk)';
@@ -761,7 +761,8 @@ function beschreibeBuchung(b) {
   if (b.typ === 'Lagerplatz gelöscht') return 'Lagerplatz gelöscht · ' + (b.lagerplatz||'');
   if (b.typ === 'Umbenennung') return 'Lagerplatz umbenannt · ' + (b.lagerplatz||'');
   if (b.typ === 'Zusammenlegung') return 'Lagerplätze zusammengelegt · ' + (b.lagerplatz||'');
-  if (b.typ === 'Abgleich') return 'Abgleich: ' + b.menge + '× ' + (b.artikelname||b.artikelnummer) + ' als Neufund bestätigt';
+  if (b.typ === 'Abgleich') return 'Abgleich: ' + b.menge + '× ' + (b.artikelname||b.artikelnummer) + ' erledigt (ohne Umbuchung)';
+  if (b.typ === 'Ausgleich') return 'Ausgleich: ' + b.menge + '× ' + (b.artikelname||b.artikelnummer) + ' von ' + (b.lagerplatz||'') + ' ausgebucht';
   if (b.typ === 'Inventurdifferenz') return 'Inventurdifferenz: ' + b.menge + '× ' + (b.artikelname||b.artikelnummer) + ' von ' + (b.lagerplatz||'') + ' ausgebucht';
   return (b.typ === 'Eingang' ? 'Eingebucht' : 'Ausgebucht') + ': ' + b.menge + '× ' + (b.artikelname||b.artikelnummer) + ' auf ' + (b.lagerplatz||'');
 }
@@ -1247,7 +1248,9 @@ async function abgleichLaden() {
   const seq = ++abgLadeSeq;
   el('abg-liste').innerHTML = '<span class="hint">Wird geladen…</span>';
   let rows;
-  try { rows = await fetchAll('v_abgleich', '*', { order: { col: 'zeitstempel', asc: true } }); }
+  // offene Fälle immer, erledigte nur der letzten 30 Tage (sonst wächst die Liste endlos)
+  const seit = new Date(Date.now() - 30 * 864e5).toISOString();
+  try { rows = await fetchAll('v_abgleich', '*', { order: { col: 'zeitstempel', asc: true }, build: q => q.or(`offen.gt.0,zeitstempel.gt.${seit}`) }); }
   catch (e) {
     if (seq !== abgLadeSeq) return;
     el('abg-liste').innerHTML = '<span class="err">❌ ' + esc(buchFehlerText(e)) + '</span>'
@@ -1293,28 +1296,31 @@ function abgEintrag(e, art) {
   if (art === 'mehr') return `<div class="abg-e mehr"><span class="m">+${e.offen}${rest} Stk</span>
       <span class="o">${esc(e.quelle || 'Quelle unbekannt')} → Karton <b class="mono">${esc(e.karton || '?')}</b></span><span class="t">${esc(fmtZeit(e.zeitstempel))}</span></div>`;
   return `<div class="abg-e fehlt"><span class="m">−${e.offen}${rest} Stk</span>
-      <span class="o">${esc(e.quelle || '?')} <span class="t">· laut System noch dort</span></span><span class="t">${esc(fmtZeit(e.zeitstempel))}</span></div>`;
+      <span class="o">${esc(e.quelle || '?')} <span class="t">· laut System dort heute: ${e.quelle_bestand} Stk</span></span><span class="t">${esc(fmtZeit(e.zeitstempel))}</span></div>`;
 }
 function abgKarte(f, i) {
   const st = abgStatus(f), [cls, txt] = ABG_STATUS[st];
   const m = abgSumme(f.mehr), x = abgSumme(f.fehlt), ges = Math.max(1, m + x);
   const mo = f.mehr.filter(e => e.offen), fo = f.fehlt.filter(e => e.offen);
-  // Knöpfe arbeiten immer mit dem ältesten offenen Eintrag je Seite
-  const ausMax = mo.length && fo.length ? Math.min(mo[0].offen, fo[0].offen) : 0;
+  const w = abgWahl(f);
   let akt = '';
   if (st !== 'erledigt') akt = `<div class="abg-akt">
-      ${ausMax ? `<button class="abg-gruen" onclick="abgWaehlen(${i},'ausgleich')">Ausgleichen (${ausMax} Stk)</button>` : ''}
-      ${mo.length ? `<button class="sec" onclick="abgWaehlen(${i},'neu')">Mehr war echt neu (${mo[0].offen})</button>` : ''}
-      ${fo.length ? `<button class="abg-rot" onclick="abgWaehlen(${i},'verlust')">Fehlt wirklich → ausbuchen (${fo[0].offen})</button>` : ''}
-      <button class="sec" onclick="abgSpaeter()">Später</button></div>`;
+      ${w.ausgleich ? `<button class="abg-gruen" onclick="abgWaehlen(${i},'ausgleich')">Ausgleichen (${w.ausgleich.max} Stk)</button>` : ''}
+      ${w.neu ? `<button class="sec" onclick="abgWaehlen(${i},'neu')">Mehr war echt neu (${w.neu.max})</button>` : ''}
+      ${w.verlust ? `<button class="abg-rot" onclick="abgWaehlen(${i},'verlust')">Fehlt wirklich → ausbuchen (${w.verlust.max})</button>` : ''}
+      ${w.erledigt ? `<button class="sec" onclick="abgWaehlen(${i},'erledigt')">Fehlmenge ohne Buchung erledigen (${w.erledigt.max})</button>` : ''}
+      <button class="sec" onclick="abgSpaeter()">Später</button></div>
+      ${fo.length && !w.verlust ? '<div class="hint" style="padding:0 14px 12px;">Auf der Quelle liegt laut System nichts mehr davon (z. B. schon per Inventur korrigiert oder umgelagert) – daher nur „ohne Buchung erledigen".</div>' : ''}`;
   let best = '';
   if (abgAktion && abgAktion.i === i) {
     const a = abgAktion;
     const text = a.art === 'ausgleich'
-      ? `Von <b>${esc(fo[0].quelle)}</b> werden <b>${a.menge} Stk</b> ausgebucht – die Ware liegt im Karton <b class="mono">${esc(mo[0].karton || '?')}</b>. Protokoll: Ausgang „Ausgleich".`
+      ? `Von <b>${esc(a.fehlt.quelle)}</b> werden <b>${a.menge} Stk</b> ausgebucht – die Ware liegt im Karton <b class="mono">${esc(a.mehr.karton || '?')}</b>. Protokoll: „Ausgleich".`
       : a.art === 'neu'
-      ? `Die Mehrmenge (<b>${a.menge} Stk</b> in <b class="mono">${esc(mo[0].karton || '?')}</b>) bleibt als Bestand. Es wird nichts umgebucht, der Eintrag gilt als erledigt.`
-      : `<b>${a.menge} Stk</b> werden von <b>${esc(fo[0].quelle)}</b> als <b>Inventurdifferenz</b> ausgebucht.`;
+      ? `Die Mehrmenge (<b>${a.menge} Stk</b> in <b class="mono">${esc(a.mehr.karton || '?')}</b>) bleibt als Bestand. Es wird nichts umgebucht, der Eintrag gilt als erledigt.`
+      : a.art === 'verlust'
+      ? `<b>${a.menge} Stk</b> werden von <b>${esc(a.fehlt.quelle)}</b> als <b>Inventurdifferenz</b> ausgebucht.`
+      : `<b>${a.menge} Stk</b> der Fehlmenge auf <b>${esc(a.fehlt.quelle)}</b> werden als erledigt markiert. Der Bestand wird <b>nicht</b> geändert.`;
     best = `<div class="abg-best"><div>${text}</div><div class="row">
       ${a.max > 1 ? `<span class="abg-step"><button onclick="abgMenge(-1)" aria-label="weniger">−</button><span>${a.menge}</span><button onclick="abgMenge(1)" aria-label="mehr">+</button></span>` : ''}
       <button class="abg-gruen" id="abg-ok" onclick="abgBuchen()">Bestätigen</button><button class="sec" onclick="abgAbbruch()">Abbrechen</button></div></div>`;
@@ -1352,10 +1358,23 @@ function abgleichRender() {
   if (!liste.length) { el('abg-liste').innerHTML = `<div class="hint" style="padding:16px 0;">${abgFilterWert === 'offen' ? 'Keine offenen Fälle – alles abgeglichen.' : 'Keine Treffer.'}</div>`; return; }
   el('abg-liste').innerHTML = abgAnsichtWert === 'matrix' ? abgMatrix(liste) : liste.map(f => abgKarte(f, abgFaelle.indexOf(f))).join('');
 }
+// Welche Einträge die Knöpfe benutzen: die älteste offene Mehrmenge; bei Buchungen
+// von der Quelle die älteste Fehlmenge, auf deren Quelle noch etwas liegt (nur so
+// viel ist ausbuchbar) - eine „verwaiste" Fehlmenge blockiert so keine gültige.
+function abgWahl(f) {
+  const mo = f.mehr.filter(e => e.offen), fo = f.fehlt.filter(e => e.offen);
+  const fb = fo.find(e => e.quelle_bestand > 0);
+  const w = {};
+  if (mo.length) w.neu = { mehr: mo[0], max: mo[0].offen };
+  if (fb) w.verlust = { fehlt: fb, max: Math.min(fb.offen, fb.quelle_bestand) };
+  if (mo.length && fb) w.ausgleich = { mehr: mo[0], fehlt: fb, max: Math.min(mo[0].offen, fb.offen, fb.quelle_bestand) };
+  if (fo.length) w.erledigt = { fehlt: fo[0], max: fo[0].offen };
+  return w;
+}
 function abgWaehlen(i, art) {
-  const f = abgFaelle[i], mo = f.mehr.filter(e => e.offen), fo = f.fehlt.filter(e => e.offen);
-  const max = art === 'ausgleich' ? Math.min(mo[0].offen, fo[0].offen) : art === 'neu' ? mo[0].offen : fo[0].offen;
-  abgAktion = { i, art, menge: max, max, mehrId: mo.length ? mo[0].id : null, fehltId: fo.length ? fo[0].id : null };
+  const wahl = abgWahl(abgFaelle[i])[art]; if (!wahl) return;
+  abgAktion = { i, art, menge: wahl.max, max: wahl.max, mehr: wahl.mehr || null, fehlt: wahl.fehlt || null,
+    mehrId: wahl.mehr ? wahl.mehr.id : null, fehltId: wahl.fehlt ? wahl.fehlt.id : null };
   el('abg-status').innerHTML = '';
   abgleichRender();
 }
@@ -1366,8 +1385,8 @@ async function abgBuchen() {
   const a = abgAktion; if (!a) return;
   return einmalig('abgleich', async () => {
     const btn = el('abg-ok'); if (btn) btn.disabled = true;
-    const { data, error } = await client.rpc('abgleich_buchen', { p_aktion: a.art, p_mehr_id: a.art === 'verlust' ? null : a.mehrId,
-      p_fehlt_id: a.art === 'neu' ? null : a.fehltId, p_menge: a.menge });
+    const { data, error } = await client.rpc('abgleich_buchen', { p_aktion: a.art, p_mehr_id: a.mehrId,
+      p_fehlt_id: a.fehltId, p_menge: a.menge });
     if (error) { el('abg-status').innerHTML = '<span class="err">❌ ' + esc(buchFehlerText(error)) + '</span>'; if (btn) btn.disabled = false; return; }
     el('abg-status').innerHTML = '<span class="ok">✅ ' + esc(data.beschreibung) + ' – über die Rückgängig-Leiste unten zurücknehmbar.</span>';
     abgAktion = null;
@@ -3071,6 +3090,8 @@ async function datenbankSichern() {
       fetchAll('paletten', '*', { orderBy: [{ col: 'name' }] })
     ]);
     const snapshot = { erstellt: new Date().toISOString(), quelle: 'LagerPal Web-App', artikel, bestaende, lagerplaetze, buchungen, leermeldungen, paletten };
+    // Abgleich-Fälle (ab Datenbank-Update Paket 2) mitsichern
+    try { snapshot.mengen_abweichungen = await fetchAll('mengen_abweichungen', '*', { orderBy: [{ col: 'id' }] }); } catch (e) { /* ältere Datenbank */ }
     const blob = new Blob([JSON.stringify(snapshot)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const stempel = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
@@ -3262,7 +3283,7 @@ function importReset() { importFile = null; el('imp-file').value = ''; el('imp-r
 // Primärschlüssel je Tabelle/View – eindeutige Sortierung fürs Blättern in fetchAll()
 const FETCH_PK = {
   artikel: ['artikelnummer'], bestaende: ['artikelnummer', 'lagerplatz'], lagerplaetze: ['name'],
-  v_lagerplaetze: ['name'], buchungen: ['id'], leermeldungen: ['id'], paletten: ['name'], v_abgleich: ['id']
+  v_lagerplaetze: ['name'], buchungen: ['id'], leermeldungen: ['id'], paletten: ['name'], v_abgleich: ['id'], mengen_abweichungen: ['id']
 };
 async function fetchAll(table, select, opts) {
   opts = opts || {};
@@ -3361,7 +3382,7 @@ async function exportArtikelCsv() {
 let allProt = [];
 function ptClass(t) {
   return t==='Eingang'?'pt-ein':t==='Ausgang'?'pt-aus':t==='Umlagerung'?'pt-um'
-    :(t==='Inventur'||t==='Inventurdifferenz'||t==='Abgleich')?'pt-inv':(t==='Artikeländerung'||t==='Artikel angelegt')?'pt-art':t==='Rückgängig'?'pt-undo'
+    :(t==='Inventur'||t==='Inventurdifferenz'||t==='Abgleich'||t==='Ausgleich')?'pt-inv':(t==='Artikeländerung'||t==='Artikel angelegt')?'pt-art':t==='Rückgängig'?'pt-undo'
     :t==='Artikel gelöscht'?'pt-art'
     :(t==='Lagerplatz angelegt'||t==='Lagerplatz gelöscht'||t==='Umbenennung'||t==='Zusammenlegung')?'pt-lp':'pt-csv';
 }

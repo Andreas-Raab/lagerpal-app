@@ -1,7 +1,7 @@
 // Supabase Edge Function: lagerpal-backup
 //
 // Exportiert täglich alle LagerPal-Tabellen (artikel, bestaende, lagerplaetze,
-// buchungen, leermeldungen, paletten) als eine JSON-Datei, packt sie mit gzip und lädt
+// buchungen, leermeldungen, paletten, mengen_abweichungen) als eine JSON-Datei, packt sie mit gzip und lädt
 // sie in den Dropbox-Ordner DROPBOX_FOLDER hoch. Danach wird die Aufbewahrung
 // bereinigt: Backups älter als 30 Tage werden gelöscht, AUSSER dem jeweils
 // letzten Backup jedes Kalendermonats — das wird dauerhaft behalten.
@@ -38,7 +38,7 @@ const HEALTHCHECK_URL = (Deno.env.get("HEALTHCHECK_URL") || "").replace(/\/+$/, 
 const JTL_FOLDER = (Deno.env.get("JTL_FOLDER") || "/ScannerPro/LagerPal/JTL_lagerbestandskommentare_ex_import").replace(/\/+$/, "");
 const JTL_DATEI = "Lagerbestandskommentar.csv";
 
-const TABLES = ["artikel", "bestaende", "lagerplaetze", "buchungen", "leermeldungen", "paletten"];
+const TABLES = ["artikel", "bestaende", "lagerplaetze", "buchungen", "leermeldungen", "paletten", "mengen_abweichungen"];
 const RETENTION_DAYS = 30;
 
 // Primärschlüssel je Tabelle - fürs stabile Paginieren zwingend nötig. Ohne
@@ -51,6 +51,7 @@ const ORDER_COLS: Record<string, string[]> = {
   buchungen: ["id"],
   leermeldungen: ["id"],
   paletten: ["name"],
+  mengen_abweichungen: ["id"],
 };
 
 async function fetchAllRows(supabase: ReturnType<typeof createClient>, table: string) {
@@ -334,9 +335,16 @@ Deno.serve(async (_req) => {
 
     const snapshot: Record<string, unknown> = { erstellt_am: new Date().toISOString() };
     for (const table of TABLES) {
-      snapshot[table] = await fetchAllRows(supabase, table);
+      try {
+        snapshot[table] = await fetchAllRows(supabase, table);
+      } catch (e) {
+        // mengen_abweichungen gibt es erst ab dem Datenbank-Update Paket 2 - fehlt
+        // sie noch, läuft das Backup ohne sie weiter statt komplett zu scheitern
+        if (table !== "mengen_abweichungen") throw e;
+        console.error("Tabelle mengen_abweichungen nicht lesbar, wird ausgelassen:", e);
+      }
     }
-    ergebnis.zeilen = Object.fromEntries(TABLES.map((t) => [t, (snapshot[t] as unknown[]).length]));
+    ergebnis.zeilen = Object.fromEntries(TABLES.map((t) => [t, ((snapshot[t] as unknown[]) || []).length]));
 
     const accessToken = await getDropboxAccessToken();
 

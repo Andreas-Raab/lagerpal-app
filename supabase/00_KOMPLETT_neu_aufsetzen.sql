@@ -563,9 +563,16 @@ begin
     -- für den Reiter „Abgleich": jeder Artikel, der laut System noch auf der Quelle
     -- liegt, aber nicht gefunden wurde, wird als Fehlmenge vermerkt (bei erneutem
     -- „Palette fertig" wird die offene Fehlmenge auf den aktuellen Stand gesetzt)
+    perform pg_advisory_xact_lock(hashtext('rest_melden|' || p_quelle));   -- zwei Geräte gleichzeitig
+    -- offene Fehlmengen dieser Quelle, deren Artikel dort inzwischen nicht mehr liegt, sind erledigt
+    update mengen_abweichungen m set offen = 0
+        where m.art = 'fehlt' and m.quelle = p_quelle and m.offen > 0
+          and not exists (select 1 from bestaende b where b.artikelnummer = m.artikelnummer and b.lagerplatz = p_quelle and b.menge > 0);
     for r in select b.artikelnummer, b.menge from bestaende b join artikel a using (artikelnummer)
              where b.lagerplatz = p_quelle and b.menge > 0 and a.unbekannt = 0 loop
-        update mengen_abweichungen set menge = r.menge, offen = r.menge, zeitstempel = now()
+        -- schon erledigte Teile (menge - offen) bleiben erhalten, damit ein späteres
+        -- Rückgängig dieser Erledigung wieder stimmt
+        update mengen_abweichungen set menge = r.menge + (menge - offen), offen = r.menge, zeitstempel = now()
             where art = 'fehlt' and artikelnummer = r.artikelnummer and quelle = p_quelle and offen > 0;
         if not found then
             insert into mengen_abweichungen (art, artikelnummer, menge, offen, quelle)
@@ -805,7 +812,7 @@ begin
     if b.rueckgaengig_gemacht <> 0 then
         raise exception 'VERALTET: Diese Aktion wurde bereits rückgängig gemacht.';
     end if;
-    if b.typ not in ('Eingang','Ausgang','Umlagerung','Artikeländerung','Abgleich','Inventurdifferenz',
+    if b.typ not in ('Eingang','Ausgang','Umlagerung','Artikeländerung','Abgleich','Inventurdifferenz','Ausgleich',
                      'Lagerplatz angelegt','Lagerplatz gelöscht','Umbenennung','Zusammenlegung') then
         raise exception 'Aktionen vom Typ „%" können nicht rückgängig gemacht werden.', b.typ;
     end if;
@@ -862,6 +869,8 @@ begin
             and artikelnummer in (select artikelnummer from leermeldungen where gesehen = 0 and lagerplatz = m_nach);
         update leermeldungen set lagerplatz=m_von where lagerplatz=m_nach;
         update lagerplaetze  set name=m_von       where name=m_nach;
+        update mengen_abweichungen set quelle=m_von where quelle=m_nach;
+        update mengen_abweichungen set karton=m_von where karton=m_nach;
         v_beschr := 'Umbenennung rückgängig: '||m_nach||' → '||m_von;
 
     elsif b.typ = 'Zusammenlegung' then
@@ -939,7 +948,7 @@ begin
         perform abgleich_wieder_oeffnen(substr(b.kommentar, 10)::jsonb);
         v_beschr := 'Abgleich rückgängig: ' || b.menge || ' Stk ' || coalesce(b.artikelname,'') || ' wieder offen';
 
-    elsif b.typ in ('Ausgang', 'Inventurdifferenz') then
+    elsif b.typ in ('Ausgang', 'Inventurdifferenz', 'Ausgleich') then
         insert into bestaende (artikelnummer, lagerplatz, menge) values (b.artikelnummer, b.lagerplatz, b.menge)
             on conflict (artikelnummer, lagerplatz) do update set menge = bestaende.menge + b.menge
             returning menge into v_neu;
@@ -950,7 +959,8 @@ begin
         if b.kommentar like 'ABGLEICH|%' then
             perform abgleich_wieder_oeffnen(substr(b.kommentar, 10)::jsonb);
         end if;
-        v_beschr := case when b.typ = 'Inventurdifferenz' then 'Inventurdifferenz rückgängig: ' else 'Ausbuchung rückgängig: ' end
+        v_beschr := case b.typ when 'Inventurdifferenz' then 'Inventurdifferenz rückgängig: '
+                               when 'Ausgleich' then 'Ausgleich rückgängig: ' else 'Ausbuchung rückgängig: ' end
                     || b.menge || ' Stk ' || coalesce(b.artikelname,'') || ' auf ' || b.lagerplatz;
 
     else
@@ -1048,6 +1058,8 @@ begin
         and artikelnummer in (select artikelnummer from leermeldungen where gesehen = 0 and lagerplatz = p_alt);
     update leermeldungen set lagerplatz=p_neu where lagerplatz=p_alt;
     update lagerplaetze  set name=p_neu       where name=p_alt;
+    update mengen_abweichungen set quelle=p_neu where quelle=p_alt;
+    update mengen_abweichungen set karton=p_neu where karton=p_alt;
     insert into buchungen (zeitstempel, typ, artikelnummer, artikelname, gtin, lagerplatz, menge, kommentar)
         values (now(), 'Umbenennung', '—', '', '', p_alt||' → '||p_neu, v_umbenannt,
                 'RENAME|'||json_build_object('alt',p_alt,'neu',p_neu)::text);
@@ -1404,6 +1416,7 @@ begin
     delete from buchungen where true;
     delete from leermeldungen where true;
     delete from lagerplaetze where true;
+    delete from mengen_abweichungen where true;   -- Abgleich-Fälle gehören zum gelöschten Stand
 
     return jsonb_build_object('ok', true, 'geloescht', jsonb_build_object(
         'artikel', v_artikel, 'bestaende', v_bestaende, 'lagerplaetze', v_lagerplaetze,
@@ -1445,6 +1458,9 @@ begin
     delete from lagerplaetze where true;
     delete from buchungen where true;
     delete from leermeldungen where true;
+    -- Abgleich-Fälle passen nur zum Stand, aus dem sie stammen: immer leeren,
+    -- und nur aus der Sicherung übernehmen, wenn sie dort enthalten sind (s. u.)
+    delete from mengen_abweichungen where true;
 
     -- unbekannt: ältere Sicherungen haben die Spalte nicht → 0
     insert into artikel (artikelnummer, artikelname, gtin, ist_set, online, unbekannt)
@@ -1534,6 +1550,16 @@ begin
     -- (ohne diesen Schlüssel) die aktuell gepflegten Palettennamen unangetastet,
     -- statt sie versehentlich auf leer zurückzusetzen. Das Anlegedatum ("erstellt")
     -- wird mit übernommen (fehlt es in der Datei: jetzt).
+    if p_daten ? 'mengen_abweichungen' then
+        insert into mengen_abweichungen (id, zeitstempel, art, artikelnummer, menge, offen, quelle, karton, vorgang, alt)
+            select id, coalesce(zeitstempel, now()), art, artikelnummer, menge, least(greatest(offen, 0), menge), quelle, karton, vorgang, coalesce(alt, false)
+            from jsonb_to_recordset(p_daten->'mengen_abweichungen') as x(id bigint, zeitstempel timestamptz, art text,
+                 artikelnummer text, menge integer, offen integer, quelle text, karton text, vorgang uuid, alt boolean)
+            where id is not null and art in ('mehr','fehlt') and menge > 0
+            on conflict do nothing;
+        perform setval(pg_get_serial_sequence('mengen_abweichungen','id'), coalesce((select max(id) from mengen_abweichungen), 0) + 1, false);
+    end if;
+
     if p_daten ? 'paletten' then
         delete from paletten where true;
         insert into paletten (name, erstellt)
@@ -1822,7 +1848,9 @@ grant select on mengen_abweichungen to authenticated;
 create or replace view v_abgleich
 with (security_invoker = true) as
 select m.*, a.artikelname, a.gtin, a.ist_set,
-       coalesce((select sum(b.menge) from bestaende b where b.artikelnummer = m.artikelnummer), 0) as gesamtbestand
+       coalesce((select sum(b.menge) from bestaende b where b.artikelnummer = m.artikelnummer), 0) as gesamtbestand,
+       -- was laut System heute noch an der Quelle liegt (nur dieser Teil ist ausbuchbar)
+       coalesce((select b.menge from bestaende b where b.artikelnummer = m.artikelnummer and b.lagerplatz = m.quelle), 0) as quelle_bestand
 from mengen_abweichungen m
 left join artikel a on a.artikelnummer = m.artikelnummer;
 revoke all on v_abgleich from anon;
@@ -1848,6 +1876,7 @@ revoke all on function abgleich_wieder_oeffnen(jsonb) from anon, authenticated, 
 --                liegt ja im Karton der Mehrmenge.
 --  'neu'       - Mehrmenge war ein echter Neufund: nur als erledigt markieren.
 --  'verlust'   - Fehlmenge fehlt wirklich: als Inventurdifferenz ausbuchen.
+--  'erledigt'  - Fehlmenge ohne Buchung abhaken (z. B. schon per Inventur korrigiert).
 -- Jede Buchung ist über die Rückgängig-Leiste umkehrbar.
 create or replace function abgleich_buchen(p_aktion text, p_mehr_id bigint, p_fehlt_id bigint, p_menge integer)
 returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
@@ -1855,7 +1884,7 @@ declare
     m record; f record; v_name text; v_gtin text; v_vorher integer; v_nachher integer; v_gesamt integer;
     v_info jsonb; v_typ text; v_lp text; v_beschr text; v_artnr text;
 begin
-    if p_aktion not in ('ausgleich','neu','verlust') then raise exception 'Unbekannte Aktion'; end if;
+    if p_aktion not in ('ausgleich','neu','verlust','erledigt') then raise exception 'Unbekannte Aktion'; end if;
     if p_menge is null or p_menge <= 0 then raise exception 'Menge muss eine positive ganze Zahl sein'; end if;
     if p_aktion in ('ausgleich','neu') then
         select * into m from mengen_abweichungen where id = p_mehr_id and art = 'mehr' for update;
@@ -1863,7 +1892,7 @@ begin
         if m.offen < p_menge then raise exception 'Bei der Mehrmenge sind nur noch % Stk offen', m.offen; end if;
         v_artnr := m.artikelnummer;
     end if;
-    if p_aktion in ('ausgleich','verlust') then
+    if p_aktion in ('ausgleich','verlust','erledigt') then
         select * into f from mengen_abweichungen where id = p_fehlt_id and art = 'fehlt' for update;
         if not found then raise exception 'Fehlmenge nicht gefunden'; end if;
         if f.offen < p_menge then raise exception 'Bei der Fehlmenge sind nur noch % Stk offen', f.offen; end if;
@@ -1884,6 +1913,15 @@ begin
         return jsonb_build_object('ok', true, 'beschreibung', p_menge || ' Stk als Neufund bestätigt');
     end if;
 
+    if p_aktion = 'erledigt' then
+        update mengen_abweichungen set offen = offen - p_menge where id = f.id;
+        v_info := jsonb_build_object('teile', jsonb_build_array(jsonb_build_object('id', f.id, 'menge', p_menge)));
+        insert into buchungen (zeitstempel, typ, artikelnummer, artikelname, gtin, lagerplatz, menge, kommentar)
+            values (now(), 'Abgleich', f.artikelnummer, v_name, v_gtin, f.quelle, p_menge,
+                    'ABGLEICH|' || v_info::text);
+        return jsonb_build_object('ok', true, 'beschreibung', p_menge || ' Stk Fehlmenge ohne Buchung erledigt');
+    end if;
+
     -- ausgleich / verlust: Fehlmenge von ihrer Quelle ausbuchen
     v_lp := f.quelle;
     update bestaende set menge = menge - p_menge
@@ -1901,7 +1939,7 @@ begin
         v_info := jsonb_build_object('teile', jsonb_build_array(jsonb_build_object('id', f.id, 'menge', p_menge),
                                                                 jsonb_build_object('id', m.id, 'menge', p_menge)),
                                      'karton', m.karton);
-        v_typ := 'Ausgang';
+        v_typ := 'Ausgleich';   -- eigener Typ: zählt nicht als Warenausgang (Übersicht)
         v_beschr := p_menge || ' Stk ausgeglichen: von ' || v_lp || ' ausgebucht (liegen in ' || coalesce(m.karton, '?') || ')';
     else
         v_info := jsonb_build_object('teile', jsonb_build_array(jsonb_build_object('id', f.id, 'menge', p_menge)));
@@ -1933,11 +1971,21 @@ begin
                e.lagerplatz, true
         from buchungen e
         where e.typ = 'Eingang' and e.kommentar = 'Inventur-Zugang (Einräumen)' and e.rueckgaengig_gemacht = 0
-          and e.menge > 0;
+          and e.menge > 0
+          -- nur die letzten 90 Tage; nicht die letzten 2 Stunden (die könnten noch per
+          -- Rückgängig zurückgenommen werden - alte Scans haben keine Vorgangs-Kennung)
+          and e.zeitstempel > now() - interval '90 days' and e.zeitstempel < now() - interval '2 hours';
     insert into mengen_abweichungen (zeitstempel, art, artikelnummer, menge, offen, quelle, alt)
         select q.zeit, 'fehlt', b.artikelnummer, b.menge, b.menge, b.lagerplatz, true
         from (select lagerplatz, max(zeitstempel) as zeit from leermeldungen
               where artikelnummer = '—' and hinweis like 'Einräumen Palette%' group by lagerplatz) q
         join bestaende b on b.lagerplatz = q.lagerplatz and b.menge > 0
-        join artikel a on a.artikelnummer = b.artikelnummer and a.unbekannt = 0;
+        join artikel a on a.artikelnummer = b.artikelnummer and a.unbekannt = 0
+        -- nur, wenn seit „Palette fertig" nichts mehr auf diese Quelle gebucht wurde
+        -- (sonst ist es evtl. eine neue Lieferung unter demselben Namen)
+        where q.zeit > now() - interval '90 days'
+          and not exists (select 1 from buchungen n where n.zeitstempel > q.zeit and n.rueckgaengig_gemacht = 0
+                          and ((n.typ in ('Eingang','CSV-Import','Inventur') and n.lagerplatz = q.lagerplatz)
+                               or (n.typ = 'Umlagerung' and n.kommentar like 'MOVE|%'
+                                   and (substr(n.kommentar, 6)::jsonb)->>'nach' = q.lagerplatz)));
 end $$;
