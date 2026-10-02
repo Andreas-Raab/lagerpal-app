@@ -540,7 +540,8 @@ begin
         from (select name as n from lagerplaetze union select lagerplatz from bestaende) x
         where left(n, length(v_praefix)) = v_praefix
           and substr(n, length(v_praefix) + 1) ~ '^[0-9]{1,9}$';
-    v_name := p_palette || '-K' || lpad((v_max + 1)::text, 2, '0');
+    -- mindestens zweistellig, aber ab 100 nicht abschneiden (lpad würde kürzen)
+    v_name := p_palette || '-K' || lpad((v_max + 1)::text, greatest(2, length((v_max + 1)::text)), '0');
     insert into lagerplaetze (name, angelegt, palette, kanal)
         values (v_name, now()::text, p_palette, coalesce(p_kanal,0));
     return jsonb_build_object('ok', true, 'name', v_name, 'palette', p_palette, 'kanal', coalesce(p_kanal,0));
@@ -842,6 +843,8 @@ begin
             raise exception 'Rückgängig nicht möglich — „%" gibt es inzwischen wieder', m_von;
         end if;
         update bestaende     set lagerplatz=m_von where lagerplatz=m_nach;
+        update leermeldungen set gesehen = 1 where gesehen = 0 and lagerplatz = m_von
+            and artikelnummer in (select artikelnummer from leermeldungen where gesehen = 0 and lagerplatz = m_nach);
         update leermeldungen set lagerplatz=m_von where lagerplatz=m_nach;
         update lagerplaetze  set name=m_von       where name=m_nach;
         v_beschr := 'Umbenennung rückgängig: '||m_nach||' → '||m_von;
@@ -871,6 +874,7 @@ begin
         if coalesce((info->>'ziel_neu')::boolean, false)
            and not exists (select 1 from jsonb_object_keys(info->'snap') k where k = m_nach) then
             delete from lagerplaetze where name = m_nach;
+            update leermeldungen set gesehen = 1 where lagerplatz = m_nach and gesehen = 0;
         end if;
         v_beschr := 'Zusammenlegung rückgängig: '||m_nach||' aufgeteilt';
 
@@ -950,6 +954,12 @@ as $$
 declare v_typ text; v_vorgang uuid; v_beschr text; v_teile integer := 1; v_naechste bigint;
 begin
     select typ, vorgang into v_typ, v_vorgang from buchungen where id = p_buchung_id;
+    -- mit dem neuesten offenen Teil des Vorgangs beginnen (sonst zählte ein
+    -- jüngerer Teil als „neuere Buchung" und würde blockieren)
+    if v_vorgang is not null then
+        select coalesce(max(id), p_buchung_id) into p_buchung_id from buchungen
+            where vorgang = v_vorgang and rueckgaengig_gemacht = 0 and id >= p_buchung_id;
+    end if;
     v_beschr := rueckgaengig_eine(p_buchung_id);
     if v_vorgang is not null then
         loop
@@ -1004,6 +1014,9 @@ begin
     end if;
     update bestaende     set lagerplatz=p_neu where lagerplatz=p_alt;
     get diagnostics v_umbenannt = row_count;
+    -- verwaiste offene Meldungen unter dem neuen Namen erledigen (sonst Konflikt mit uq_leer_offen)
+    update leermeldungen set gesehen = 1 where gesehen = 0 and lagerplatz = p_neu
+        and artikelnummer in (select artikelnummer from leermeldungen where gesehen = 0 and lagerplatz = p_alt);
     update leermeldungen set lagerplatz=p_neu where lagerplatz=p_alt;
     update lagerplaetze  set name=p_neu       where name=p_alt;
     insert into buchungen (zeitstempel, typ, artikelnummer, artikelname, gtin, lagerplatz, menge, kommentar)
@@ -1048,6 +1061,15 @@ begin
         insert into bestaende (artikelnummer, lagerplatz, menge) values (r.artnr, p_ziel, r.m)
             on conflict (artikelnummer, lagerplatz) do update set menge = excluded.menge;
     end loop;
+    -- Offene Leermeldungen: Artikel, die am Ziel jetzt Bestand haben, sind erledigt;
+    -- von den übrigen bleibt je Artikel nur eine (sonst Konflikt mit uq_leer_offen)
+    update leermeldungen set gesehen = 1
+        where gesehen = 0 and artikelnummer <> '—' and lagerplatz = any(array_append(v_quellen, p_ziel))
+          and coalesce((v_sum->>artikelnummer)::integer, 0) > 0;
+    update leermeldungen l set gesehen = 1
+        where l.gesehen = 0 and l.artikelnummer <> '—' and l.lagerplatz = any(array_append(v_quellen, p_ziel))
+          and exists (select 1 from leermeldungen k where k.gesehen = 0 and k.artikelnummer = l.artikelnummer
+                      and k.lagerplatz = any(array_append(v_quellen, p_ziel)) and k.id < l.id);
     update leermeldungen set lagerplatz=p_ziel where lagerplatz = any(v_quellen) and lagerplatz <> p_ziel;
     delete from lagerplaetze where name = any(v_quellen) and name <> p_ziel;
     insert into lagerplaetze (name, angelegt, palette, kanal) values (p_ziel, now()::text, '', 0) on conflict (name) do nothing;
@@ -1611,7 +1633,7 @@ begin
         raise exception 'Karton % ist noch leer - kein neuer Karton nötig', v_akt;
     end if;
     v_nr := coalesce(substring(v_akt from '([0-9]+)$')::integer, 0) + 1;
-    v_neu := 'Unbekannt-' || lpad(v_nr::text, 2, '0');
+    v_neu := 'Unbekannt-' || lpad(v_nr::text, greatest(2, length(v_nr::text)), '0');   -- ab 100 nicht abschneiden
     insert into lagerplaetze (name, angelegt, palette, kanal) values (v_neu, now()::text, '', 0)
         on conflict (name) do nothing;
     return jsonb_build_object('ok', true, 'alt', v_akt, 'neu', v_neu);

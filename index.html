@@ -1284,6 +1284,7 @@ async function erSetKarton(name, kanal) {
 
 // Kartons einer Palette für einen Kanal (1 = online, 2 = nicht online), neueste zuerst
 async function erKartonsDerPalette(pal, kanal) {
+  pal = (pal || '').trim();
   const data = await fetchAll('v_lagerplaetze', 'name,palette,kanal,artikel,stueck', { eq: { palette: pal, kanal } });
   const re = new RegExp('^' + pal.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '-K(\\d+)$');
   const nr = n => { const m = (n||'').match(re); return m ? parseInt(m[1]) : -1; };
@@ -1413,7 +1414,7 @@ async function erKartonWechselnOk() {
   if (w.kanal === 'online') erSession.aktivOnline = name; else erSession.aktivOffline = name;
   erSession.wechsel = null;
   erSpeichern();
-  await erInhaltLaden(); erRenderCtx(); erLogRender();
+  await erNachBuchungAktualisieren();
   el('er-scan').focus();
 }
 
@@ -1475,6 +1476,14 @@ function erVerworfenHtml() {
   erVerworfen = false;
   return ZWISCHENSCAN_HINWEIS;
 }
+// Anzeige nach einer ERFOLGREICHEN Buchung auffrischen. Scheitert nur das
+// Nachladen, darf das nicht wie ein Buchungsfehler aussehen (sonst würde der
+// Artikel womöglich ein zweites Mal gescannt) - nur ein Hinweis unten.
+async function erNachBuchungAktualisieren() {
+  try { await erInhaltLaden(); } catch (e) { fehlerToast(e); }
+  if (erSession) { erRenderCtx(); erLogRender(); }
+  refreshUndo();
+}
 // Bei Fehlern den Code zum Korrigieren zurück ins Feld - aber nur, wenn dort nicht
 // schon der nächste Scan steht
 function erFeldZurueck(code) {
@@ -1515,7 +1524,7 @@ async function erScanIntern() {
       erSpeichern();
       plaetzeMerken(d.karton);
       feld.focus();
-      await erInhaltLaden(); erRenderCtx(); erLogRender(); refreshUndo();
+      await erNachBuchungAktualisieren();
       return;
     }
     if (!g) { st.innerHTML='<span class="err">❌ Nicht gefunden: '+esc(code)+'</span>'; erVersteckeFlash(); erFeldZurueck(code); return; }
@@ -1550,8 +1559,7 @@ async function erScanIntern() {
     erSession.stk += menge;
     erSpeichern();
     feld.focus();
-    await erInhaltLaden();
-    erRenderCtx(); erLogRender(); refreshUndo();
+    await erNachBuchungAktualisieren();
   } catch(e) { st.innerHTML='<span class="err">❌ '+esc(buchFehlerText(e))+'</span>'; erFeldZurueck(code); }
 }
 function erKartonSpalte(farbe, titel, ziel) {
@@ -1590,7 +1598,7 @@ async function erKartonVoll(channel) {
   catch (e) { alert('Fehler: ' + (e.message || e)); return; }
   if (channel==='online') erSession.aktivOnline = neu; else erSession.aktivOffline = neu;
   erSpeichern();
-  await erInhaltLaden(); erRenderCtx(); erLogRender(); el('er-scan').focus();
+  await erNachBuchungAktualisieren(); el('er-scan').focus();
 }
 async function erFertig() {
   if (erSession) {
@@ -2661,6 +2669,12 @@ let bestandFile = null;
 let bestandVorab = null;          // bereits geprüfter Dateiinhalt { zeilen, ungueltig }
 let bestandImportLaeuft = false;  // verhindert doppelten Start (Doppelklick auf "Ja, fortfahren")
 function setBestandModus(m) {
+  // Moduswechsel verwirft eine offene Vorschau/Bestätigung - sonst liefe nach
+  // „Teil"-Vorschau mit dem Knopf plötzlich ein Komplett-Import ohne Warnung
+  if (m !== bestandModus && bestandVorab && !bestandImportLaeuft) {
+    el('bimp-result').innerHTML = '<span class="hint">Import-Art geändert – bitte die Datei erneut auswählen.</span>';
+    bestandImportZuruecksetzen();
+  }
   bestandModus = m;
   el('bimp-mode-teil').classList.toggle('active', m === 'teil');
   el('bimp-mode-komplett').classList.toggle('active', m === 'komplett');
@@ -2703,7 +2717,7 @@ async function handleBestandFile(file) {
       <div style="font-weight:700;">⚠️ Komplett-Import: Alle nicht in der Datei enthaltenen Plätze werden auf 0 gesetzt!</div>
       <div style="margin-top:6px;">Die Datei enthält <b>${zeilen.length}</b> Zeilen mit <b>${nArt}</b> Artikeln auf <b>${nLp}</b> Lagerplätzen. Passt das zu deinem Gesamtbestand?</div>
       <div class="row" style="margin-top:10px;">
-        <button style="background:#9b2c2c;" onclick="bestandImportieren()">Ja, fortfahren</button>
+        <button style="background:#9b2c2c;" onclick="bestandImportieren('komplett')">Ja, fortfahren</button>
         <button class="sec" onclick="el('bimp-result').innerHTML='';bestandImportZuruecksetzen()">Abbrechen</button>
       </div></div>`;
     return;
@@ -2738,12 +2752,13 @@ async function bestandTeilVorschau() {
     ${zeilen.length > bsp.length ? `<div class="hint">… und ${zeilen.length - bsp.length} weitere Zeilen</div>` : ''}
     <div class="hint" style="margin-top:6px;">Der Import lässt sich nicht per Rückgängig zurücknehmen.</div>
     <div class="row" style="margin-top:10px;">
-      <button onclick="bestandImportieren()">Import ausführen</button>
+      <button onclick="bestandImportieren('teil')">Import ausführen</button>
       <button class="sec" onclick="el('bimp-result').innerHTML='';bestandImportZuruecksetzen()">Abbrechen</button>
     </div></div>`;
 }
-async function bestandImportieren() {
+async function bestandImportieren(modus) {
   if (!bestandFile || !bestandVorab || bestandImportLaeuft) return;
+  if (modus && modus !== bestandModus) return;   // Vorschau gehört zu einer anderen Import-Art
   bestandImportLaeuft = true;
   const rd = el('bimp-result');
   rd.innerHTML = '<span class="hint">⏳ Wird importiert…</span>';
@@ -3118,7 +3133,9 @@ function ptClass(t) {
     :t==='Artikel gelöscht'?'pt-art'
     :(t==='Lagerplatz angelegt'||t==='Lagerplatz gelöscht'||t==='Umbenennung'||t==='Zusammenlegung')?'pt-lp':'pt-csv';
 }
+let protoLadeSeq = 0;   // verwirft Antworten älterer Suchanfragen
 async function protokollLaden() {
+  const seq = ++protoLadeSeq;
   const box = el('protokoll-body'); box.textContent = 'Wird geladen…';
   let q = client.from('buchungen')
     .select('zeitstempel,typ,artikelnummer,artikelname,gtin,lagerplatz,menge,bestand_lp_vorher,bestand_lp_nachher,bestand_gesamt_vorher,bestand_gesamt_nachher,kommentar')
@@ -3137,7 +3154,8 @@ async function protokollLaden() {
   if (von) q = q.gte('zeitstempel', tagesbeginnIso(von));
   if (bis) q = q.lt('zeitstempel', tagesbeginnIso(bis, 1));
   const { data, error } = await q;
-  if (error) { box.innerHTML = '<span class="err">Fehler: ' + esc(error.message) + '</span>'; return; }
+  if (seq !== protoLadeSeq) return;
+  if (error) { box.innerHTML = '<span class="err">Fehler: ' + esc(buchFehlerText(error)) + '</span>'; return; }
   allProt = data || [];
   renderProtokoll();
 }

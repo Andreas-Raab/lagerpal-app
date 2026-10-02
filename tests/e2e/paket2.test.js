@@ -98,5 +98,39 @@ const { sql, menge, gleich, scanne, test, ende } = require('./hilfe');
     gleich(sql("select palette||'/'||kanal from lagerplaetze where name='P09-K01'"), 'P09/1', 'Palette/Kanal');
   });
 
+  await test('Review 3: Moduswechsel nach Teil-Vorschau startet keinen Komplett-Import', async page => {
+    const datei = '/var/tmp/lp-e2e/teil2.csv';
+    fs.writeFileSync(datei, 'Artikelnummer;Lagerplatz;Bestand\nA1;Regal 3;20\n');
+    await page.click('button[data-t="import"]');
+    await page.setInputFiles('#bimp-file', datei);
+    await page.waitForSelector('#bimp-result button:has-text("Import ausführen")');
+    await page.click('#bimp-mode-komplett');
+    if (await page.isVisible('#bimp-result button:has-text("Import ausführen")')) {
+      await page.click('#bimp-result button:has-text("Import ausführen")');
+      await page.waitForTimeout(800);
+    }
+    gleich(menge('A1', 'Regal 4'), 5, 'Regal 4 (nicht in der Datei) unverändert');
+    gleich(menge('A1', 'Regal 3'), 12, 'Regal 3 unverändert');
+  });
+
+  await test('Review 2: Nachladefehler nach erfolgreichem Einräum-Scan erscheint nicht als Buchungsfehler', async page => {
+    await page.click('button[data-t="einraeumen"]');
+    await page.waitForSelector('#er-quelle option[value="QUELLE-1"]', { state: 'attached' });
+    await page.selectOption('#er-quelle', 'QUELLE-1');
+    await page.selectOption('#er-palette', 'P01');
+    await page.waitForSelector('#er-karton-wahl', { state: 'visible' });
+    await page.click('button:has-text("Starten")');
+    await page.waitForSelector('#er-run', { state: 'visible' });
+    await page.route(/bestaende\?select=lagerplatz%2Cartikelnummer/, r => r.abort());
+    await scanne(page, '#er-scan', '4000000000024');
+    await page.waitForTimeout(1500);
+    gleich(menge('A2', 'P01-K02'), 1, 'gebucht');
+    const st = await page.textContent('#er-status');
+    if (/❌/.test(st)) throw new Error('als Fehler angezeigt: ' + st);
+    gleich(await page.inputValue('#er-scan'), '', 'Scanfeld (Code darf nicht zurückgelegt werden)');
+    // supabase-js wiederholt Lesezugriffe bei Netzfehlern einige Male, daher etwas warten
+    await page.waitForSelector('#fehler-toast', { state: 'visible', timeout: 15000 });
+  });
+
   ende();
 })();

@@ -18,6 +18,7 @@
 --  • Sammel-Ausbuchen sperrt die Zeilen (protokollierte = ausgebuchte Menge)
 --  • Rückgängig: keine GTIN-Sperre mehr; Palette/Kanal nach Zusammenlegen/Löschen
 --    wieder da; verständliche Meldung bei Umbenennung
+--  • Kartonnummern (auch Unbekannt-NN) ab 100 nicht mehr abgeschnitten
 --  • Setup-Skript wiederholbar (betrifft nur 00_KOMPLETT…)
 -- ═══════════════════════════════════════════════════════════════════════
 
@@ -312,7 +313,8 @@ begin
         from (select name as n from lagerplaetze union select lagerplatz from bestaende) x
         where left(n, length(v_praefix)) = v_praefix
           and substr(n, length(v_praefix) + 1) ~ '^[0-9]{1,9}$';
-    v_name := p_palette || '-K' || lpad((v_max + 1)::text, 2, '0');
+    -- mindestens zweistellig, aber ab 100 nicht abschneiden (lpad würde kürzen)
+    v_name := p_palette || '-K' || lpad((v_max + 1)::text, greatest(2, length((v_max + 1)::text)), '0');
     insert into lagerplaetze (name, angelegt, palette, kanal)
         values (v_name, now()::text, p_palette, coalesce(p_kanal,0));
     return jsonb_build_object('ok', true, 'name', v_name, 'palette', p_palette, 'kanal', coalesce(p_kanal,0));
@@ -476,6 +478,8 @@ begin
             raise exception 'Rückgängig nicht möglich — „%" gibt es inzwischen wieder', m_von;
         end if;
         update bestaende     set lagerplatz=m_von where lagerplatz=m_nach;
+        update leermeldungen set gesehen = 1 where gesehen = 0 and lagerplatz = m_von
+            and artikelnummer in (select artikelnummer from leermeldungen where gesehen = 0 and lagerplatz = m_nach);
         update leermeldungen set lagerplatz=m_von where lagerplatz=m_nach;
         update lagerplaetze  set name=m_von       where name=m_nach;
         v_beschr := 'Umbenennung rückgängig: '||m_nach||' → '||m_von;
@@ -505,6 +509,7 @@ begin
         if coalesce((info->>'ziel_neu')::boolean, false)
            and not exists (select 1 from jsonb_object_keys(info->'snap') k where k = m_nach) then
             delete from lagerplaetze where name = m_nach;
+            update leermeldungen set gesehen = 1 where lagerplatz = m_nach and gesehen = 0;
         end if;
         v_beschr := 'Zusammenlegung rückgängig: '||m_nach||' aufgeteilt';
 
@@ -581,6 +586,12 @@ as $$
 declare v_typ text; v_vorgang uuid; v_beschr text; v_teile integer := 1; v_naechste bigint;
 begin
     select typ, vorgang into v_typ, v_vorgang from buchungen where id = p_buchung_id;
+    -- mit dem neuesten offenen Teil des Vorgangs beginnen (sonst zählte ein
+    -- jüngerer Teil als „neuere Buchung" und würde blockieren)
+    if v_vorgang is not null then
+        select coalesce(max(id), p_buchung_id) into p_buchung_id from buchungen
+            where vorgang = v_vorgang and rueckgaengig_gemacht = 0 and id >= p_buchung_id;
+    end if;
     v_beschr := rueckgaengig_eine(p_buchung_id);
     if v_vorgang is not null then
         loop
@@ -601,6 +612,35 @@ end;
 $$;
 revoke all on function rueckgaengig(bigint) from anon, public;
 grant execute on function rueckgaengig(bigint) to authenticated;
+
+
+create or replace function lagerplatz_umbenennen(p_alt text, p_neu text)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_umbenannt integer;
+begin
+    p_alt := trim(p_alt); p_neu := trim(p_neu);
+    if p_alt = '' or p_neu = '' then raise exception 'Alter und neuer Name sind Pflicht'; end if;
+    if p_alt = p_neu then raise exception 'Alter und neuer Name sind identisch'; end if;
+    if not (exists (select 1 from bestaende where lagerplatz=p_alt) or exists (select 1 from lagerplaetze where name=p_alt)) then
+        raise exception 'Lagerplatz „%" nicht gefunden', p_alt;
+    end if;
+    if exists (select 1 from bestaende where lagerplatz=p_neu) or exists (select 1 from lagerplaetze where name=p_neu) then
+        raise exception 'Lagerplatz „%" existiert bereits. Zum Zusammenführen bitte „Zusammenlegen" verwenden.', p_neu;
+    end if;
+    update bestaende     set lagerplatz=p_neu where lagerplatz=p_alt;
+    get diagnostics v_umbenannt = row_count;
+    -- verwaiste offene Meldungen unter dem neuen Namen erledigen (sonst Konflikt mit uq_leer_offen)
+    update leermeldungen set gesehen = 1 where gesehen = 0 and lagerplatz = p_neu
+        and artikelnummer in (select artikelnummer from leermeldungen where gesehen = 0 and lagerplatz = p_alt);
+    update leermeldungen set lagerplatz=p_neu where lagerplatz=p_alt;
+    update lagerplaetze  set name=p_neu       where name=p_alt;
+    insert into buchungen (zeitstempel, typ, artikelnummer, artikelname, gtin, lagerplatz, menge, kommentar)
+        values (now(), 'Umbenennung', '—', '', '', p_alt||' → '||p_neu, v_umbenannt,
+                'RENAME|'||json_build_object('alt',p_alt,'neu',p_neu)::text);
+    return jsonb_build_object('ok', true, 'umbenannt', v_umbenannt);
+end; $$;
+revoke all on function lagerplatz_umbenennen(text,text) from anon, public;
+grant execute on function lagerplatz_umbenennen(text,text) to authenticated;
 
 
 create or replace function lagerplatz_zusammenlegen(p_quellen jsonb, p_ziel text)
@@ -636,6 +676,15 @@ begin
         insert into bestaende (artikelnummer, lagerplatz, menge) values (r.artnr, p_ziel, r.m)
             on conflict (artikelnummer, lagerplatz) do update set menge = excluded.menge;
     end loop;
+    -- Offene Leermeldungen: Artikel, die am Ziel jetzt Bestand haben, sind erledigt;
+    -- von den übrigen bleibt je Artikel nur eine (sonst Konflikt mit uq_leer_offen)
+    update leermeldungen set gesehen = 1
+        where gesehen = 0 and artikelnummer <> '—' and lagerplatz = any(array_append(v_quellen, p_ziel))
+          and coalesce((v_sum->>artikelnummer)::integer, 0) > 0;
+    update leermeldungen l set gesehen = 1
+        where l.gesehen = 0 and l.artikelnummer <> '—' and l.lagerplatz = any(array_append(v_quellen, p_ziel))
+          and exists (select 1 from leermeldungen k where k.gesehen = 0 and k.artikelnummer = l.artikelnummer
+                      and k.lagerplatz = any(array_append(v_quellen, p_ziel)) and k.id < l.id);
     update leermeldungen set lagerplatz=p_ziel where lagerplatz = any(v_quellen) and lagerplatz <> p_ziel;
     delete from lagerplaetze where name = any(v_quellen) and name <> p_ziel;
     insert into lagerplaetze (name, angelegt, palette, kanal) values (p_ziel, now()::text, '', 0) on conflict (name) do nothing;
@@ -1011,6 +1060,26 @@ begin
 end; $$;
 revoke all on function backup_wiederherstellen(jsonb) from anon, public;
 grant execute on function backup_wiederherstellen(jsonb) to authenticated;
+
+
+create or replace function unbekannt_karton_naechster()
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_akt text; v_nr integer; v_neu text;
+begin
+    perform pg_advisory_xact_lock(hashtext('lagerpal_unbekannt'));
+    v_akt := unbekannt_karton_aktuell();
+    -- Doppelklick-Schutz: aus einem leeren Karton wird kein weiterer gemacht
+    if v_akt is not null and not exists (select 1 from bestaende where lagerplatz = v_akt and menge > 0) then
+        raise exception 'Karton % ist noch leer - kein neuer Karton nötig', v_akt;
+    end if;
+    v_nr := coalesce(substring(v_akt from '([0-9]+)$')::integer, 0) + 1;
+    v_neu := 'Unbekannt-' || lpad(v_nr::text, greatest(2, length(v_nr::text)), '0');   -- ab 100 nicht abschneiden
+    insert into lagerplaetze (name, angelegt, palette, kanal) values (v_neu, now()::text, '', 0)
+        on conflict (name) do nothing;
+    return jsonb_build_object('ok', true, 'alt', v_akt, 'neu', v_neu);
+end; $$;
+revoke all on function unbekannt_karton_naechster() from anon, public;
+grant execute on function unbekannt_karton_naechster() to authenticated;
 
 
 commit;

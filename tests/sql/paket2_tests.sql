@@ -129,3 +129,37 @@ do $$ declare r jsonb; v uuid := gen_random_uuid(); begin
   assert (select count(*) from leermeldungen where gesehen = 0) = 1;
   raise notice 'OK: Backup einspielen (vorgang, doppelte Meldungen)';
 end $$;
+
+-- frische Testdaten (der Backup-Test oben hat alles ersetzt)
+truncate buchungen, leermeldungen, bestaende, lagerplaetze, artikel restart identity cascade;
+\ir 01_testdaten.sql
+
+-- Review 1: Zusammenlegen, wenn derselbe Artikel auf zwei Quellen eine offene Leermeldung hat
+do $$ begin
+  perform buchen('A3','Regal-1','aus',7,'');      -- leer → Meldung
+  perform buchen('A3','Regal 1','aus',3,'');      -- leer → Meldung
+  perform lagerplatz_zusammenlegen('["Regal-1","Regal 1"]'::jsonb, 'Regal-Z');
+  assert (select count(*) from leermeldungen where gesehen=0 and artikelnummer='A3') = 1, 'genau eine offene Meldung erwartet';
+  perform buchen('A1','Regal 4','aus',5,'');      -- Meldung für A1 auf Regal 4
+  perform buchen('A1','Regal 3','ein',1,'');
+  perform lagerplatz_zusammenlegen('["Regal 4","Regal 3"]'::jsonb, 'Regal 3');
+  assert not exists (select 1 from leermeldungen where gesehen=0 and artikelnummer='A1'), 'A1 hat Bestand am Ziel → keine Meldung';
+  raise notice 'OK: Zusammenlegen mit offenen Meldungen auf mehreren Quellen';
+end $$;
+
+-- Review 1: Umbenennen auf einen Namen mit verwaister offener Meldung
+do $$ begin
+  insert into leermeldungen (zeitstempel, artikelnummer, lagerplatz, gesehen, hinweis) values (now(),'A2','Ganz-Neu',0,'');
+  perform buchen('A2','QUELLE-1','aus',10,'');    -- Meldung A2 auf QUELLE-1
+  perform lagerplatz_umbenennen('QUELLE-1','Ganz-Neu');
+  assert (select count(*) from leermeldungen where gesehen=0 and artikelnummer='A2' and lagerplatz='Ganz-Neu') = 1;
+  raise notice 'OK: Umbenennen trotz verwaister Meldung';
+end $$;
+
+-- Review 4: Kartonnummern ab 100
+do $$ declare r jsonb; begin
+  insert into lagerplaetze (name, palette, kanal) values ('P50-K99','P50',1);
+  r := karton_neu('P50', 1); assert r->>'name' = 'P50-K100', 'erwartet P50-K100, ist ' || (r->>'name');
+  r := karton_neu('P50', 1); assert r->>'name' = 'P50-K101', 'erwartet P50-K101, ist ' || (r->>'name');
+  raise notice 'OK: Kartonnummern ab 100';
+end $$;

@@ -15,7 +15,7 @@ Die **alte** App läuft mit der aktualisierten Datenbank unverändert weiter. De
    Erwartet: unten erscheinen zwei Zeilen `karton_neu` und `rueckgaengig_eine`.
    Kommt eine Fehlermeldung: nichts weiter tun, mir den Text schicken. Das Skript läuft in einer Transaktion, bei einem Fehler wird **nichts** geändert.
 3. Kontrolle: Inhalt von `tests/sql/fingerabdruck.sql` im SQL-Editor ausführen.
-   Erwartet: **`76b4e7daca091e8b7f52d67079fcb6f6`**. Das ist exakt der Stand, gegen den ich getestet habe.
+   Erwartet: **`161794c13931dbd15bdc14cea7cb3a8c`**. Das ist exakt der Stand, gegen den ich getestet habe.
 
 ## B. App testen
 
@@ -53,7 +53,7 @@ Neue `index.html` herunterladen wie bei Paket 1 und mit dem **Testsystem** verbi
 ## Später: Live schalten (Paket 1 + 2 zusammen)
 
 1. Abends, wenn niemand bucht: in der App **„Sicherung jetzt“** (Import/Export).
-2. `supabase/updates/2026-10_paket2.sql` im **echten** System im SQL-Editor ausführen. Danach den Fingerabdruck prüfen, er muss wieder `76b4e7da…` sein.
+2. `supabase/updates/2026-10_paket2.sql` im **echten** System im SQL-Editor ausführen. Danach den Fingerabdruck prüfen, er muss wieder `161794c1…` sein.
 3. Pull Request mergen → nach 1–2 Minuten haben alle Geräte die neue App (einmal neu laden).
 
 **Zurück, falls nötig:** Pull Request „Revert“ genügt. Das Datenbank-Update darf bleiben, die alte App läuft damit.
