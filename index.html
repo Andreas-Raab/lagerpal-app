@@ -594,6 +594,21 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { scanFrageOffen.fertig(false); return; }
   if (e.key === 'Enter' || (e.key || '').length === 1) scanFrageOffen.gescannt = true;
 }, true);
+// ── Fehler nie still verschlucken ──────────────────────────────────────────
+// Lesefehler (Netz weg, Anmeldung abgelaufen) wurden früher wie „keine Daten"
+// behandelt: leere Listen, „nicht gefunden", Karton-Blatt „(leer)". Jetzt werfen
+// die Lesefunktionen; was nicht direkt abgefangen wird, landet hier als Hinweis.
+function fehlerToast(e) {
+  const box = el('fehler-toast');
+  if (!box) return;
+  el('fehler-toast-text').textContent = 'Verbindungs- oder Ladefehler: ' + buchFehlerText(e) + ' – bitte erneut versuchen.';
+  box.style.display = 'flex';
+  clearTimeout(fehlerToast.t);
+  fehlerToast.t = setTimeout(() => { box.style.display = 'none'; }, 12000);
+}
+window.addEventListener('unhandledrejection', ev => { fehlerToast(ev.reason); });
+// Supabase-Antwort auswerten: bei Fehler werfen statt leer weiterzumachen
+function daten(r) { if (r.error) throw r.error; return r.data; }
 const SCAN_VERWORFEN_HINWEIS = '<div class="ss-block" style="margin-top:6px;">⛔ Während der Rückfrage wurde gescannt – dieser Artikel wurde <b>nicht</b> gebucht. Bitte noch einmal scannen.</div>';
 
 function verbinden() {
@@ -640,10 +655,11 @@ async function zeigeApp(email) {
   el('glocke').style.display = 'inline-block';
   el('hdr-logout').style.display = 'inline-block';
   el('main-container').classList.add('wide'); // Suche ist der Standard-Tab beim Start
-  await ladeAllePlaetze();
-  ladeSucheDaten();
+  // Glocke/Rückgängig zuerst starten - sie sollen auch laufen, wenn das erste Laden scheitert
   refreshLeer(); refreshUndo();
   if (!refreshTimer) refreshTimer = setInterval(() => { refreshLeer(); refreshUndo(); }, 15000);
+  try { await ladeAllePlaetze(); } catch (e) { fehlerToast(e); }
+  ladeSucheDaten().catch(() => {});
   el('suche').focus();
 }
 
@@ -742,7 +758,7 @@ function plaetzeMerken(...namen) {
 }
 // Plätze, auf denen ein Artikel aktuell liegt (Bestand > 0)
 async function artikelPlaetze(artnr) {
-  const { data } = await client.from('bestaende').select('lagerplatz,menge').eq('artikelnummer', artnr).gt('menge', 0);
+  const data = daten(await client.from('bestaende').select('lagerplatz,menge').eq('artikelnummer', artnr).gt('menge', 0));
   return (data || []).sort((a,b) => a.lagerplatz.localeCompare(b.lagerplatz));
 }
 function escAttr(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
@@ -786,6 +802,12 @@ async function ladeSucheDaten(still) {
       fetchAll('bestaende', 'artikelnummer,lagerplatz,menge'),   // auch 0-Mengen (frühere Lagerorte)
       fetchAll('v_lagerplaetze', 'name,palette')
     ]);
+  } catch (e) {
+    if (seq === sucheLadeSeq && box && !still)
+      box.innerHTML = '<span class="err">❌ Daten konnten nicht geladen werden: ' + esc(buchFehlerText(e))
+        + '</span> <a href="#" onclick="ladeSucheDaten();return false;">Erneut laden</a>';
+    else if (seq === sucheLadeSeq) fehlerToast(e);
+    return;
   } finally { if (sucheLaedtSeq === seq) sucheLaedtSeq = 0; }
   // Eine spätere Ladeanfrage war schneller fertig → diese (ältere) Antwort verwerfen
   if (seq !== sucheLadeSeq) return;
@@ -940,7 +962,7 @@ async function sucheSammelAusbuchen() {
   const liste = arr.slice(0, 15).map(nr => '• ' + name(nr) + (versteckt.includes(nr) ? '  (ausgeblendet!)' : '')).join('\n')
     + (arr.length > 15 ? `\n… und ${arr.length - 15} weitere` : '');
   const warnung = versteckt.length ? `\n\n⚠️ ${versteckt.length} davon sind durch die aktuelle Suche/Filterung gerade NICHT sichtbar.` : '';
-  if (!confirm(`${arr.length} Artikel komplett ausbuchen?\n\n${liste}${warnung}\n\nDer gesamte Bestand dieser Artikel wird auf ALLEN Lagerplätzen auf 0 gesetzt.\nDas ist nicht mit einem Klick rückgängig zu machen (nur einzeln über das Protokoll) — am besten vorher „Sicherung jetzt" im Import/Export-Tab.`)) return;
+  if (!confirm(`${arr.length} Artikel komplett ausbuchen?\n\n${liste}${warnung}\n\nDer gesamte Bestand dieser Artikel wird auf ALLEN Lagerplätzen auf 0 gesetzt.\nRückgängig: über die Leiste unten als Ganzes, solange danach nichts anderes gebucht wurde.`)) return;
   const { data, error } = await client.rpc('sammel_ausbuchen', { p_artikelnummern: arr });
   if (error) { alert('Fehler: ' + error.message); return; }
   alert(`Komplett ausgebucht: ${data.artikel} Artikel · ${data.stueck} Stück (${data.plaetze} Plätze)`);
@@ -1180,7 +1202,8 @@ async function initEinraeumen() {
     el('er-setup').style.display = 'none';
     el('er-resume').style.display = 'none';
     el('er-run').style.display = 'block';
-    await erInhaltLaden(); erRenderCtx(); erLogRender();
+    try { await erInhaltLaden(); } catch (e) { fehlerToast(e); }
+    erRenderCtx(); erLogRender();
     setTimeout(() => el('er-scan').focus(), 50);
     return;
   }
@@ -1191,14 +1214,20 @@ async function initEinraeumen() {
   erVersteckeFlash();
   el('er-log').textContent = 'Noch nichts eingeräumt.';
   // Paletten aus der verwaltbaren Liste (Tab „Lagerplätze" → „Paletten verwalten")
-  {
-    const { data: palRows } = await client.from('paletten').select('name').order('name', { ascending: true });
-    el('er-palette').innerHTML = '<option value="">— Palette wählen —</option>'
-      + (palRows || []).map(x => `<option value="${escAttr(x.name)}">${esc(x.name)}</option>`).join('');
+  let palRows, data;
+  try {
+    [palRows, data] = await Promise.all([
+      fetchAll('paletten', 'name', { order: { col: 'name', asc: true } }),
+      // Quelle = Plätze mit Bestand (geblättert - mehr als 1000 Plätze möglich)
+      fetchAll('v_lagerplaetze', 'name,artikel,stueck', { build: q => q.gt('stueck', 0) }),
+      ladeAllePlaetze()
+    ]);
+  } catch (e) {
+    el('er-status').innerHTML = '<span class="err">❌ Daten konnten nicht geladen werden: ' + esc(buchFehlerText(e)) + '</span> <a href="#" onclick="initEinraeumen();return false;">Erneut laden</a>';
+    return;
   }
-  // Quelle = Plätze mit Bestand
-  await ladeAllePlaetze();
-  const { data } = await client.from('v_lagerplaetze').select('name,artikel,stueck').gt('stueck',0);
+  el('er-palette').innerHTML = '<option value="">— Palette wählen —</option>'
+    + (palRows || []).map(x => `<option value="${escAttr(x.name)}">${esc(x.name)}</option>`).join('');
   const q = (data||[]).sort((a,b)=>a.name.localeCompare(b.name));
   el('er-quelle').innerHTML = '<option value="">— Quelle wählen —</option>'
     + q.map(x=>`<option value="${escAttr(x.name)}">${esc(x.name)} (${x.artikel} SKUs / ${x.stueck} Stk)</option>`).join('');
@@ -1255,8 +1284,7 @@ async function erSetKarton(name, kanal) {
 
 // Kartons einer Palette für einen Kanal (1 = online, 2 = nicht online), neueste zuerst
 async function erKartonsDerPalette(pal, kanal) {
-  const { data } = await client.from('v_lagerplaetze').select('name,palette,kanal,artikel,stueck')
-    .eq('palette', pal).eq('kanal', kanal);
+  const data = await fetchAll('v_lagerplaetze', 'name,palette,kanal,artikel,stueck', { eq: { palette: pal, kanal } });
   const re = new RegExp('^' + pal.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '-K(\\d+)$');
   const nr = n => { const m = (n||'').match(re); return m ? parseInt(m[1]) : -1; };
   return (data || []).sort((a, b) => (nr(b.name) - nr(a.name)) || a.name.localeCompare(b.name));
@@ -1281,14 +1309,23 @@ async function erPaletteGewaehlt() {
   el('er-karton-off').value = leerOff ? leerOff.name : '__neu__';
   box.style.display = 'block';
 }
-// Legt den nächsten freien Karton der Palette an und gibt den Namen zurück
+// Legt den nächsten freien Karton der Palette an und gibt den Namen zurück.
+// Die Nummer vergibt die Datenbank (karton_neu, unter Sperre) - zwei Geräte
+// bekommen so nie denselben Karton.
 async function erNeuerKarton(kanal) {
-  await ladeAllePlaetze();
-  erSession.counter = Math.max(erSession.counter || 0, erNaechsteNummer(erSession.pal)) + 1;
-  const name = erKartonName(erSession.pal, erSession.counter);
-  const { error } = await erSetKarton(name, kanal);
+  const { data, error } = await client.rpc('karton_neu', { p_palette: erSession.pal, p_kanal: kanal });
+  if (error && /karton_neu/.test(error.message || '') && /(find|exist|schema cache)/i.test(error.message || '')) {
+    // Datenbank-Update (Paket 2) noch nicht eingespielt → bisheriger Weg
+    await ladeAllePlaetze();
+    erSession.counter = Math.max(erSession.counter || 0, erNaechsteNummer(erSession.pal)) + 1;
+    const name = erKartonName(erSession.pal, erSession.counter);
+    const r = await erSetKarton(name, kanal);
+    if (r.error) throw r.error;
+    return name;
+  }
   if (error) throw error;
-  return name;
+  plaetzeMerken(data.name);
+  return data.name;
 }
 
 async function erStart() {
@@ -1312,7 +1349,7 @@ async function erLaufAnzeigen() {
   el('er-setup').style.display = 'none';
   el('er-run').style.display = 'block';
   el('er-status').innerHTML = '';
-  await erInhaltLaden();
+  try { await erInhaltLaden(); } catch (e) { fehlerToast(e); }
   erRenderCtx(); erLogRender();
   setTimeout(()=>el('er-scan').focus(), 50);
 }
@@ -1323,8 +1360,8 @@ async function erInhaltLaden() {
   if (!erSession) return;
   await unbAktuellLaden();
   const namen = [erSession.aktivOnline, erSession.aktivOffline].concat(unbKarton ? [unbKarton] : []);
-  const { data } = await client.from('bestaende')
-    .select('lagerplatz,artikelnummer,menge,artikel(artikelname,gtin)').in('lagerplatz', namen).gt('menge', 0);
+  const data = daten(await client.from('bestaende')
+    .select('lagerplatz,artikelnummer,menge,artikel(artikelname,gtin)').in('lagerplatz', namen).gt('menge', 0));
   const inhalt = {}; namen.forEach(n => inhalt[n] = []);
   (data || []).forEach(r => (inhalt[r.lagerplatz] = inhalt[r.lagerplatz] || []).push({
     artnr: r.artikelnummer, name: (r.artikel && r.artikel.artikelname) || '', gtin: (r.artikel && r.artikel.gtin) || '', menge: r.menge }));
@@ -1381,7 +1418,7 @@ async function erKartonWechselnOk() {
 }
 
 async function erBestandAuf(artnr, lp) {
-  const { data } = await client.from('bestaende').select('menge').eq('artikelnummer',artnr).eq('lagerplatz',lp).limit(1);
+  const data = daten(await client.from('bestaende').select('menge').eq('artikelnummer',artnr).eq('lagerplatz',lp).limit(1));
   return (data && data.length) ? data[0].menge : 0;
 }
 // Sprachansage (Web Speech API) — an/aus über die Checkbox #er-voice
@@ -1580,7 +1617,12 @@ async function erFertig() {
     const volle = kartons.filter(nm => erKartonStueck(nm) > 0);
     if (w) await kartonBlattDrucken(volle, w);
     else if (volle.length) await kartonBlattDrucken(volle);   // nur falls ein anderes Gerät inzwischen befüllt hat
-    await client.rpc('einraeumen_rest_melden', { p_quelle: erSession.quelle, p_palette: erSession.pal });
+    const { error } = await client.rpc('einraeumen_rest_melden', { p_quelle: erSession.quelle, p_palette: erSession.pal });
+    if (error) {
+      alert('Die Restmeldung für die Quelle konnte nicht gespeichert werden: ' + buchFehlerText(error)
+        + '\n\nDie Sortierung bleibt offen – bitte gleich noch einmal auf „Palette fertig" tippen.');
+      return;
+    }
   }
   erSession = null;
   erSpeichern();   // gemerkte Sortierung löschen
@@ -2038,7 +2080,9 @@ async function umlagernArtikelGeladen() {
     + allePlaetze.map(p => `<option value="${escAttr(p)}">${esc(p)}</option>`).join('')
     + '<option value="__neu__">＋ neuer Lagerplatz…</option>';
   if (!eingabe) { vsel.innerHTML = '<option value="">— erst Artikel eingeben —</option>'; el('u-artikel').textContent = ''; return; }
-  const g = await resolveArtikel(eingabe);
+  let g;
+  try { g = await resolveArtikel(eingabe); }
+  catch (e) { el('u-artikel').innerHTML = '<span class="err">Ladefehler: ' + esc(buchFehlerText(e)) + '</span>'; vsel.innerHTML = '<option value="">—</option>'; return; }
   if (!g)          { el('u-artikel').innerHTML = '<span class="err">Artikel nicht gefunden</span>'; vsel.innerHTML = '<option value="">—</option>'; return; }
   if (g.mehrdeutig){ el('u-artikel').innerHTML = '<span class="err">EAN mehrdeutig – Artikelnummer eingeben</span>'; vsel.innerHTML = '<option value="">—</option>'; return; }
   el('u-artikel').textContent = g.name || g.artnr;
@@ -2052,6 +2096,7 @@ async function umlagern() {
   return einmalig('umlagern', async () => {
     el('u-btn').disabled = true;
     try { await umlagernIntern(); }
+    catch (e) { el('u-status').innerHTML = '<span class="err">Fehler: ' + esc(buchFehlerText(e)) + '</span>'; }
     finally { setTimeout(() => { el('u-btn').disabled = false; }, DOPPELKLICK_SPERRE_MS); }
   }, DOPPELKLICK_SPERRE_MS);
 }
@@ -2082,9 +2127,13 @@ async function resolveArtikel(code) {
   // select('*') statt fester Spaltenliste: liefert „unbekannt" mit, sobald die
   // Spalte existiert (Migration 19), und läuft auch vorher noch fehlerfrei.
   const conv = a => ({ artnr: a.artikelnummer, name: a.artikelname, gtin: a.gtin||'', online: a.online, istSet: !!a.ist_set, unbekannt: a.unbekannt === 1 });
+  // Lesefehler werfen - sonst hieße ein Netzaussetzer „nicht gefunden" (und beim
+  // Einbuchen würde ein Platzhalter für einen bekannten Artikel versucht)
   let r1 = await client.from('artikel').select('*').eq('artikelnummer', code).limit(1);
+  daten(r1);
   if (r1.data && r1.data.length) return conv(r1.data[0]);
   let r2 = await client.from('artikel').select('*').eq('gtin', code);
+  daten(r2);
   if (r2.data && r2.data.length === 1) return conv(r2.data[0]);
   if (r2.data && r2.data.length > 1)  return { mehrdeutig: r2.data };
   return null;
@@ -2359,6 +2408,7 @@ async function ssScan() {
   }
   ssLaeuft = true;
   try { await ssScanIntern(); }
+  catch (e) { ssStatus('❌ ' + esc(buchFehlerText(e)) + ' – bitte noch einmal scannen.', 'err'); ssWarnen('Fehler, bitte nochmal scannen'); }
   finally {
     ssLaeuft = false;
     el('ss-status').insertAdjacentHTML('beforeend', ssVerworfenHtml());
@@ -2447,8 +2497,9 @@ const kartonKanalBadge = k => k===1 ? '<span class="badge b-on">online</span>'
 async function kartonsLaden() {
   const grid = el('kartons-grid'); grid.textContent = 'Wird geladen…';
   el('kartons-detail').innerHTML = '';
-  const { data, error } = await client.from('v_lagerplaetze').select('*');
-  if (error) { grid.innerHTML = '<span class="err">Fehler: ' + esc(error.message) + '</span>'; return; }
+  let data;
+  try { data = await fetchAll('v_lagerplaetze', '*'); }
+  catch (error) { grid.innerHTML = '<span class="err">Fehler: ' + esc(buchFehlerText(error)) + '</span>'; return; }
   vlpCache = data || [];
   lpFillSelects();
   palettenFuellen();
@@ -2657,7 +2708,39 @@ async function handleBestandFile(file) {
       </div></div>`;
     return;
   }
-  await bestandImportieren();
+  // Teil-Import: erst Vorschau zeigen - vorher wurde schon beim Auswählen der
+  // Datei geschrieben (z. B. versehentlich eine alte Exportdatei)
+  await bestandTeilVorschau();
+}
+async function bestandTeilVorschau() {
+  const rd = el('bimp-result');
+  const { zeilen, ungueltig } = bestandVorab;
+  const nArt = new Set(zeilen.map(z => z.artikelnummer)).size;
+  const nLp = new Set(zeilen.map(z => z.lagerplatz).filter(Boolean)).size;
+  // Beispiele mit aktuellem Bestand (vorher → nachher) für die ersten Zeilen
+  const bsp = zeilen.slice(0, 8);
+  let aktuell = {};
+  try {
+    const arts = [...new Set(bsp.map(z => z.artikelnummer))];
+    const data = arts.length ? daten(await client.from('bestaende').select('artikelnummer,lagerplatz,menge').in('artikelnummer', arts)) : [];
+    data.forEach(b => { aktuell[b.artikelnummer + '|' + b.lagerplatz] = b.menge; });
+  } catch (e) { aktuell = null; }
+  const zeile = z => {
+    const vorher = aktuell ? (aktuell[z.artikelnummer + '|' + z.lagerplatz] ?? 0) : '?';
+    return `<tr><td class="mono">${esc(z.artikelnummer)}</td><td>${esc(z.lagerplatz || '—')}</td><td style="text-align:right;">${esc(vorher)} → <b>${esc(z.bestand)}</b></td></tr>`;
+  };
+  rd.innerHTML = `<div style="background:#fffbea;border:2px solid var(--amber);border-radius:8px;padding:12px 14px;">
+    <div style="font-weight:700;">Vorschau Teil-Import „${esc(bestandFile.name)}"</div>
+    <div style="margin-top:6px;"><b>${zeilen.length}</b> Zeilen · <b>${nArt}</b> Artikel · <b>${nLp}</b> Lagerplätze.
+      Diese Plätze werden auf den Wert aus der Datei gesetzt; alles andere bleibt unverändert.
+      ${ungueltig.length ? `<br><span class="err">${ungueltig.length} Zeile(n) ohne gültigen Bestand werden übersprungen.</span>` : ''}</div>
+    <table style="margin-top:8px;"><tr><th>Artikel</th><th>Lagerplatz</th><th style="text-align:right;">Bestand jetzt → neu</th></tr>${bsp.map(zeile).join('')}</table>
+    ${zeilen.length > bsp.length ? `<div class="hint">… und ${zeilen.length - bsp.length} weitere Zeilen</div>` : ''}
+    <div class="hint" style="margin-top:6px;">Der Import lässt sich nicht per Rückgängig zurücknehmen.</div>
+    <div class="row" style="margin-top:10px;">
+      <button onclick="bestandImportieren()">Import ausführen</button>
+      <button class="sec" onclick="el('bimp-result').innerHTML='';bestandImportZuruecksetzen()">Abbrechen</button>
+    </div></div>`;
 }
 async function bestandImportieren() {
   if (!bestandFile || !bestandVorab || bestandImportLaeuft) return;
@@ -3042,6 +3125,13 @@ async function protokollLaden() {
     .order('id', { ascending: false }).limit(200);
   const typ = el('prot-typ').value;
   if (typ) q = q.eq('typ', typ);
+  // Suchbegriff in der DATENBANK suchen (vorher nur in den 200 geladenen Zeilen -
+  // eine Buchung von vor 3 Tagen war damit oft „nicht vorhanden")
+  const such = protoSuchbegriff();
+  if (such) {
+    const m = '"*' + such + '*"';
+    q = q.or(`artikelnummer.ilike.${m},artikelname.ilike.${m},gtin.ilike.${m},lagerplatz.ilike.${m}`);
+  }
   const von = el('prot-von').value, bis = el('prot-bis').value;
   // Tagesgrenzen in Ortszeit (vorher UTC → Einträge zwischen 0 und 2 Uhr fielen raus)
   if (von) q = q.gte('zeitstempel', tagesbeginnIso(von));
@@ -3055,14 +3145,16 @@ function protoReset() {
   el('prot-suche').value = ''; el('prot-typ').value = ''; el('prot-von').value = ''; el('prot-bis').value = '';
   protokollLaden();
 }
-function protoFilterChanged() { renderProtokoll(); }
+// Zeichen, die in der Such-Syntax der Datenbank-Schnittstelle eine Bedeutung haben, entfernen
+function protoSuchbegriff() { return (el('prot-suche').value || '').replace(/[,()*%"\\:]/g, ' ').trim(); }
+let protoSuchTimer = null;
+function protoFilterChanged() { clearTimeout(protoSuchTimer); protoSuchTimer = setTimeout(protokollLaden, 350); }
 function renderProtokoll() {
   const box = el('protokoll-body'), cnt = el('prot-count');
-  const f = (el('prot-suche').value || '').toLowerCase().trim();
-  let data = allProt;
-  if (f) data = data.filter(b => ((b.artikelname||'')+' '+(b.artikelnummer||'')+' '+(b.gtin||'')+' '+(b.lagerplatz||'')).toLowerCase().includes(f));
-  cnt.textContent = data.length ? (data.length + ' Einträge' + (allProt.length>=200 ? ' · max. 200 geladen — Filter nutzen' : '')) : '';
-  if (!data.length) { box.innerHTML = '<span class="muted">Keine Einträge.</span>'; return; }
+  const data = allProt;
+  const such = protoSuchbegriff();
+  cnt.textContent = data.length ? (data.length + ' Einträge' + (data.length >= 200 ? ' · nur die neuesten 200 Treffer — Suche/Zeitraum eingrenzen' : '')) : '';
+  if (!data.length) { box.innerHTML = '<span class="muted">Keine Einträge' + (such ? ' für „' + esc(such) + '" (gesamtes Protokoll durchsucht)' : '') + '.</span>'; return; }
   const pfeil = (v,n) => (v==null && n==null) ? '—'
     : `<span class="muted">${v==null?'—':v}</span> → <b>${n==null?'—':n}</b>`;
   box.innerHTML = '<table><tr><th>Zeit</th><th>Typ</th><th>Artikel</th><th>EAN</th><th>Platz</th>'
@@ -3087,7 +3179,9 @@ function renderProtokoll() {
 let invRows = [];
 async function invInit() {
   invRows = []; el('inv-table').innerHTML = ''; el('inv-status').textContent = ''; el('inv-add').value = '';
-  const { data } = await client.from('v_lagerplaetze').select('name,stueck').gt('stueck',0);
+  let data;
+  try { data = await fetchAll('v_lagerplaetze', 'name,stueck', { build: q => q.gt('stueck', 0) }); }
+  catch (e) { el('inv-status').innerHTML = '<span class="err">Lagerplätze konnten nicht geladen werden: ' + esc(buchFehlerText(e)) + '</span>'; return; }
   const q = (data||[]).sort((a,b)=>a.name.localeCompare(b.name));
   el('inv-lp').innerHTML = '<option value="">— Lagerplatz wählen —</option>'
     + q.map(x=>`<option value="${escAttr(x.name)}">${esc(x.name)} (${x.stueck})</option>`).join('');
@@ -3096,8 +3190,10 @@ async function invLadePlatz() {
   const lp = el('inv-lp').value;
   invRows = [];
   if (!lp) { el('inv-table').innerHTML = ''; return; }
-  const { data } = await client.from('bestaende')
+  const r = await client.from('bestaende')
     .select('artikelnummer,menge,artikel(artikelname,gtin)').eq('lagerplatz', lp).gt('menge',0);
+  if (r.error) { el('inv-status').innerHTML = '<span class="err">Ladefehler: ' + esc(buchFehlerText(r.error)) + '</span>'; el('inv-table').innerHTML = ''; return; }
+  const data = r.data;
   invRows = (data||[]).map(r => ({ artnr:r.artikelnummer, name:(r.artikel&&r.artikel.artikelname)||'', gtin:(r.artikel&&r.artikel.gtin)||'', soll:r.menge, ist:r.menge }))
     .sort((a,b)=>a.name.localeCompare(b.name));
   invRender();
@@ -3119,11 +3215,14 @@ async function invAddArtikel() {
   const lp = el('inv-lp').value;
   if (!lp) { el('inv-status').innerHTML = '<span class="err">Erst Lagerplatz wählen.</span>'; return; }
   const code = el('inv-add').value.trim(); if (!code) return;
-  const g = await resolveArtikel(code);
+  let g, soll;
+  try {
+    g = await resolveArtikel(code);
+    if (g && !g.mehrdeutig) soll = await erBestandAuf(g.artnr, lp);
+  } catch (e) { el('inv-status').innerHTML = '<span class="err">Ladefehler: ' + esc(buchFehlerText(e)) + '</span>'; return; }
   if (!g) { el('inv-status').innerHTML = '<span class="err">Artikel nicht gefunden.</span>'; return; }
   if (g.mehrdeutig) { el('inv-status').innerHTML = '<span class="err">EAN mehrdeutig – Artikelnummer eingeben.</span>'; return; }
   if (invRows.some(r => r.artnr === g.artnr)) { el('inv-add').value=''; el('inv-status').textContent='Artikel ist bereits in der Liste.'; return; }
-  const soll = await erBestandAuf(g.artnr, lp);
   invRows.push({ artnr:g.artnr, name:g.name||'', gtin:'', soll, ist:soll });
   el('inv-add').value=''; el('inv-status').textContent=''; invRender();
 }
@@ -3260,9 +3359,11 @@ function renderLeerPanel(data, gesamt) {
     ? `<div class="muted" style="padding:6px 4px;">Zeige ${data.length} von ${gesamt} — „Alle als gesehen markieren" leert die Glocke komplett.</div>` : '';
   box.innerHTML = hinweis + data.map(l => {
     const z = fmtZeit(l.zeitstempel);
-    if (l.hinweis) return `<div class="art"><b>📦 Einräum-Hinweis</b><div class="muted">${esc(l.hinweis)}<br>${esc(z)}</div></div>`;
+    // Einräum-Hinweise (Rest auf der Quelle) haben keinen Artikel ('—'); andere
+    // Meldungen mit Hinweis (z. B. „Sammel-Ausbuchen") sind normale Leermeldungen
+    if (l.artikelnummer === '—') return `<div class="art"><b>📦 Einräum-Hinweis</b><div class="muted">${esc(l.hinweis)}<br>${esc(z)}</div></div>`;
     return `<div class="art"><b>${esc(l.artikelname || l.artikelnummer)}</b>
-      <div class="muted">${esc(l.artikelnummer)}${l.gtin?' · EAN '+esc(l.gtin):''} · <span class="lp">${esc(l.lagerplatz)}</span> leer — ${esc(z)}</div></div>`;
+      <div class="muted">${esc(l.artikelnummer)}${l.gtin?' · EAN '+esc(l.gtin):''} · <span class="lp">${esc(l.lagerplatz)}</span> leer — ${esc(z)}${l.hinweis ? ' · ' + esc(l.hinweis) : ''}</div></div>`;
   }).join('');
 }
 function toggleLeerPanel() {
@@ -3413,6 +3514,11 @@ window.addEventListener('load', () => {
       <button onclick="etikettDrucken()">🖨️ Drucken</button>
     </div>
   </div>
+</div>
+
+<div id="fehler-toast" style="display:none;position:fixed;left:12px;right:12px;bottom:70px;z-index:2100;max-width:640px;margin:0 auto;background:#9b2c2c;color:#fff;border-radius:10px;padding:12px 14px;box-shadow:0 6px 20px rgba(0,0,0,.25);align-items:center;gap:10px;">
+  <span id="fehler-toast-text" style="flex:1;font-weight:600;"></span>
+  <button class="sec" style="background:#fff;color:#9b2c2c;" onclick="el('fehler-toast').style.display='none'">OK</button>
 </div>
 
 <div class="modal-bg" id="scan-frage" style="z-index:2000;">
