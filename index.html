@@ -554,6 +554,11 @@ function buchFehlerText(e) {
 // geschluckt; ob in der Zeit gescannt wurde, steht danach in .gescannt.
 let scanFrageOffen = null;
 function scanFrage(text, jaText, neinText, ansage) {
+  // eine evtl. noch offene Rückfrage (anderer Ablauf) als „Nein" beenden - sonst
+  // bliebe deren Vorgang (und seine Sperre) für immer hängen
+  if (scanFrageOffen) scanFrageOffen.fertig(false);
+  const panel = el('leer-panel');
+  if (panel) panel.style.display = 'none';   // könnte sonst die Knöpfe verdecken
   return new Promise(resolve => {
     const bg = el('scan-frage');
     el('scan-frage-text').textContent = text;
@@ -579,7 +584,7 @@ document.addEventListener('keydown', e => {
   if (!scanFrageOffen) return;
   e.preventDefault(); e.stopPropagation();
   if (e.key === 'Escape') { scanFrageOffen.fertig(false); return; }
-  if (e.key === 'Enter' || e.key.length === 1) scanFrageOffen.gescannt = true;
+  if (e.key === 'Enter' || (e.key || '').length === 1) scanFrageOffen.gescannt = true;
 }, true);
 const SCAN_VERWORFEN_HINWEIS = '<div class="ss-block" style="margin-top:6px;">⛔ Während der Rückfrage wurde gescannt – dieser Artikel wurde <b>nicht</b> gebucht. Bitte noch einmal scannen.</div>';
 
@@ -760,11 +765,12 @@ function amaBadge(online) {
 let sucheLadeSeq = 0;       // verwirft Antworten überholter Ladevorgänge
 let sucheLaedtSeq = 0;      // laufender Ladevorgang (0 = keiner)
 let sucheNachladen = false; // während des Ladens lokal gebucht → danach erneut laden
-async function ladeSucheDaten() {
+// still = im Hintergrund aktualisieren (kein „Wird geladen…", Liste bleibt stehen)
+async function ladeSucheDaten(still) {
   const seq = ++sucheLadeSeq;
   sucheLaedtSeq = seq;
   const box = el('such-tabelle');
-  if (box) box.innerHTML = '<span class="hint">Wird geladen…</span>';
+  if (box && !still) box.innerHTML = '<span class="hint">Wird geladen…</span>';
   let arts, best, lps;
   try {
     [arts, best, lps] = await Promise.all([
@@ -779,8 +785,8 @@ async function ladeSucheDaten() {
   sucheBestandCache = best;
   sucheLagerplaetzeCache = lps;
   sucheBuildFilterUI();
-  sucheRender();
-  if (sucheNachladen) { sucheNachladen = false; ladeSucheDaten(); }
+  sucheRender(still);
+  if (sucheNachladen) { sucheNachladen = false; ladeSucheDaten(true); }
 }
 // Nach einer Schnellbuchung nur die betroffene Zeile im Cache aktualisieren
 // (buchen() liefert den neuen Bestand) statt Artikel + Bestände komplett neu zu laden
@@ -944,7 +950,7 @@ async function sucheBuchen(artnr, lp, typ, btn) {
   const inp = zelle && zelle.querySelector('input[type=number]');
   if (!inp) return;
   // eine Schnellbuchung nach der anderen - ein Doppelklick bucht nicht doppelt
-  return einmalig('suche-buchen', async () => {
+  return einmalig('suche-buchen|' + artnr + '|' + lp, async () => {
     const menge = parseInt(inp.value, 10);
     if (!Number.isInteger(menge) || menge < 1) { alert('Menge muss eine ganze Zahl ≥ 1 sein.'); return; }
     let zielLp = lp;
@@ -1109,6 +1115,8 @@ function showTab(name) {
     el('tab-'+t).style.display = t === name ? 'block' : 'none';
   });
   el('main-container').classList.toggle('wide', name === 'suche');
+  // Buchungen aus anderen Reitern/Geräten in der Suche nachziehen
+  if (name === 'suche' && client) ladeSucheDaten(true).catch(() => {});
   if (name === 'inventur') invInit();
   if (name === 'kartons') kartonsLaden();
   if (name === 'protokoll') protokollLaden();
@@ -1532,13 +1540,29 @@ async function erKartonVoll(channel) {
 }
 async function erFertig() {
   if (erSession) {
-    // Fenster sofort öffnen; welche Kartons etwas enthalten, steht erst nach dem
-    // Laden fest. Beide Blätter kommen in EIN Fenster (je Karton eine Seite) -
-    // zwei Pop-ups aus einem Klick blockiert der Browser.
-    const w = druckFensterOeffnen('Karton-Blätter');
-    await erInhaltLaden();
-    const volle = [erSession.aktivOnline, erSession.aktivOffline].filter(nm => erKartonStueck(nm) > 0);
-    await kartonBlattDrucken(volle, w);
+    // Fenster sofort öffnen (vor jedem await, sonst blockt der Browser das Pop-up).
+    // Ob etwas zu drucken ist, zeigt der zuletzt geladene Karton-Inhalt; beide
+    // Blätter kommen in EIN Fenster (je Karton eine Seite) - zwei Pop-ups aus
+    // einem Klick blockiert der Browser.
+    const kartons = [erSession.aktivOnline, erSession.aktivOffline];
+    const w = (erLaeuft || kartons.some(nm => erKartonStueck(nm) > 0)) ? druckFensterOeffnen('Karton-Blätter') : null;
+    // läuft gerade noch ein Scan, erst dessen Buchung abwarten (max. 15 s)
+    for (let i = 0; erLaeuft && i < 150; i++) await new Promise(r => setTimeout(r, 100));
+    if (erLaeuft) {
+      if (w) w.close();
+      alert('Der letzte Scan wird noch gebucht – bitte gleich noch einmal auf „Palette fertig" tippen.');
+      return;
+    }
+    try {
+      await erInhaltLaden();
+    } catch (e) {
+      if (w) w.close();
+      alert('Fehler beim Laden der Kartons: ' + buchFehlerText(e) + '\n\nDie Sortierung bleibt offen – bitte erneut auf „Palette fertig" tippen.');
+      return;
+    }
+    const volle = kartons.filter(nm => erKartonStueck(nm) > 0);
+    if (w) await kartonBlattDrucken(volle, w);
+    else if (volle.length) await kartonBlattDrucken(volle);   // nur falls ein anderes Gerät inzwischen befüllt hat
     await client.rpc('einraeumen_rest_melden', { p_quelle: erSession.quelle, p_palette: erSession.pal });
   }
   erSession = null;
@@ -1872,7 +1896,12 @@ function kartonBlattSeite(titel, blaetter) {
           if(td.scrollWidth>td.clientWidth+1) td.classList.add('umbruch');
         });
       }
-      window.onload=function(){namenEinpassen();setTimeout(function(){window.print();},150);};
+      // load-Ereignis UND Rückfallzeit: das Fenster wurde vorher schon einmal
+      // beschrieben (Ladehinweis), darauf soll sich der Druckstart nicht verlassen
+      var gedruckt=false;
+      function los(){ if(gedruckt) return; gedruckt=true; namenEinpassen(); setTimeout(function(){window.print();},150); }
+      window.addEventListener('load', los);
+      setTimeout(los, 1500);
     <\/script>
   </body></html>`;
 }
@@ -3368,7 +3397,7 @@ window.addEventListener('load', () => {
   </div>
 </div>
 
-<div class="modal-bg" id="scan-frage" style="z-index:60;">
+<div class="modal-bg" id="scan-frage" style="z-index:2000;">
   <div class="modal-box" tabindex="-1" style="border:3px solid var(--amber);outline:none;">
     <div id="scan-frage-text" style="white-space:pre-line;font-weight:600;"></div>
     <div class="hint" style="margin-top:8px;">Der Scanner ist gesperrt, bis du hier tippst.</div>

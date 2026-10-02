@@ -193,6 +193,34 @@ const scanne = async (page, feld, code) => { await page.focus(feld); await page.
     gleich(blaetter, 2, 'Karton-Blätter im Fenster');
     const txt = await fenster[0].textContent('body');
     if (!txt.includes('P01-K01') || !txt.includes('P01-K02')) throw new Error('Kartonnamen fehlen');
+     await fenster[0].waitForTimeout(2000);
+    gleich(await fenster[0].evaluate(() => typeof gedruckt !== 'undefined' && gedruckt), true, 'Druck automatisch gestartet');
+  });
+
+  await test('#10 Palette fertig ohne Inhalt öffnet kein Fenster', async (page, ctx) => {
+    await sortierungStarten(page);
+    const fenster = [];
+    ctx.on('page', p => fenster.push(p));
+    await page.click('button:has-text("Palette fertig")');
+    await page.waitForSelector('#er-setup', { state: 'visible' });
+    await page.waitForTimeout(500);
+    gleich(fenster.length, 0, 'Anzahl geöffneter Fenster');
+  });
+
+  await test('Review: zweite Rückfrage blockiert die erste nicht dauerhaft', async page => {
+    await page.click('button[data-t="buchen"]');
+    await page.click('#ss-mode-aus');
+    await scanne(page, '#ss-scan', '4000000000031');          // Set → Rückfrage 1
+    await page.waitForSelector('#scan-frage', { state: 'visible' });
+    // zweite Rückfrage von anderer Stelle (wie aus der Suche)
+    page.evaluate(() => scanFrage('zweite Frage'));
+    await page.waitForTimeout(200);
+    await page.click('#scan-frage-nein');
+    await page.waitForTimeout(300);
+    // Scanner darf nicht hängen bleiben: nächster Scan wird normal verarbeitet
+    await scanne(page, '#ss-scan', '4000000000024');
+    await page.waitForSelector('#ss-status .ok');
+    gleich(menge('A2', 'QUELLE-1'), 9, 'Bestand nach nächstem Scan');
   });
 
   await test('#10 Nachdruck: Fehler beim Laden ergibt kein leeres Blatt', async (page, ctx) => {
