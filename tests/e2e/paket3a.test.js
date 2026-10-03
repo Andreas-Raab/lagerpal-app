@@ -90,6 +90,22 @@ function excel(datei, zeilen) {
     gleich(menge('A1', 'Regal 3'), 10, 'nach Bestätigung übernommen');
   });
 
+  await test('Inventur: ungezählte Zeile übernimmt nach Konflikt den neuen Bestand (Review)', async page => {
+    await page.click('button[data-t="inventur"]');
+    await page.waitForSelector('#inv-lp option[value="Regal 3"]', { state: 'attached' });
+    await page.selectOption('#inv-lp', 'Regal 3');
+    await page.waitForSelector('#inv-table input');
+    const set1 = page.locator('#inv-table tr', { hasText: 'SET1' });
+    await set1.locator('input').fill('3'); await set1.locator('input').press('Tab');   // nur SET1 gezählt
+    sql("update bestaende set menge = 9 where artikelnummer = 'A1' and lagerplatz = 'Regal 3'");  // anderes Gerät bucht 3× A1 aus
+    await page.click('button:has-text("Inventur übernehmen")');
+    await page.waitForSelector('#inv-status :text("Während der Zählung")');
+    await page.click('button:has-text("Inventur übernehmen")');
+    await page.waitForSelector('#inv-status .ok');
+    gleich(menge('A1', 'Regal 3'), 9, 'Ausbuchung des anderen Geräts bleibt');
+    gleich(menge('SET1', 'Regal 3'), 3, 'Zählung übernommen');
+  });
+
   await test('Amazon-Import: unbekannter Status wird nicht still „online"', async page => {
     sql("update artikel set online = 2 where artikelnummer in ('A1','A2')");
     const datei = '/var/tmp/lp-e2e/amazon.csv';

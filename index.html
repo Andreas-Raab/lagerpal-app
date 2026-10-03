@@ -3054,15 +3054,15 @@ async function bestandDateiPruefen(vorab) {
   const art = {}, nachZiffern = {};
   arts.forEach(a => {
     art[a.artikelnummer] = a;
-    if (/^\d+$/.test(a.artikelnummer)) {
+    if (/^0+\d+$/.test(a.artikelnummer)) {     // nur Nummern MIT führenden Nullen (Excel nimmt sie weg, fügt nie welche hinzu)
       const k = ohneNullen(a.artikelnummer);
       nachZiffern[k] = k in nachZiffern ? null : a.artikelnummer;   // null = nicht eindeutig
     }
   });
   const h = { artnrNullen: [], gtinNullen: [], gtinUngueltig: [], stamm: [], neu: new Set() };
   for (const z of vorab.zeilen) {
-    if (!art[z.artikelnummer] && /^\d+$/.test(z.artikelnummer) && nachZiffern[ohneNullen(z.artikelnummer)]) {
-      const richtig = nachZiffern[ohneNullen(z.artikelnummer)];
+    if (!art[z.artikelnummer] && /^[1-9]\d*$/.test(z.artikelnummer) && nachZiffern[z.artikelnummer]) {
+      const richtig = nachZiffern[z.artikelnummer];
       h.artnrNullen.push(z.artikelnummer + ' → ' + richtig);
       z.artikelnummer = richtig;
     }
@@ -3071,12 +3071,12 @@ async function bestandDateiPruefen(vorab) {
       if (a && a.gtin && ohneNullen(a.gtin) === ohneNullen(z.gtin)) {
         if (a.gtin !== z.gtin) h.gtinNullen.push(z.artikelnummer + ': ' + z.gtin + ' → ' + a.gtin);
         z.gtin = a.gtin;
-      } else if (!gtinGueltig(z.gtin)) {
-        // nur 9-11 Ziffern auffüllen: so lang wird eine EAN-13, der Excel 2-4 Nullen
-        // weggenommen hat. Kürzere Zahlen sind keine abgeschnittenen EANs.
-        const lang = /^\d{9,11}$/.test(z.gtin) ? z.gtin.padStart(13, '0') : '';
-        if (lang && gtinGueltig(lang)) { h.gtinNullen.push(z.artikelnummer + ': ' + z.gtin + ' → ' + lang); z.gtin = lang; }
-        else { h.gtinUngueltig.push(z.artikelnummer + ': ' + z.gtin); z.gtin = ''; }
+      } else if (/^\d+$/.test(z.gtin) && !gtinGueltig(z.gtin)) {
+        // Nur reine Ziffern prüfen (Codes mit Buchstaben = interne Codes, bleiben erlaubt).
+        // Nicht automatisch auffüllen: ob 12 oder 13 Stellen gemeint waren, ist nicht
+        // sicher - lieber nicht übernehmen und melden.
+        h.gtinUngueltig.push(z.artikelnummer + ': ' + z.gtin + (/^\d{9,11}$/.test(z.gtin) ? ' (Nullen fehlen?)' : ''));
+        z.gtin = '';
       }
     }
     if (!a) { if (anlegen && z.lagerplatz) h.neu.add(z.artikelnummer); continue; }
@@ -3084,7 +3084,9 @@ async function bestandDateiPruefen(vorab) {
     if (anlegen && z.artikelname && z.artikelname !== (a.artikelname || '')) aend.push(['Name', a.artikelname || '', z.artikelname]);
     if (anlegen && z.gtin && z.gtin !== (a.gtin || '')) aend.push(['EAN', a.gtin || '—', z.gtin]);
     if (z.set_flag != null && z.set_flag !== (a.ist_set || 0)) aend.push(['Set', a.ist_set ? 'ja' : 'nein', z.set_flag ? 'ja' : 'nein']);
-    if (aend.length && !h.stamm.some(s => s.artnr === z.artikelnummer)) h.stamm.push({ artnr: z.artikelnummer, aend });
+    const alt = h.stamm.findIndex(s => s.artnr === z.artikelnummer);
+    if (alt >= 0) h.stamm.splice(alt, 1);           // mehrere Zeilen je Artikel: die letzte zählt (wie in der Datenbank)
+    if (aend.length) h.stamm.push({ artnr: z.artikelnummer, aend });
   }
   h.bekannt = new Set(Object.keys(art));
   // doppelte Meldungen (mehrere Zeilen je Artikel) zusammenfassen
@@ -3095,8 +3097,8 @@ function bestandHinweiseHtml(h) {
   const bsp = l => esc(l.slice(0, 5).join(' · ')) + (l.length > 5 ? ' …' : '');
   let s = '';
   if (h.artnrNullen.length) s += `<div style="margin-top:6px;">🔧 <b>${h.artnrNullen.length}</b> Artikelnummer(n) ohne führende Nullen erkannt und zugeordnet (Excel-Zahlenformat), z. B. ${bsp(h.artnrNullen)}</div>`;
-  if (h.gtinNullen.length) s += `<div style="margin-top:6px;">🔧 <b>${h.gtinNullen.length}</b> EAN(s) ohne führende Nullen erkannt, die Nullen werden ergänzt bzw. die vorhandene EAN bleibt, z. B. ${bsp(h.gtinNullen)}</div>`;
-  if (h.gtinUngueltig.length) s += `<div style="margin-top:6px;" class="err">⚠️ <b>${h.gtinUngueltig.length}</b> EAN(s) mit falscher Länge oder Prüfziffer werden <b>nicht</b> übernommen, z. B. ${bsp(h.gtinUngueltig)}</div>`;
+  if (h.gtinNullen.length) s += `<div style="margin-top:6px;">🔧 <b>${h.gtinNullen.length}</b> EAN(s) ohne führende Nullen erkannt, die vorhandene EAN bleibt, z. B. ${bsp(h.gtinNullen)}</div>`;
+  if (h.gtinUngueltig.length) s += `<div style="margin-top:6px;" class="err">⚠️ <b>${h.gtinUngueltig.length}</b> EAN(s) mit falscher Länge oder Prüfziffer werden <b>nicht</b> übernommen, z. B. ${bsp(h.gtinUngueltig)}. Fehlen führende Nullen, die EAN-Spalte in Excel als <b>Text</b> formatieren.</div>`;
   if (h.stamm.length) {
     const ZEIGEN = 50;
     s += `<div style="margin-top:8px;"><b>${h.stamm.length}</b> Artikel bekommen geänderte Stammdaten (wird im Protokoll vermerkt):</div>
@@ -3125,24 +3127,31 @@ function setBestandModus(m) {
     : 'Nur Artikel in der Datei werden aktualisiert. Alle anderen bleiben unverändert.';
 }
 function bestandImportZuruecksetzen() {
+  bestandSeq++;
   bestandFile = null; bestandVorab = null; el('bimp-file').value = '';
 }
+let bestandSeq = 0;   // nur der zuletzt gestartete Prüflauf darf Vorschau/Datei setzen
 async function handleBestandFile(file) {
   if (!file) return;
   if (bestandImportLaeuft) return;
+  const seq = ++bestandSeq;
   bestandFile = file; bestandVorab = null;
   const rd = el('bimp-result');
   // Datei ZUERST prüfen - Fehler (fehlende Spalte, negative Werte …) erscheinen,
   // bevor irgendeine Bestätigung abgefragt oder etwas geschrieben wird.
   rd.innerHTML = '<span class="hint">⏳ Datei wird geprüft…</span>';
+  let vorab;
   try {
-    bestandVorab = await bestandZeilenAusDatei(file);
-    await bestandDateiPruefen(bestandVorab);
+    vorab = await bestandZeilenAusDatei(file);
+    await bestandDateiPruefen(vorab);
   } catch (e) {
+    if (seq !== bestandSeq) return;
     rd.innerHTML = '<span class="err">❌ ' + esc(e.message || String(e)) + '</span>';
     bestandImportZuruecksetzen();
     return;
   }
+  if (seq !== bestandSeq) return;          // inzwischen andere Datei gewählt / Haken umgeschaltet
+  bestandVorab = vorab;
   const { zeilen, ungueltig } = bestandVorab;
   if (bestandModus === 'komplett') {
     // Beim Komplett-Import würde jede verworfene Zeile dazu führen, dass der
@@ -3159,6 +3168,7 @@ async function handleBestandFile(file) {
     rd.innerHTML = `<div style="background:#fff5f5;border:2px solid #9b2c2c;border-radius:8px;padding:12px 14px;color:#9b2c2c;">
       <div style="font-weight:700;">⚠️ Komplett-Import: Alle nicht in der Datei enthaltenen Plätze werden auf 0 gesetzt!</div>
       <div style="margin-top:6px;">Die Datei enthält <b>${zeilen.length}</b> Zeilen mit <b>${nArt}</b> Artikeln auf <b>${nLp}</b> Lagerplätzen. Passt das zu deinem Gesamtbestand?</div>
+      ${bestandVorab.hinweise.neu.size ? `<div style="margin-top:6px;">Neu angelegt werden <b>${bestandVorab.hinweise.neu.size}</b> Artikel.</div>` : ''}
       <div style="color:#1a202c;">${bestandHinweiseHtml(bestandVorab.hinweise)}</div>
       <div class="row" style="margin-top:10px;">
         <button style="background:#9b2c2c;" onclick="bestandImportieren('komplett')">Ja, fortfahren</button>
@@ -3168,16 +3178,17 @@ async function handleBestandFile(file) {
   }
   // Teil-Import: erst Vorschau zeigen - vorher wurde schon beim Auswählen der
   // Datei geschrieben (z. B. versehentlich eine alte Exportdatei)
-  await bestandTeilVorschau();
+  await bestandTeilVorschau(seq);
 }
-async function bestandTeilVorschau() {
+async function bestandTeilVorschau(seq) {
   const rd = el('bimp-result');
-  const { zeilen, ungueltig } = bestandVorab;
+  const vorab = bestandVorab;
+  const { zeilen, ungueltig } = vorab;
   rd.innerHTML = '<span class="hint">⏳ Vorschau wird berechnet…</span>';
   // aktuellen Bestand und vorhandene Artikel für ALLE Zeilen der Datei holen
   // (in Häppchen, damit die Anfrage-URL nicht zu lang wird)
   const arts = [...new Set(zeilen.map(z => z.artikelnummer))];
-  const aktuell = {}, bekannt = bestandVorab.hinweise.bekannt;
+  const aktuell = {}, bekannt = vorab.hinweise.bekannt;
   try {
     for (let i = 0; i < arts.length; i += 150) {
       const teil = arts.slice(i, i + 150);
@@ -3185,10 +3196,12 @@ async function bestandTeilVorschau() {
       best.forEach(b => { aktuell[b.artikelnummer + '|' + b.lagerplatz] = b.menge; });
     }
   } catch (e) {
+    if (seq !== bestandSeq) return;
     rd.innerHTML = '<span class="err">❌ Vorschau konnte nicht geladen werden: ' + esc(buchFehlerText(e)) + '</span>';
     bestandImportZuruecksetzen();
     return;
   }
+  if (seq !== bestandSeq) return;
   const anlegen = el('bimp-anlegen').checked;
   const ohneLp = zeilen.filter(z => !z.lagerplatz);
   const unbekannt = zeilen.filter(z => z.lagerplatz && !bekannt.has(z.artikelnummer));
@@ -3202,7 +3215,7 @@ async function bestandTeilVorschau() {
       <td style="text-align:right;">${vorher} → <b>${z.bestand}</b></td>
       <td style="text-align:right;color:${diff > 0 ? 'var(--green)' : 'var(--red)'};font-weight:700;">${diff > 0 ? '+' : ''}${diff}</td></tr>`;
   };
-  const hinweise = bestandVorab.hinweise;
+  const hinweise = vorab.hinweise;
   const nichts = !geaendert.length && !(anlegen && unbekannt.length) && !hinweise.stamm.length;
   rd.innerHTML = `<div style="background:#fffbea;border:2px solid var(--amber);border-radius:8px;padding:12px 14px;">
     <div style="font-weight:700;">Vorschau Teil-Import „${esc(bestandFile.name)}"</div>
@@ -3440,10 +3453,14 @@ function setImportModus(m) {
 async function handleImportFile(file) {
   if (!file) return;
   importFile = file; importDatei = null;
+  const seq = ++importVorschauSeq;
   const rd = el('imp-result');
   rd.innerHTML = '<span class="hint">⏳ Datei wird geprüft…</span>';
-  try { importDatei = await amazonStatusAusDatei(file); }
-  catch (e) { rd.innerHTML = '<span class="err">❌ ' + esc(e.message || String(e)) + '</span>'; return; }
+  let datei;
+  try { datei = await amazonStatusAusDatei(file); }
+  catch (e) { if (seq === importVorschauSeq) rd.innerHTML = '<span class="err">❌ ' + esc(e.message || String(e)) + '</span>'; return; }
+  if (seq !== importVorschauSeq) return;   // inzwischen andere Datei gewählt
+  importDatei = datei;
   await importVorschau();
 }
 let importVorschauSeq = 0;
@@ -3493,7 +3510,7 @@ async function importVorschau() {
         <button onclick="importAnwenden()">✓ Status übernehmen</button>
         <button class="sec" onclick="importReset()">Abbrechen</button>
       </div>`;
-  } catch (e) { rd.innerHTML = '<span class="err">❌ ' + esc(e.message || String(e)) + '</span>'; }
+  } catch (e) { if (seq === importVorschauSeq) rd.innerHTML = '<span class="err">❌ ' + esc(e.message || String(e)) + '</span>'; }
 }
 function importAnwenden() { return einmalig('amazon-import', importAnwendenIntern); }
 async function importAnwendenIntern() {
@@ -3730,7 +3747,7 @@ function invRender() {
           <td style="text-align:right;color:${dc};font-weight:700;">${diff>0?'+':''}${diff}</td></tr>`;
       }).join('') + '</table>';
 }
-function invSetIst(i, val) { invRows[i].ist = val; invRender(); }
+function invSetIst(i, val) { invRows[i].ist = val; invRows[i].gezaehlt = true; invRender(); }
 async function invAddArtikel() {
   const lp = el('inv-lp').value;
   if (!lp) { el('inv-status').innerHTML = '<span class="err">Erst Lagerplatz wählen.</span>'; return; }
@@ -3741,9 +3758,10 @@ async function invAddArtikel() {
     if (g && g.mehrdeutig) g = await eindeutigerArtikel(g, code);
     if (g) soll = await erBestandAuf(g.artnr, lp);
   } catch (e) { el('inv-status').innerHTML = '<span class="err">Ladefehler: ' + esc(buchFehlerText(e)) + '</span>'; return; }
+  if (el('inv-lp').value !== lp) return;   // inzwischen anderer Platz gewählt
   if (!g) { el('inv-status').innerHTML = '<span class="err">Artikel nicht gefunden oder Auswahl abgebrochen.</span>'; return; }
   if (invRows.some(r => r.artnr === g.artnr)) { el('inv-add').value=''; el('inv-status').textContent='Artikel ist bereits in der Liste.'; return; }
-  invRows.push({ artnr:g.artnr, name:g.name||'', gtin:'', soll, ist:soll });
+  invRows.push({ artnr:g.artnr, name:g.name||'', gtin:'', soll, ist:soll, gezaehlt:true });
   el('inv-add').value=''; el('inv-status').textContent=''; invRender();
 }
 function invAbschliessen() { return einmalig('inventur', invAbschliessenIntern); }
@@ -3766,11 +3784,21 @@ async function invAbschliessenIntern() {
   if (data.ok === false && data.konflikte) {
     data.konflikte.forEach(k => {
       const r = invRows.find(x => x.artnr === k.artikelnummer);
-      if (r) { if (r.sollVorher == null) r.sollVorher = r.soll; r.soll = k.aktuell; }
+      if (!r) return;
+      if (r.sollVorher == null) r.sollVorher = r.soll;
+      // nicht angefasste Zeile: Ist folgt dem neuen Soll - sonst würde der zweite
+      // Klick den alten Wert zurückschreiben und die Zwischenbuchung aufheben
+      if (!r.gezaehlt) r.ist = k.aktuell;
+      r.soll = k.aktuell;
     });
     invRender();
     el('inv-status').innerHTML = '<span class="err">⚠️ Während der Zählung wurde auf diesem Platz gebucht. Nichts übernommen. '
       + 'Soll ist aktualisiert – bitte die gelb markierten Zeilen prüfen und erneut übernehmen.</span>';
+    return;
+  }
+  if (!data.anzahl_geaendert) {
+    // nur bei veralteter Datenbank möglich (kennt das Format {ist, soll} nicht)
+    el('inv-status').innerHTML = '<span class="err">❌ Nichts übernommen. Ist das Datenbank-Update eingespielt? Bitte Bescheid geben.</span>';
     return;
   }
   el('inv-status').innerHTML = `<span class="ok">✓ ${data.anzahl_geaendert} Korrektur(en) übernommen.</span>`;

@@ -780,6 +780,11 @@ begin
         if not found then continue; end if;
         select menge into v_vorher from bestaende where artikelnummer = v_artnr and lagerplatz = p_lagerplatz;
         if not found then v_vorher := 0; end if;
+        -- nochmals prüfen: eine Zeile, die es bei der Prüfung oben noch nicht gab
+        -- (Einbuchen auf leeren Platz), ist von der Sperre nicht erfasst
+        if jsonb_typeof(r.wert) = 'object' and r.wert ? 'soll' and v_vorher <> (r.wert->>'soll')::integer then
+            raise exception 'Während der Inventur wurde auf % gebucht. Bitte den Platz neu laden und erneut zählen.', p_lagerplatz;
+        end if;
         if v_ist = v_vorher then continue; end if;
         select coalesce(sum(menge),0) into v_gesamt_vorher from bestaende where artikelnummer = v_artnr;
         insert into bestaende (artikelnummer, lagerplatz, menge) values (v_artnr, p_lagerplatz, v_ist)

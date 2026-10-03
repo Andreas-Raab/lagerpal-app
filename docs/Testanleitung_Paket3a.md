@@ -12,7 +12,7 @@ Die **alte** App läuft mit der aktualisierten Datenbank unverändert weiter.
 
 1. GitHub → Branch `claude/cloud-sessions-credits-9xe0tz` → Datei `supabase/updates/2026-10_paket3a.sql` öffnen → **„Copy raw file“**.
 2. Supabase → **Testprojekt** → **SQL Editor** → **New query** → einfügen → **Run**.
-3. Ganz unten erscheint der **Fingerabdruck**. Erwartet: **`FINGERABDRUCK`**
+3. Ganz unten erscheint der **Fingerabdruck**. Erwartet: **`2a930ba0b5c3d09ac089079734dd91b7`**
    Einen eigenen Kontrolllauf brauchst du diesmal nicht, er ist im Skript enthalten.
    Kommt eine Fehlermeldung: nichts weiter tun, mir den Text schicken. Das Skript ändert dann nichts.
 
