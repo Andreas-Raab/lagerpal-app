@@ -1,0 +1,2266 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LagerPal Handbuch</title>
+<meta name="description" content="Handbuch zur Lagerverwaltungs-App LagerPal: Einrichtung, Bedienung, Datensicherung, JTL-Anbindung, Fehlerbehebung und Wartung.">
+<style>
+:root{
+  --bg:#f6f7f9; --paper:#ffffff; --ink:#16243a; --text:#1a2433; --text-2:#4b5768; --muted:#7a8496;
+  --line:#e2e6ec; --accent:#2563a8; --accent-soft:#eef4fb; --amber:#d97316;
+  --info-bg:#eef4fb; --info-bd:#2563a8;
+  --tip-bg:#ecf8f0; --tip-bd:#15803d;
+  --warn-bg:#fdeeec; --warn-bd:#c0392f;
+  --check-bg:#fff6e8; --check-bd:#d97316;
+  --code-bg:#f1f3f6; --th-bg:#eef2f7; --zebra:#fafbfc;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#11161e; --paper:#18202b; --ink:#e7edf5; --text:#dde3ec; --text-2:#aab4c3; --muted:#8792a3;
+    --line:#2b3644; --accent:#7fb2f0; --accent-soft:#1d2a3b;
+    --info-bg:#172537; --info-bd:#5b9be0; --tip-bg:#14271c; --tip-bd:#4cc27a;
+    --warn-bg:#2d1918; --warn-bd:#ef6b5e; --check-bg:#2c2214; --check-bd:#f0a050;
+    --code-bg:#222c39; --th-bg:#1f2a38; --zebra:#1b2430;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#11161e; --paper:#18202b; --ink:#e7edf5; --text:#dde3ec; --text-2:#aab4c3; --muted:#8792a3;
+  --line:#2b3644; --accent:#7fb2f0; --accent-soft:#1d2a3b;
+  --info-bg:#172537; --info-bd:#5b9be0; --tip-bg:#14271c; --tip-bd:#4cc27a;
+  --warn-bg:#2d1918; --warn-bd:#ef6b5e; --check-bg:#2c2214; --check-bd:#f0a050;
+  --code-bg:#222c39; --th-bg:#1f2a38; --zebra:#1b2430;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;}
+main{max-width:920px;margin:0 auto;padding:24px 16px 80px;background:var(--paper);}
+@media (min-width:960px){ main{margin:24px auto;border:1px solid var(--line);border-radius:12px;padding:40px 56px 80px;} }
+h1,h2,h3,h4{color:var(--ink);line-height:1.25;}
+h2.chapter{font-size:1.65rem;margin:2.6em 0 .8em;padding-bottom:.35em;border-bottom:3px solid var(--accent);}
+h3{font-size:1.2rem;margin:2em 0 .6em;}
+h4{font-size:1.05rem;margin:1.6em 0 .5em;}
+p,li{max-width:75ch;}
+a{color:var(--accent);}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.88em;background:var(--code-bg);padding:.1em .35em;border-radius:4px;overflow-wrap:anywhere;}
+pre{background:var(--code-bg);padding:12px 14px;border-radius:8px;overflow-x:auto;border:1px solid var(--line);}
+pre code{background:none;padding:0;font-size:.84rem;overflow-wrap:normal;}
+hr.sep{border:none;border-top:1px solid var(--line);margin:2.5em 0;}
+.table-wrap{overflow-x:auto;margin:1em 0;border:1px solid var(--line);border-radius:8px;}
+table{border-collapse:collapse;width:100%;font-size:.92rem;}
+th,td{padding:8px 10px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line);}
+th{background:var(--th-bg);font-weight:700;color:var(--ink);}
+tbody tr:nth-child(even) td{background:var(--zebra);}
+tbody tr:last-child td{border-bottom:none;}
+.box{border-left:5px solid var(--info-bd);background:var(--info-bg);padding:10px 14px;border-radius:6px;margin:1.1em 0;}
+.box p{margin:.35em 0;max-width:none;}
+.box.tip{border-color:var(--tip-bd);background:var(--tip-bg);}
+.box.warn{border-color:var(--warn-bd);background:var(--warn-bg);}
+.box.check{border-color:var(--check-bd);background:var(--check-bg);}
+.box.check strong:first-child::before{content:"? ";font-weight:800;}
+.box.warn strong:first-child::before{content:"! ";font-weight:800;}
+.titlepage{min-height:70vh;display:flex;flex-direction:column;justify-content:center;padding:24px 0;}
+.titlepage .logo{width:72px;height:72px;border-radius:16px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.6rem;letter-spacing:.02em;}
+.titlepage .kicker{text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:700;margin:28px 0 0;}
+.titlepage h1{font-size:3rem;margin:.1em 0 .2em;}
+.titlepage .subtitle{font-size:1.2rem;color:var(--text-2);margin:0 0 28px;}
+.titlepage .meta{display:grid;gap:8px;margin:0 0 24px;}
+.titlepage .meta div{display:grid;grid-template-columns:110px 1fr;gap:12px;}
+.titlepage dt{font-weight:700;color:var(--muted);}
+.titlepage dd{margin:0;}
+nav.toc{background:var(--accent-soft);border-radius:10px;padding:4px 20px 16px;}
+nav.toc h2.chapter{border:none;margin-top:1em;}
+nav.toc ol{padding-left:1.4em;}
+nav.toc ol > li{font-weight:700;margin:.45em 0;}
+nav.toc ul{font-weight:400;padding-left:1.1em;list-style:none;}
+nav.toc ul li{margin:.15em 0;}
+nav.toc a{text-decoration:none;}
+nav.toc a:hover{text-decoration:underline;}
+.diagram[hidden]{display:none;}
+.diagram pre.mermaid{background:none;border:none;padding:0;}
+.diagram{overflow-x:auto;margin:1em 0;padding:12px;border:1px solid var(--line);border-radius:8px;background:#fff;}
+li.check-item{list-style:none;margin-left:-1.2em;}
+.cb{display:inline-block;width:.95em;height:.95em;border:2px solid var(--muted);border-radius:3px;margin-right:.5em;vertical-align:-.12em;}
+.totop{position:fixed;right:14px;bottom:14px;background:var(--accent);color:#fff;text-decoration:none;border-radius:20px;padding:6px 14px;font-size:.85rem;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.2);}
+@media (max-width:600px){
+  body{font-size:15px;}
+  .titlepage h1{font-size:2.2rem;}
+  .titlepage .meta div{grid-template-columns:1fr;gap:0;}
+  h2.chapter{font-size:1.4rem;}
+}
+@media print{
+  :root{--bg:#fff;--paper:#fff;--text:#000;--ink:#000;--text-2:#333;--muted:#555;--line:#bbb;--code-bg:#f2f2f2;--th-bg:#eee;--zebra:#fff;
+        --info-bg:#fff;--tip-bg:#fff;--warn-bg:#fff;--check-bg:#fff;--accent:#000;--accent-soft:#fff;}
+  @page{size:A4;margin:16mm 15mm 18mm 15mm;}
+  body{font-size:10.5pt;background:#fff;}
+  main{max-width:none;margin:0;padding:0;border:none;}
+  .totop{display:none;}
+  .titlepage{min-height:auto;height:250mm;break-after:page;}
+  .titlepage .logo{border:2px solid #000;color:#000;background:#fff;}
+  h2.chapter{break-before:page;margin-top:0;}
+  h2,h3,h4{break-after:avoid;}
+  table,pre,.box,.diagram{break-inside:avoid;}
+  tr{break-inside:avoid;}
+  .table-wrap{overflow:visible;border:none;}
+  table{font-size:9pt;}
+  th,td{border:1px solid #999;}
+  pre{white-space:pre-wrap;}
+  hr.sep{display:none;}
+  a{color:#000;text-decoration:none;}
+  nav.toc a::after{content:"";}
+  .box{border-left-width:4px;}
+}
+</style>
+</head>
+<body>
+<main id="top">
+
+<header class="titlepage">
+  <div class="logo" aria-hidden="true">LP</div>
+  <p class="kicker">Handbuch</p>
+  <h1>LagerPal</h1>
+  <p class="subtitle">Lagerverwaltung im Browser mit Supabase, automatischer Dropbox-Sicherung und JTL-Anbindung</p>
+  <dl class="meta">
+    <div><dt>Stand</dt><dd>Oktober 2026</dd></div>
+    <div><dt>Grundlage</dt><dd><code>index.html</code>, <code>supabase/00_KOMPLETT_neu_aufsetzen.sql</code>, <code>supabase/functions/lagerpal-backup/index.ts</code></dd></div>
+    <div><dt>Zielgruppe</dt><dd>Lager, Büro, Betreuung/Administration</dd></div>
+  </dl>
+  <aside class="box info"><p><strong>Hinweis:</strong> Alle Menünamen, Knopfbeschriftungen und Meldungen sind wörtlich aus dem Programmcode übernommen. Stellen, die sich aus dem Code nicht eindeutig ergeben, sind mit <strong>„Hinweis: bitte prüfen"</strong> gekennzeichnet – Sammelliste in <a href="#anh-d">Anhang D</a>.</p></aside>
+</header>
+
+<p><a id="inhalt"></a></p>
+<nav class="toc" aria-label="Inhaltsverzeichnis"><h2 class="chapter">Inhaltsverzeichnis</h2>
+<ol>
+<li><a href="#kap-1">Einleitung</a><ul>
+<li><a href="#k1-1">1.1 Wofür ist LagerPal da?</a></li>
+<li><a href="#k1-2">1.2 Für wen ist dieses Handbuch?</a></li>
+<li><a href="#k1-3">1.3 Glossar – die wichtigsten Begriffe</a></li>
+</ul>
+</li>
+<li><a href="#kap-2">Systemüberblick (für Nicht-Techniker)</a></li>
+<li><a href="#kap-3">Einrichtung Schritt für Schritt</a><ul>
+<li><a href="#k3-1">3.1 Voraussetzungen</a></li>
+<li><a href="#k3-2">3.2 Supabase-Projekt anlegen</a></li>
+<li><a href="#k3-3">3.3 Datenbank aufsetzen (SQL-Datei)</a></li>
+<li><a href="#k3-4">3.4 JTL-Artikelliste laden (optional)</a></li>
+<li><a href="#k3-5">3.5 Benutzer anlegen – Anmeldung und Rollen</a></li>
+<li><a href="#k3-6">3.6 index.html bereitstellen (Hosting)</a></li>
+<li><a href="#k3-7">3.7 Erste Verbindung: Project URL und anon-Key</a></li>
+<li><a href="#k3-8">3.8 anon-Key und Service-Role-Key – der Unterschied</a></li>
+<li><a href="#k3-9">3.9 Dropbox-App anlegen und Refresh-Token erzeugen</a></li>
+<li><a href="#k3-10">3.10 Edge Function deployen und Secrets setzen</a></li>
+<li><a href="#k3-11">3.11 healthchecks.io einrichten</a></li>
+<li><a href="#k3-12">3.12 Zeitplan (Cron) für das tägliche Backup</a></li>
+<li><a href="#k3-13">3.13 Alle Zugangsdaten und wo sie eingetragen werden</a></li>
+<li><a href="#k3-14">3.14 Abschluss-Checkliste</a></li>
+</ul>
+</li>
+<li><a href="#kap-4">Bedienung</a><ul>
+<li><a href="#k4-1">4.1 Anmelden, Abmelden, Verbindung ändern</a></li>
+<li><a href="#k4-2">4.2 Aufbau der Oberfläche</a></li>
+<li><a href="#k4-3">4.3 Reiter „Suche"</a></li>
+<li><a href="#k4-4">4.4 Artikel anlegen, bearbeiten, löschen</a></li>
+<li><a href="#k4-5">4.5 Reiter „Scanner" – Einbuchen (Wareneingang)</a></li>
+<li><a href="#k4-6">4.6 Reiter „Scanner" – Ausbuchen (Entnahme)</a></li>
+<li><a href="#k4-7">4.7 Unbekannte Artikel und JTL-Artikelliste</a></li>
+<li><a href="#k4-8">4.8 Reiter „Umlagern"</a></li>
+<li><a href="#k4-9">4.9 Reiter „Inventur" (Zählen)</a></li>
+<li><a href="#k4-10">4.10 Reiter „Lagerplätze" (inkl. Paletten)</a></li>
+<li><a href="#k4-11">4.11 Reiter „Palette sortieren"</a></li>
+<li><a href="#k4-12">4.12 Reiter „Protokoll"</a></li>
+<li><a href="#k4-13">4.13 Reiter „Import/Export"</a></li>
+<li><a href="#k4-14">4.14 Reiter „Übersicht"</a></li>
+<li><a href="#k4-15">4.15 Leermeldungen (Glocke)</a></li>
+<li><a href="#k4-16">4.16 Rückgängig-Leiste</a></li>
+<li><a href="#k4-17">4.17 Drucken: Karton-Blatt, Etiketten, Pickliste</a></li>
+</ul>
+</li>
+<li><a href="#kap-5">Datensicherung und Wiederherstellung</a></li>
+<li><a href="#kap-6">JTL-Anbindung</a></li>
+<li><a href="#kap-7">Fehlerbehebung und FAQ</a></li>
+<li><a href="#kap-8">Wartung</a></li>
+<li><a href="#kap-9">Anhang</a><ul>
+<li><a href="#anh-a">A – Datenbanktabellen und Sichten</a></li>
+<li><a href="#anh-b">B – Datenbankfunktionen</a></li>
+<li><a href="#anh-c">C – Buchungstypen im Protokoll</a></li>
+<li><a href="#anh-d">D – Liste aller „bitte prüfen"-Stellen</a></li>
+</ul>
+</li>
+</ol></nav>
+<hr class="sep">
+<p><a id="kap-1"></a></p>
+<h2 class="chapter">1. Einleitung</h2>
+<p><a id="k1-1"></a></p>
+<h3>1.1 Wofür ist LagerPal da?</h3>
+<p>LagerPal ist eine Lagerverwaltung, die vollständig im Webbrowser läuft (Titel der Seite: „LagerPal (Web)"). Sie beantwortet die Frage <strong>„Welcher Artikel liegt wie oft auf welchem Lagerplatz bzw. in welchem Karton?"</strong> und protokolliert jede Bewegung.</p>
+<p>Die wichtigsten Aufgaben:</p>
+<ul>
+<li><strong>Ein- und Ausbuchen</strong> per Barcode-Scanner (Reiter „📟 Scanner") oder direkt aus der Artikelsuche.</li>
+<li><strong>Umlagern</strong> von einem Lagerplatz auf einen anderen.</li>
+<li><strong>Inventur</strong>: gezählte Mengen je Lagerplatz übernehmen.</li>
+<li><strong>Palette sortieren</strong>: eine angelieferte Quelle (z. B. eine Mischpalette) ausräumen und die Artikel – gesteuert durch den Amazon-Status – automatisch in „online"- und „nicht online"-Kartons einsortieren, inklusive Sprachansage und Karton-Blatt.</li>
+<li><strong>Leermeldungen</strong> („Glocke"): Hinweis, sobald ein Artikel auf einem Platz leer geworden ist.</li>
+<li><strong>Import/Export</strong>: Bestände und Amazon-Status per CSV/Excel einlesen, Bestände im JTL-Format exportieren.</li>
+<li><strong>Datensicherung</strong>: manueller Download und – über eine Supabase Edge Function – tägliche automatische Sicherung nach Dropbox sowie täglicher Export des JTL-Lagerbestandskommentars.</li>
+</ul>
+<p><a id="k1-2"></a></p>
+<h3>1.2 Für wen ist dieses Handbuch?</h3>
+<ul>
+<li><strong>Lager-Mitarbeiter:innen</strong> finden die Bedienung in <a href="#kap-4">Kapitel 4</a>.</li>
+<li><strong>Wer das System betreut oder neu aufsetzen muss</strong>, findet die Einrichtung in <a href="#kap-3">Kapitel 3</a>, Sicherung in <a href="#kap-5">Kapitel 5</a> und Wartung in <a href="#kap-8">Kapitel 8</a>.</li>
+<li><strong>Büro/Warenwirtschaft (JTL)</strong>: <a href="#kap-6">Kapitel 6</a>.</li>
+</ul>
+<p><a id="k1-3"></a></p>
+<h3>1.3 Glossar – die wichtigsten Begriffe</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Begriff</th>
+<th>Bedeutung in LagerPal</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Artikel</strong></td>
+<td>Ein Produkt mit eindeutiger <strong>Artikelnummer</strong> (z. B. aus JTL), einem <strong>Artikelnamen</strong> und optional einer <strong>GTIN/EAN</strong>.</td>
+</tr>
+<tr>
+<td><strong>Artikelnummer / SKU</strong></td>
+<td>Eindeutiger Schlüssel eines Artikels. In der Oberfläche teils „SKU" genannt (z. B. „12 SKUs" = 12 verschiedene Artikel).</td>
+</tr>
+<tr>
+<td><strong>GTIN / EAN</strong></td>
+<td>Barcode-Nummer des Herstellers. Eine EAN darf bei <strong>mehreren</strong> Artikeln eingetragen sein (z. B. Original und „defekt"-Zweitartikel). Beim Scannen erscheint dann „EAN mehrdeutig" und man gibt die Artikelnummer ein.</td>
+</tr>
+<tr>
+<td><strong>Set-Artikel</strong></td>
+<td>Artikel, bei dem mehrere Teile zusammen <strong>ein</strong> Stück bilden. Wird mit rotem „SET"-Abzeichen gezeigt; beim Buchen erscheint eine Warnung.</td>
+</tr>
+<tr>
+<td><strong>Amazon-Status</strong></td>
+<td>Kennzeichen je Artikel: <strong>online</strong> (1), <strong>nicht online</strong> (2) oder <strong>unbekannt</strong> (0). Steuert bei „Palette sortieren", in welchen Karton ein Artikel kommt. Anzeige als Abzeichen „AMA" (grün), „AMA" durchgestrichen (rot) oder „AMA ?" (grau).</td>
+</tr>
+<tr>
+<td><strong>Lagerplatz</strong></td>
+<td>Ein Ort, an dem Ware liegt – frei benennbar (z. B. Regalfach, Kiste, Karton). Technisch sind „Lagerplatz" und „Karton" dasselbe.</td>
+</tr>
+<tr>
+<td><strong>Karton</strong></td>
+<td>Ein Lagerplatz, dem zusätzlich eine <strong>Palette</strong> und ein <strong>Kanal</strong> zugeordnet sein können. Bei „Palette sortieren" heißen neue Kartons <code>&lt;Palette&gt;-K01</code>, <code>-K02</code> … (z. B. <code>P01-K01</code>).</td>
+</tr>
+<tr>
+<td><strong>Palette</strong></td>
+<td>Gruppierung von Kartons (z. B. <code>P01</code> bis <code>P40</code>). Paletten werden im Reiter „📦 Lagerplätze" unter „🎨 Paletten verwalten" gepflegt.</td>
+</tr>
+<tr>
+<td><strong>Kanal</strong></td>
+<td>Kennzeichen eines Kartons: <strong>gemischt</strong> (0), <strong>online</strong> (1) oder <strong>nicht online</strong> (2).</td>
+</tr>
+<tr>
+<td><strong>Bestand</strong></td>
+<td>Menge eines Artikels auf einem Lagerplatz. Kann nie negativ werden (die Datenbank verhindert das). Ein Bestand von 0 bleibt als „früherer Lagerort" sichtbar (grau).</td>
+</tr>
+<tr>
+<td><strong>Gesamtbestand</strong></td>
+<td>Summe eines Artikels über alle Lagerplätze.</td>
+</tr>
+<tr>
+<td><strong>Buchung</strong></td>
+<td>Jede Bestandsänderung bzw. Verwaltungsaktion wird als Eintrag im <strong>Protokoll</strong> gespeichert (Tabelle <code>buchungen</code>). Typen: siehe <a href="#anh-c">Anhang C</a>.</td>
+</tr>
+<tr>
+<td><strong>Eingang / Ausgang</strong></td>
+<td>Einbuchen (Zugang) bzw. Ausbuchen (Entnahme) auf einem Lagerplatz.</td>
+</tr>
+<tr>
+<td><strong>Umlagerung</strong></td>
+<td>Menge von Platz A nach Platz B verschieben.</td>
+</tr>
+<tr>
+<td><strong>Inventur</strong></td>
+<td>Gezählte Ist-Menge übernehmen; die Differenz wird als Typ „Inventur" protokolliert.</td>
+</tr>
+<tr>
+<td><strong>Inventur-Zugang (Einräumen)</strong></td>
+<td>Bei „Palette sortieren": mehr gescannt, als laut Bestand auf der Quelle lag – der Überschuss wird als Eingang gebucht.</td>
+</tr>
+<tr>
+<td><strong>Quelle</strong></td>
+<td>Bei „Palette sortieren" der Lagerplatz, der ausgeräumt wird.</td>
+</tr>
+<tr>
+<td><strong>Leermeldung</strong></td>
+<td>Meldung „Artikel X auf Platz Y ist leer", automatisch erzeugt, wenn ein Bestand von &gt;0 auf 0 fällt. Sichtbar über die <strong>Glocke</strong> 🔔 oben rechts.</td>
+</tr>
+<tr>
+<td><strong>Einräum-Hinweis</strong></td>
+<td>Besondere Leermeldung nach „✓ Palette fertig", wenn auf der Quelle noch Bestand gebucht ist, der nicht gefunden wurde.</td>
+</tr>
+<tr>
+<td><strong>Unbekannter Artikel</strong></td>
+<td>Platzhalter, der automatisch angelegt wird, wenn eine EAN gescannt wird, die weder in LagerPal noch (eindeutig) in der JTL-Artikelliste steht. Nummer <code>WE-0-230</code>, <code>WE-0-231</code> …, Name „Unbekannt 1", „Unbekannt 2" …</td>
+</tr>
+<tr>
+<td><strong>Klärfall-Karton</strong></td>
+<td>Lagerplatz <code>Unbekannt-01</code>, <code>Unbekannt-02</code> …, in den unbekannte Artikel immer gebucht werden.</td>
+</tr>
+<tr>
+<td><strong>JTL-Artikelliste</strong></td>
+<td>Nachschlage-Tabelle mit dem kompletten JTL-Artikelstamm (ohne Set-Artikel). Wird nur beim Scannen unbekannter EANs benutzt.</td>
+</tr>
+<tr>
+<td><strong>Lagerbestandskommentar</strong></td>
+<td>CSV für JTL mit Spalten <code>Artikelnummer;Kommentar</code>, Kommentar z. B. <code>P01-K03 (5), R2-F4 (1)</code>.</td>
+</tr>
+<tr>
+<td><strong>Rückgängig</strong></td>
+<td>Zurücknehmen der <strong>letzten</strong> umkehrbaren Aktion (höchstens 2 Stunden alt) über die gelbe Leiste unten.</td>
+</tr>
+<tr>
+<td><strong>Teil-Import / Komplett-Import</strong></td>
+<td>Arten des Bestandsimports (siehe <a href="#k4-13">4.13</a>).</td>
+</tr>
+<tr>
+<td><strong>Vollabgleich</strong></td>
+<td>Art des Amazon-Status-Imports: alle Artikel, die nicht in der Datei stehen, werden „nicht online".</td>
+</tr>
+<tr>
+<td><strong>Pickliste</strong></td>
+<td>Druckliste der ausgewählten Artikel mit Lagerplatz, Menge, EAN, Name.</td>
+</tr>
+<tr>
+<td><strong>Karton-Blatt</strong></td>
+<td>DIN-A4-Inhaltsliste eines Kartons mit großem Kartonnamen und farbigem Kanal-Punkt.</td>
+</tr>
+</tbody>
+</table></div>
+<hr class="sep">
+<p><a id="kap-2"></a></p>
+<h2 class="chapter">2. Systemüberblick (für Nicht-Techniker)</h2>
+<p>LagerPal besteht aus wenigen, klar getrennten Bausteinen:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Baustein</th>
+<th>Was es ist</th>
+<th>Aufgabe</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Browser-App</strong> (<code>index.html</code>)</td>
+<td>Eine einzige Webseite (HTML/CSS/JavaScript).</td>
+<td>Die Oberfläche, die im Lager und im Büro benutzt wird. Sie spricht <strong>direkt</strong> mit Supabase – es gibt keinen eigenen Server dazwischen.</td>
+</tr>
+<tr>
+<td><strong>Supabase</strong></td>
+<td>Gehosteter Datenbank-Dienst (PostgreSQL) mit Anmeldung (Auth).</td>
+<td>Speichert alle Daten, prüft die Anmeldung und erlaubt Änderungen <strong>nur</strong> über geprüfte Datenbankfunktionen.</td>
+</tr>
+<tr>
+<td><strong>Edge Function</strong> <code>lagerpal-backup</code></td>
+<td>Kleines Programm, das bei Supabase läuft.</td>
+<td>Erstellt täglich eine Sicherung und den JTL-Kommentar-Export und lädt beides nach Dropbox.</td>
+</tr>
+<tr>
+<td><strong>Zeitplan (pg_cron)</strong></td>
+<td>Zeitgesteuerter Auftrag in der Datenbank.</td>
+<td>Ruft die Edge Function einmal täglich (03:00 Uhr deutscher Zeit) auf. Muss separat eingerichtet werden (<a href="#k3-12">3.12</a>).</td>
+</tr>
+<tr>
+<td><strong>Dropbox</strong></td>
+<td>Cloud-Speicher.</td>
+<td>Ablage der Sicherungen (<code>DROPBOX_FOLDER</code>) und der JTL-CSV (<code>JTL_FOLDER</code>).</td>
+</tr>
+<tr>
+<td><strong>JTL</strong></td>
+<td>Warenwirtschaft.</td>
+<td>Liest den Lagerbestandskommentar aus der CSV-Datei ein.</td>
+</tr>
+<tr>
+<td><strong>healthchecks.io</strong></td>
+<td>Überwachungsdienst.</td>
+<td>Bekommt nach jedem Lauf ein „OK" oder „Fehler"; bleibt die Meldung aus, verschickt er eine E-Mail.</td>
+</tr>
+</tbody>
+</table></div>
+<div class="diagram" hidden data-mermaid="flowchart LR
+    U[&quot;Mitarbeiter:in&lt;br/&gt;Browser mit index.html&quot;] -- &quot;Anmeldung + Lesen/Buchen&lt;br/&gt;(anon-Key + Login)&quot; --&gt; S[(&quot;Supabase&lt;br/&gt;Datenbank + Auth&quot;)]
+    C[&quot;Zeitplan pg_cron&lt;br/&gt;täglich 03:00&quot;] -- &quot;ruft auf&quot; --&gt; F[&quot;Edge Function&lt;br/&gt;lagerpal-backup&quot;]
+    F -- &quot;liest alle Tabellen&lt;br/&gt;(Service-Role-Key)&quot; --&gt; S
+    F -- &quot;Backup .json.gz&quot; --&gt; D[(&quot;Dropbox&lt;br/&gt;DROPBOX_FOLDER&quot;)]
+    F -- &quot;Lagerbestandskommentar.csv&quot; --&gt; J[(&quot;Dropbox&lt;br/&gt;JTL_FOLDER&quot;)]
+    J -- &quot;Import&quot; --&gt; W[&quot;JTL-Wawi&quot;]
+    F -- &quot;OK / Fehler&quot; --&gt; H[&quot;healthchecks.io&lt;br/&gt;E-Mail bei Ausfall&quot;]
+"></div>
+<p>Dieselbe Darstellung als Text (für den Ausdruck):</p>
+<pre><code> [Browser: index.html] ──Login + Buchungen──▶ [Supabase: Datenbank + Auth]
+                                                     ▲
+ [pg_cron, täglich 03:00] ──▶ [Edge Function lagerpal-backup] ──liest──┘
+                                    │
+                                    ├──▶ Dropbox  DROPBOX_FOLDER/lagerpal_backup_JJJJ-MM-TT.json.gz
+                                    ├──▶ Dropbox  JTL_FOLDER/Lagerbestandskommentar.csv ──▶ JTL
+                                    └──▶ healthchecks.io (OK oder /fail)
+</code></pre>
+<p><strong>Wichtig zum Verständnis der Sicherheit:</strong></p>
+<ul>
+<li>Die Browser-App kennt nur den <strong>öffentlichen anon-Key</strong>. Ohne Anmeldung mit E-Mail/Passwort sieht man <strong>nichts</strong> (Zeilensicherheit „RLS").</li>
+<li>Angemeldete Benutzer dürfen alle Tabellen <strong>lesen</strong>, aber <strong>nicht direkt schreiben</strong>. Jede Änderung läuft über eine Datenbankfunktion (z. B. <code>buchen</code>, <code>umlagern</code>), die prüft, protokolliert und alles-oder-nichts ausführt.</li>
+<li>Nur die Edge Function benutzt den mächtigen <strong>Service-Role-Key</strong> – und den stellt Supabase ihr automatisch bereit.</li>
+</ul>
+<hr class="sep">
+<p><a id="kap-3"></a></p>
+<h2 class="chapter">3. Einrichtung Schritt für Schritt</h2>
+<p><a id="k3-1"></a></p>
+<h3>3.1 Voraussetzungen</h3>
+<ul>
+<li>Ein Supabase-Konto (https://supabase.com).</li>
+<li>Ein Dropbox-Konto mit Zugriff auf die Zielordner.</li>
+<li>Optional ein Konto bei https://healthchecks.io.</li>
+<li>Für das Deployen der Edge Function: die <strong>Supabase CLI</strong> auf einem Rechner (oder alternativ der Funktions-Editor im Supabase-Dashboard).</li>
+<li>Ein Ort, an dem <code>index.html</code> als Webseite bereitgestellt wird (<a href="#k3-6">3.6</a>).</li>
+<li>Geräte im Lager: aktueller Browser (Chrome, Edge, Firefox, Safari) mit Internetzugang. Die App lädt beim Start Bibliotheken aus dem Internet (<code>cdn.jsdelivr.net</code>: supabase-js 2, PapaParse 5.4.1, SheetJS/xlsx 0.18.5; Schrift „Inter" von Google Fonts).</li>
+<li>Barcode-Scanner, die wie eine Tastatur arbeiten und nach dem Code <strong>Enter</strong> senden (die Scanfelder reagieren auf die Enter-Taste).</li>
+</ul>
+<p><a id="k3-2"></a></p>
+<h3>3.2 Supabase-Projekt anlegen</h3>
+<ol>
+<li>Bei https://supabase.com anmelden und <strong>New project</strong> wählen.</li>
+<li>Organisation, Projektname (z. B. „LagerPal"), ein sicheres <strong>Datenbank-Passwort</strong> und die Region (z. B. Frankfurt / EU Central) wählen.</li>
+<li>Warten, bis das Projekt bereit ist.</li>
+<li>Unter <strong>Project Settings → API</strong> die <strong>Project URL</strong> (<code>https://&lt;projekt-ref&gt;.supabase.co</code>) und den <strong>anon public key</strong> notieren. Diese Stelle nennt auch die App selbst im Anmeldebildschirm („Project Settings → API").</li>
+</ol>
+<aside class="box info">
+<p><strong>Hinweis:</strong> LagerPal ist für ein <strong>eigenes</strong> Supabase-Projekt gedacht; alle Tabellen liegen im Standardschema <code>public</code> (so steht es im Kopf der SQL-Datei).</p>
+<p><strong>Hinweis: bitte prüfen</strong> – Supabase benennt Menüpunkte gelegentlich um (z. B. „API Keys" statt „API", oder neue Schlüssel im Format <code>sb_publishable_…</code> / <code>sb_secret_…</code>). Der Code verwendet den klassischen <strong>anon public key</strong>; falls nur noch neue Schlüsselformate angeboten werden, bitte prüfen, ob „Legacy API Keys" aktiviert werden müssen.</p>
+</aside>
+<p><a id="k3-3"></a></p>
+<h3>3.3 Datenbank aufsetzen (SQL-Datei)</h3>
+<ol>
+<li>Im Supabase-Dashboard links <strong>SQL Editor</strong> öffnen → <strong>New query</strong>.</li>
+<li>Den <strong>kompletten Inhalt</strong> von <code>supabase/00_KOMPLETT_neu_aufsetzen.sql</code> einfügen.</li>
+<li><strong>Run</strong> klicken. Am Ende sollte „Success. No rows returned" o. ä. erscheinen.</li>
+</ol>
+<p><strong>Was die Datei anlegt</strong> (Zusammenfassung; Details in <a href="#anh-a">Anhang A</a> und <a href="#anh-b">B</a>):</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Bereich</th>
+<th>Inhalt</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Tabellen</td>
+<td><code>artikel</code>, <code>bestaende</code>, <code>lagerplaetze</code>, <code>buchungen</code>, <code>leermeldungen</code>, <code>jtl_artikelliste</code>, <code>paletten</code></td>
+</tr>
+<tr>
+<td>Prüfregeln (CHECK)</td>
+<td>Bestand nie negativ; Kennzeichen nur mit gültigen Werten (<code>ist_set</code> 0/1, <code>online</code> 0/1/2, <code>kanal</code> 0/1/2, <code>gesehen</code> 0/1, <code>rueckgaengig_gemacht</code> 0/1, <code>unbekannt</code> 0/1)</td>
+</tr>
+<tr>
+<td>Sicherheit (RLS)</td>
+<td>Zeilensicherheit auf allen Tabellen. Angemeldete Nutzer (<code>authenticated</code>) dürfen <strong>nur lesen</strong>; Nicht-Angemeldete (<code>anon</code>) dürfen <strong>nichts</strong>. Direkte Schreibrechte werden entzogen. Nutzer dürfen im Schema <code>public</code> keine eigenen Objekte anlegen.</td>
+</tr>
+<tr>
+<td>Sichten</td>
+<td><code>v_lagerplaetze</code> (Plätze mit Artikelanzahl, Stück, Palette, Kanal) und <code>v_dashboard</code> (Kennzahlen der „Übersicht", Tages-/Wochengrenzen nach deutscher Zeit)</td>
+</tr>
+<tr>
+<td>Funktionen</td>
+<td>Alle Schreibvorgänge als <code>SECURITY DEFINER</code>-Funktionen, z. B. <code>buchen</code>, <code>umlagern</code>, <code>inventur_anwenden</code>, <code>rueckgaengig</code>, <code>bestand_csv_import</code>, <code>backup_wiederherstellen</code> … (vollständige Liste in <a href="#anh-b">Anhang B</a>)</td>
+</tr>
+<tr>
+<td>Startdaten</td>
+<td>Tabelle <code>paletten</code> wird mit <code>P01</code> … <code>P40</code> sowie allen bereits bei Lagerplätzen eingetragenen Paletten befüllt.</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Bewusst NICHT enthalten</strong> (laut Kopfkommentar der Datei):</p>
+<ul>
+<li><code>02_data.sql</code> – alte, migrierte Daten (Ersteinpflege der Artikel; für eine Neueinrichtung nicht nötig, liegt nicht im Repository).</li>
+<li><code>06_cron_backup.sql</code> – der Zeitplan für das tägliche Backup. Liegt im Repository unter <code>supabase/06_cron_backup.sql</code> (siehe <a href="#k3-12">3.12</a>).</li>
+<li><code>21b_jtl_artikelliste_daten.sql</code> – die <strong>Daten</strong> der JTL-Artikelliste (optional, siehe <a href="#k3-4">3.4</a>; liegt nicht im Repository).</li>
+</ul>
+<aside class="box warn">
+<p><strong>Warnung:</strong> Die SQL-Datei ist für ein <strong>leeres, neues Projekt</strong> gedacht. Die Lese-Regeln für die fünf Haupttabellen werden mit <code>create policy</code> <strong>ohne</strong> vorheriges <code>drop policy if exists</code> angelegt. Ein zweiter Lauf auf einer bereits eingerichteten Datenbank bricht deshalb voraussichtlich mit „policy … already exists" ab. Tabellen werden mit <code>create table if not exists</code> angelegt – bestehende Tabellen und Daten bleiben unverändert, aber geänderte Tabellenstrukturen würden so auch <strong>nicht</strong> übernommen. Siehe <a href="#kap-8">Kapitel 8</a>.</p>
+</aside>
+<p><a id="k3-4"></a></p>
+<h3>3.4 JTL-Artikelliste laden (optional)</h3>
+<p>Die Tabelle <code>jtl_artikelliste</code> (Artikelnummer, Artikelname, GTIN) enthält laut Kommentar den kompletten JTL-Artikelstamm („Alle WUN die es jemals gab.csv") <strong>ohne</strong> Set-Artikel (Nummern mit Endung <code>-S2</code>, <code>-S3</code> …). Sie wird nur beim Scannen benutzt: Ist eine EAN in LagerPal unbekannt, steht aber <strong>genau einmal</strong> in dieser Liste, legt LagerPal den echten Artikel automatisch an (siehe <a href="#k4-7">4.7</a>).</p>
+<ul>
+<li>Daten laden: Datei <code>21b_jtl_artikelliste_daten.sql</code> im SQL-Editor ausführen.</li>
+<li>Schreiben ist nur per SQL-Editor möglich; die App liest die Tabelle nur.</li>
+<li>Die Tabelle taucht nirgends sonst auf (nicht in Suche, Übersicht, Export oder Backup).</li>
+</ul>
+<aside class="box check">
+<p><strong>Hinweis:</strong> Ohne diese Daten funktioniert LagerPal vollständig – nur das automatische Anlegen unbekannter Artikel beim Scannen entfällt (unbekannte EANs werden dann als Klärfall <code>WE-0-…</code> gebucht). Die Datei <code>21b_jtl_artikelliste_daten.sql</code> diente der Ersteinpflege und liegt nicht im Repository.</p>
+</aside>
+<p><a id="k3-5"></a></p>
+<h3>3.5 Benutzer anlegen – Anmeldung und Rollen</h3>
+<p><strong>So funktioniert die Anmeldung laut Code:</strong></p>
+<ul>
+<li>Anmeldung mit <strong>E-Mail und Passwort</strong> über Supabase Auth (<code>signInWithPassword</code>).</li>
+<li>Es gibt <strong>keine Registrierung</strong> in der App, <strong>keine PINs</strong> und <strong>keine unterschiedlichen Rollen</strong>: Jeder angemeldete Benutzer hat dieselben Rechte (alles lesen, alle Funktionen ausführen – auch „Kompletter Reset" und „Backup einspielen").</li>
+<li>Eine Sitzung bleibt im Browser erhalten; beim nächsten Öffnen wird man automatisch angemeldet, bis man <strong>„Abmelden"</strong> klickt.</li>
+</ul>
+<p><strong>Benutzer anlegen (im Supabase-Dashboard):</strong></p>
+<ol>
+<li><strong>Authentication → Users → Add user → Create new user</strong>.</li>
+<li>E-Mail-Adresse und Passwort eintragen; „Auto Confirm User" aktivieren, damit keine Bestätigungs-E-Mail nötig ist.</li>
+<li>Die Zugangsdaten der Person persönlich übergeben.</li>
+</ol>
+<p>Passwort ändern / Benutzer sperren: ebenfalls unter <strong>Authentication → Users</strong> (Benutzer auswählen → Passwort zurücksetzen bzw. löschen).</p>
+<aside class="box warn">
+<p><strong>Warnung:</strong> Da jeder angemeldete Benutzer alle Funktionen aufrufen darf, sollte die <strong>Selbstregistrierung abgeschaltet</strong> werden (Authentication → Sign In / Providers → „Allow new users to sign up" deaktivieren). Sonst könnte sich jemand, der den anon-Key kennt, über die Supabase-Schnittstelle selbst ein Konto anlegen.</p>
+<p><strong>Hinweis: bitte prüfen</strong> – Die genauen Menübezeichnungen im Supabase-Dashboard (Add user, Auto Confirm User, Allow new users to sign up) stammen nicht aus dem LagerPal-Code und können sich ändern.</p>
+</aside>
+<p><a id="k3-6"></a></p>
+<h3>3.6 index.html bereitstellen (Hosting)</h3>
+<p><code>index.html</code> ist eine <strong>eigenständige Datei</strong> ohne Build-Schritt. Sie muss nur als Webseite erreichbar sein. Geeignet ist jeder Anbieter für statische Webseiten, z. B.:</p>
+<ul>
+<li><strong>GitHub Pages</strong>: Repository → Settings → Pages → Branch wählen → die Datei liegt im Wurzelverzeichnis, ist also direkt unter <code>https://&lt;benutzer&gt;.github.io/&lt;repo&gt;/</code> erreichbar.</li>
+<li>Netlify, Cloudflare Pages, ein normaler Webspace (Datei per FTP hochladen) o. ä.</li>
+</ul>
+<p>Da im Code <strong>keine Schlüssel</strong> stehen (URL und anon-Key werden erst im Browser eingegeben, siehe <a href="#k3-7">3.7</a>), kann die Datei auch in einem öffentlichen Repository liegen.</p>
+<aside class="box check">
+<p><strong>Hinweis: bitte prüfen</strong> – Im Repository gibt es keine Hinweise auf den tatsächlich genutzten Hosting-Dienst (keine <code>CNAME</code>-Datei, kein Deploy-Workflow). Bitte die aktuelle Adresse der App hier eintragen: <code>https://&lt;ADRESSE-DER-APP&gt;</code>.</p>
+<p><strong>Tipp:</strong> Die Seite sollte über <strong>HTTPS</strong> laufen. Gespeicherte Verbindung und Anmeldung gelten je <strong>Adresse</strong> (Herkunft) – wechselt die Adresse, muss man URL, Schlüssel und Login einmal neu eingeben.</p>
+</aside>
+<p><a id="k3-7"></a></p>
+<h3>3.7 Erste Verbindung: Project URL und anon-Key</h3>
+<p><strong>Die Supabase-URL und der anon-Key werden NICHT in <code>index.html</code> eingetragen.</strong> Es gibt im Code keine Variable mit fest hinterlegtem Wert. Stattdessen fragt die App beim ersten Öffnen danach:</p>
+<ol>
+<li>App im Browser öffnen. Es erscheint der Hinweis „Einmalig: Supabase <strong>Project URL</strong> und <strong>anon public key</strong> (Project Settings → API)."</li>
+<li>Feld <strong>„Supabase Project URL"</strong> (Platzhalter <code>https://xxxx.supabase.co</code>) ausfüllen. Versehentlich mitkopierte Pfade wie <code>/rest/v1/</code> schneidet die App automatisch ab.</li>
+<li>Feld <strong>„anon public key"</strong> (Platzhalter <code>eyJhbGci...</code>) ausfüllen.</li>
+<li><strong>„Verbinden"</strong> klicken. Danach erscheinen die Felder <strong>„E-Mail"</strong> und <strong>„Passwort"</strong>.</li>
+</ol>
+<p>Technische Details für Betreuer:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Was</th>
+<th>Wo im Code</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Eingabefelder</td>
+<td><code>&lt;input id="url"&gt;</code> und <code>&lt;input id="key"&gt;</code> im Block <code>id="cfg-block"</code></td>
+</tr>
+<tr>
+<td>Verbindungsaufbau</td>
+<td>Funktion <code>verbinden()</code> → <code>supabase.createClient(url, key)</code></td>
+</tr>
+<tr>
+<td>Speicherung</td>
+<td>im Browser (<code>localStorage</code>) unter den Schlüsseln <strong><code>lp_url</code></strong> und <strong><code>lp_key</code></strong></td>
+</tr>
+<tr>
+<td>Automatisches Laden</td>
+<td>beim Seitenaufruf (<code>window.addEventListener('load', …)</code>): sind <code>lp_url</code> und <code>lp_key</code> vorhanden, verbindet die App sofort</td>
+</tr>
+<tr>
+<td>Zurücksetzen</td>
+<td>Link „⚙️ Verbindung ändern (falsche URL/Schlüssel eingegeben?)" → löscht <code>lp_url</code>/<code>lp_key</code> und lädt neu</td>
+</tr>
+</tbody>
+</table></div>
+<aside class="box tip">
+<p><strong>Tipp:</strong> Die Eingabe ist <strong>pro Gerät und Browser</strong> nötig. Wer viele Geräte einrichtet, kann die Werte z. B. per QR-Code oder Textdatei auf die Geräte bringen. Ein fest eingetragener Wert im Code ist im aktuellen Stand nicht vorgesehen.</p>
+</aside>
+<p><a id="k3-8"></a></p>
+<h3>3.8 anon-Key und Service-Role-Key – der Unterschied</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><strong>anon public key</strong></th>
+<th><strong>service_role key</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Zweck</td>
+<td>Öffentlicher „Türöffner" für Browser-Apps</td>
+<td>Generalschlüssel für Server-Programme</td>
+</tr>
+<tr>
+<td>Rechte</td>
+<td>Nur so viel, wie die Sicherheitsregeln (RLS) erlauben. In LagerPal: ohne Login <strong>nichts</strong>, mit Login lesen + Funktionen aufrufen</td>
+<td><strong>Umgeht alle Sicherheitsregeln</strong>: kann jede Tabelle lesen, ändern, löschen</td>
+</tr>
+<tr>
+<td>Wo verwendet</td>
+<td>Eingabe in der App (<a href="#k3-7">3.7</a>); ggf. im Cron-Aufruf (<a href="#k3-12">3.12</a>)</td>
+<td><strong>Nur</strong> in der Edge Function – dort stellt Supabase ihn automatisch als <code>SUPABASE_SERVICE_ROLE_KEY</code> bereit</td>
+</tr>
+<tr>
+<td>Darf ins Frontend?</td>
+<td>Ja</td>
+<td><strong>Niemals</strong></td>
+</tr>
+</tbody>
+</table></div>
+<aside class="box warn">
+<p><strong>Warnung:</strong> Der Service-Role-Key darf <strong>nie</strong> in <code>index.html</code>, in die App-Eingabemaske, in ein Repository, in E-Mails oder Chats. Alles, was im Browser steht, kann jeder Benutzer auslesen (z. B. über die Entwicklerwerkzeuge oder <code>localStorage</code>). Mit dem Service-Role-Key könnte jemand die gesamte Datenbank ohne Anmeldung lesen und löschen. Ist er versehentlich offengelegt worden: im Supabase-Dashboard sofort einen neuen Schlüssel erzeugen (JWT-Secret bzw. API-Keys rotieren) und die Edge Function neu deployen.</p>
+</aside>
+<p><a id="k3-9"></a></p>
+<h3>3.9 Dropbox-App anlegen und Refresh-Token erzeugen</h3>
+<p>Die Edge Function meldet sich bei Dropbox mit <strong>App-Key</strong>, <strong>App-Secret</strong> und einem dauerhaft gültigen <strong>Refresh-Token</strong> an und holt sich bei jedem Lauf selbst ein kurzlebiges Zugriffstoken.</p>
+<p><strong>Schritt 1 – App anlegen</strong></p>
+<ol>
+<li>https://www.dropbox.com/developers/apps öffnen und mit dem Dropbox-Konto anmelden, in dem die Sicherungen landen sollen.</li>
+<li><strong>Create app</strong> → <strong>Scoped access</strong> wählen.</li>
+<li>Zugriffsart <strong>Full Dropbox</strong> wählen. Begründung: Die Standardordner im Code sind absolute Pfade (<code>/1. SILENTMONSTERS/BACKUPS/LagerPal</code>, <code>/ScannerPro/LagerPal/JTL_lagerbestandskommentare_ex_import</code>). Mit „App folder" lägen alle Pfade innerhalb von <code>Apps/&lt;App-Name&gt;/</code>.</li>
+<li>Einen Namen vergeben (z. B. „LagerPal Backup") → <strong>Create app</strong>.</li>
+</ol>
+<p><strong>Schritt 2 – Berechtigungen setzen</strong> (Reiter <strong>Permissions</strong>, danach <strong>Submit</strong>)</p>
+<p>Die Funktion benutzt diese Dropbox-Aufrufe: <code>files/upload</code>, <code>files/list_folder</code>, <code>files/get_metadata</code>, <code>files/delete_v2</code>, <code>files/create_folder_v2</code>, <code>files/move_v2</code>. Dafür nötig:</p>
+<ul>
+<li><code>files.metadata.read</code></li>
+<li><code>files.metadata.write</code></li>
+<li><code>files.content.read</code></li>
+<li><code>files.content.write</code></li>
+</ul>
+<aside class="box info">
+<p><strong>Hinweis:</strong> Berechtigungen <strong>vor</strong> dem Erzeugen des Refresh-Tokens setzen. Werden sie später geändert, muss ein neuer Refresh-Token erzeugt werden.</p>
+<p><strong>Hinweis: bitte prüfen</strong> – Die Zuordnung der Dropbox-Aufrufe zu den Berechtigungen und die Wahl „Full Dropbox" sind aus den im Code verwendeten Pfaden und API-Aufrufen abgeleitet. Bitte prüfen, mit welcher Einstellung die bestehende App angelegt wurde.</p>
+</aside>
+<p><strong>Schritt 3 – App-Key und App-Secret notieren</strong></p>
+<p>Reiter <strong>Settings</strong>: <strong>App key</strong> und <strong>App secret</strong> (auf „Show" klicken) notieren.</p>
+<p><strong>Schritt 4 – Refresh-Token erzeugen</strong> (einmalig)</p>
+<ol>
+<li>
+<p>Im Browser diese Adresse öffnen (<code>&lt;APP_KEY&gt;</code> ersetzen):</p>
+<pre><code>https://www.dropbox.com/oauth2/authorize?client_id=&lt;APP_KEY&gt;&amp;response_type=code&amp;token_access_type=offline
+</code></pre>
+</li>
+<li>
+<p>Zugriff erlauben („Allow"/„Zulassen"). Dropbox zeigt einen <strong>Zugriffscode</strong> an – kopieren (er ist nur kurz gültig).</p>
+</li>
+<li>
+<p>In einem Terminal (Linux/macOS, oder Windows mit <code>curl.exe</code>) ausführen:</p>
+<pre><code>curl https://api.dropboxapi.com/oauth2/token \
+ -d code=&lt;ZUGRIFFSCODE&gt; \
+ -d grant_type=authorization_code \
+ -u &lt;APP_KEY&gt;:&lt;APP_SECRET&gt;
+</code></pre>
+</li>
+<li>
+<p>In der Antwort steht <code>"refresh_token": "…"</code>. Diesen Wert sicher notieren – das ist <strong><code>DROPBOX_REFRESH_TOKEN</code></strong>. (Der ebenfalls gelieferte <code>access_token</code> wird nicht gebraucht.)</p>
+</li>
+</ol>
+<aside class="box warn">
+<p><strong>Warnung:</strong> App-Secret und Refresh-Token sind Passwörter. Wer sie hat, kann (bei „Full Dropbox") auf die gesamte Dropbox zugreifen. Nur als Supabase-Secret speichern, nicht in Dateien oder Chats.</p>
+</aside>
+<p><a id="k3-10"></a></p>
+<h3>3.10 Edge Function deployen und Secrets setzen</h3>
+<p><strong>Deployen mit der Supabase CLI</strong> (im Wurzelverzeichnis des Repositorys, dort wo der Ordner <code>supabase/</code> liegt):</p>
+<pre><code>supabase login
+supabase link --project-ref &lt;PROJEKT-REF&gt;
+supabase functions deploy lagerpal-backup
+</code></pre>
+<p><code>&lt;PROJEKT-REF&gt;</code> ist der Teil vor <code>.supabase.co</code> in der Project URL. Beim <code>link</code> fragt die CLI ggf. nach dem Datenbank-Passwort.</p>
+<aside class="box warn">
+<p><strong>Wichtig:</strong> Nach dem Deploy im Dashboard unter <strong>Edge Functions → lagerpal-backup → Settings</strong> die Option <strong>„Verify JWT with legacy secret“ AUSSCHALTEN</strong> (alternativ per CLI: <code>supabase functions deploy lagerpal-backup --no-verify-jwt</code>). Der Zeitplan (<a href="#k3-12">3.12</a>) ruft die Function bewusst <strong>ohne</strong> Schlüssel auf. Hintergrund (laut <code>06_cron_backup.sql</code>): Ein früher mitgeschickter <code>sb_secret_…</code>-Schlüssel wurde von Supabase mit „Invalid API key“ (401) abgelehnt – das automatische Backup lief vom 23.09. bis 27.09.2026 deshalb nie.</p>
+<p><strong>Folge:</strong> Wer die Adresse der Function kennt, kann ein Backup auslösen. Daten werden dabei nicht preisgegeben (die Antwort enthält nur Zeilenzahlen und Dateipfade), es wird lediglich die Tagessicherung bzw. die JTL-Datei neu geschrieben.</p>
+</aside>
+<p><strong>Secrets setzen</strong> – entweder im Dashboard unter <strong>Edge Functions → Secrets</strong> (so steht es im Code-Kommentar) oder per CLI:</p>
+<pre><code>supabase secrets set DROPBOX_APP_KEY=&lt;APP_KEY&gt;
+supabase secrets set DROPBOX_APP_SECRET=&lt;APP_SECRET&gt;
+supabase secrets set DROPBOX_REFRESH_TOKEN=&lt;REFRESH_TOKEN&gt;
+supabase secrets set DROPBOX_FOLDER=&quot;/&lt;PFAD&gt;/&lt;ZU&gt;/&lt;BACKUPS&gt;&quot;
+supabase secrets set JTL_FOLDER=&quot;/&lt;PFAD&gt;/&lt;FUER&gt;/&lt;JTL&gt;&quot;
+supabase secrets set HEALTHCHECK_URL=https://hc-ping.com/&lt;UUID&gt;
+</code></pre>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Secret</th>
+<th>Pflicht?</th>
+<th>Bedeutung</th>
+<th>Standardwert im Code</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DROPBOX_APP_KEY</code></td>
+<td>ja</td>
+<td>App-Key aus der Dropbox-App-Konsole</td>
+<td>–</td>
+</tr>
+<tr>
+<td><code>DROPBOX_APP_SECRET</code></td>
+<td>ja</td>
+<td>App-Secret aus der Dropbox-App-Konsole</td>
+<td>–</td>
+</tr>
+<tr>
+<td><code>DROPBOX_REFRESH_TOKEN</code></td>
+<td>ja</td>
+<td>Dauerhafter Refresh-Token (<a href="#k3-9">3.9</a>)</td>
+<td>–</td>
+</tr>
+<tr>
+<td><code>DROPBOX_FOLDER</code></td>
+<td>im Code als „benötigt" aufgeführt, hat aber einen Standardwert</td>
+<td>Dropbox-Ordner für die Sicherungen <code>lagerpal_backup_JJJJ-MM-TT.json.gz</code></td>
+<td><code>/1. SILENTMONSTERS/BACKUPS/LagerPal</code></td>
+</tr>
+<tr>
+<td><code>JTL_FOLDER</code></td>
+<td>optional</td>
+<td>Dropbox-Ordner für <code>Lagerbestandskommentar.csv</code> und den Unterordner <code>Archiv</code></td>
+<td><code>/ScannerPro/LagerPal/JTL_lagerbestandskommentare_ex_import</code></td>
+</tr>
+<tr>
+<td><code>HEALTHCHECK_URL</code></td>
+<td>optional</td>
+<td>Ping-Adresse von healthchecks.io. Erfolg → Aufruf der URL, Fehler → <code>&lt;URL&gt;/fail</code>. Nicht gesetzt → keine Überwachung</td>
+<td>–</td>
+</tr>
+<tr>
+<td><code>SUPABASE_URL</code></td>
+<td><strong>nicht setzen</strong></td>
+<td>wird von Supabase automatisch bereitgestellt</td>
+<td>–</td>
+</tr>
+<tr>
+<td><code>SUPABASE_SERVICE_ROLE_KEY</code></td>
+<td><strong>nicht setzen</strong></td>
+<td>wird von Supabase automatisch bereitgestellt</td>
+<td>–</td>
+</tr>
+</tbody>
+</table></div>
+<aside class="box info">
+<p><strong>Hinweis:</strong> Abschließende Schrägstriche bei <code>JTL_FOLDER</code> und <code>HEALTHCHECK_URL</code> entfernt die Function selbst. Bei <code>DROPBOX_FOLDER</code> geschieht das <strong>nicht</strong> – dort also <strong>ohne</strong> abschließenden <code>/</code> eintragen. Dropbox-Pfade beginnen mit <code>/</code>.</p>
+</aside>
+<p><strong>Testlauf</strong> (ersetzt Platzhalter):</p>
+<pre><code>curl -X POST &quot;https://&lt;PROJEKT-REF&gt;.supabase.co/functions/v1/lagerpal-backup&quot; \
+  -H &quot;Authorization: Bearer &lt;ANON_KEY&gt;&quot;
+</code></pre>
+<p>Erfolgreiche Antwort (HTTP 200), gekürzt:</p>
+<pre><code>{&quot;ok&quot;:true,
+ &quot;zeilen&quot;:{&quot;artikel&quot;:…,&quot;bestaende&quot;:…,&quot;lagerplaetze&quot;:…,&quot;buchungen&quot;:…,&quot;leermeldungen&quot;:…,&quot;paletten&quot;:…},
+ &quot;pfad&quot;:&quot;/…/lagerpal_backup_2026-10-02.json.gz&quot;,&quot;groesse_bytes&quot;:…,
+ &quot;retention&quot;:{&quot;geprueft&quot;:…,&quot;geloescht&quot;:…,&quot;dauerhaft_behalten&quot;:…},
+ &quot;jtl&quot;:{&quot;pfad&quot;:&quot;/…/Lagerbestandskommentar.csv&quot;,&quot;archiviert&quot;:null,&quot;artikel&quot;:…,&quot;mit_bestand&quot;:…}}
+</code></pre>
+<p>Bei einem Fehler kommt HTTP 500 mit <code>"ok":false</code> und einem Feld <code>"fehler"</code> (siehe <a href="#kap-7">Kapitel 7</a>).</p>
+<aside class="box info">
+<p><strong>Hinweis:</strong> Ein zweiter Lauf am selben Tag <strong>überschreibt</strong> die Tagessicherung und die heutige JTL-Datei (keine Dubletten). Testläufe sind daher unschädlich.</p>
+</aside>
+<p><a id="k3-11"></a></p>
+<h3>3.11 healthchecks.io einrichten (optional, empfohlen)</h3>
+<ol>
+<li>Bei https://healthchecks.io anmelden → <strong>Add Check</strong>.</li>
+<li><strong>Period</strong>: 1 Tag; <strong>Grace Time</strong>: z. B. 1–2 Stunden.</li>
+<li>Benachrichtigung per E-Mail einrichten (Standard: Konto-E-Mail).</li>
+<li>Die <strong>Ping-URL</strong> (Format <code>https://hc-ping.com/&lt;uuid&gt;</code>) als Secret <code>HEALTHCHECK_URL</code> speichern.</li>
+</ol>
+<p>Ablauf: Nach jedem Lauf sendet die Function den Ergebnistext (max. 10 000 Zeichen) an die Ping-URL – bei Erfolg an <code>&lt;URL&gt;</code>, bei Fehler an <code>&lt;URL&gt;/fail</code>. Bleibt der Ping ganz aus (z. B. weil der Zeitplan nicht läuft) oder kommt <code>/fail</code>, verschickt healthchecks.io eine E-Mail. Ein Ausfall von healthchecks.io selbst lässt das Backup <strong>nicht</strong> scheitern (Zeitlimit 10 Sekunden, Fehler wird nur protokolliert).</p>
+<p><a id="k3-12"></a></p>
+<h3>3.12 Zeitplan (Cron) für das tägliche Backup</h3>
+<p>Der Zeitplan steht in der Datei <strong><code>supabase/06_cron_backup.sql</code></strong>. Voraussetzungen: Die Edge Function ist deployt (<a href="#k3-10">3.10</a>) und „Verify JWT with legacy secret“ ist <strong>ausgeschaltet</strong>.</p>
+<p><strong>Einrichten:</strong> Supabase → <strong>SQL Editor</strong> → neue Query → Inhalt von <code>06_cron_backup.sql</code> einfügen → in beiden Aufträgen die Projektadresse prüfen (<code>https://&lt;PROJEKT-REF&gt;.supabase.co/functions/v1/lagerpal-backup</code>) → <strong>Run</strong>.</p>
+<p><strong>Was die Datei anlegt:</strong></p>
+<ul>
+<li>Erweiterungen <code>pg_cron</code> (Zeitplan) und <code>pg_net</code> (Web-Aufruf aus der Datenbank).</li>
+<li>Auftrag <strong><code>lagerpal-daily-backup-sommer</code></strong>: <code>0 1 * 4-10 *</code> → April bis Oktober um 01:00 UTC = <strong>03:00 Uhr MESZ</strong>.</li>
+<li>Auftrag <strong><code>lagerpal-daily-backup-winter</code></strong>: <code>0 2 * 11,12,1,2,3 *</code> → November bis März um 02:00 UTC = <strong>03:00 Uhr MEZ</strong>.</li>
+<li>Aufruf <strong>ohne Schlüssel</strong>, Wartezeit 60 Sekunden (<code>timeout_milliseconds := 60000</code>), damit das Ergebnis in <code>net._http_response</code> sichtbar ist.</li>
+</ul>
+<p>Die Aufträge richten sich nach Kalendermonaten, nicht nach den exakten Umstellungstagen. In den letzten Märztagen (nach der Umstellung) läuft das Backup daher um 04:00 Uhr, in den letzten Oktobertagen um 02:00 Uhr. Für ein nächtliches Backup ist das unkritisch.</p>
+<p><strong>Warum nachts:</strong> Das Backup liest die Tabellen nacheinander; wird währenddessen gebucht, kann die Sicherung leicht unstimmig werden. Die Datei heißt nach dem Tag, an dem sie nachts entsteht: <code>lagerpal_backup_2026-09-28</code> enthält den Stand vom Abend des 27.09. Der JTL-Export läuft im selben Lauf und liegt morgens bereit.</p>
+<pre><code class="language-sql">create extension if not exists pg_cron;
+create extension if not exists pg_net;
+
+-- Sommerzeit-Fenster (April–Oktober): 01:00 UTC = 03:00 Uhr MESZ
+select cron.schedule(
+  'lagerpal-daily-backup-sommer',
+  '0 1 * 4-10 *',
+  $$
+  select net.http_post(
+    url := 'https://&lt;PROJEKT-REF&gt;.supabase.co/functions/v1/lagerpal-backup',
+    headers := jsonb_build_object('Content-Type', 'application/json'),
+    body := '{}'::jsonb, timeout_milliseconds := 60000);
+  $$
+);
+
+-- Winterzeit-Fenster (November–März): 02:00 UTC = 03:00 Uhr MEZ
+select cron.schedule(
+  'lagerpal-daily-backup-winter',
+  '0 2 * 11,12,1,2,3 *',
+  $$
+  select net.http_post(
+    url := 'https://&lt;PROJEKT-REF&gt;.supabase.co/functions/v1/lagerpal-backup',
+    headers := jsonb_build_object('Content-Type', 'application/json'),
+    body := '{}'::jsonb, timeout_milliseconds := 60000);
+  $$
+);
+</code></pre>
+<p>Kontrolle und Pflege:</p>
+<pre><code class="language-sql">-- Aufträge anzeigen
+select jobid, jobname, schedule, active from cron.job order by jobname;
+-- Letzte Läufe
+select j.jobname, d.status, d.start_time from cron.job_run_details d join cron.job j using (jobid) order by d.start_time desc limit 5;
+-- Antworten der Function
+select id, status_code, left(coalesce(error_msg, content::text), 300), created from net._http_response order by id desc limit 5;
+-- Uhrzeit ändern (statt neu anlegen)
+select cron.alter_job((select jobid from cron.job where jobname = 'lagerpal-daily-backup-sommer'), schedule := '0 1 * 4-10 *');
+-- Auftrag entfernen
+select cron.unschedule('lagerpal-daily-backup-sommer');
+select cron.unschedule('lagerpal-daily-backup-winter');
+</code></pre>
+<aside class="box info">
+<p><strong>Hinweis:</strong> Die Datei ist <strong>nicht</strong> wiederholbar: Ein zweiter Lauf legt die Aufträge erneut an (<code>cron.schedule</code> mit gleichem Namen ersetzt den Auftrag in neueren pg_cron-Versionen, ältere melden einen Fehler). Zum Ändern besser <code>cron.alter_job</code> verwenden.</p>
+</aside>
+<p><a id="k3-13"></a></p>
+<h3>3.13 Alle Zugangsdaten und wo sie eingetragen werden</h3>
+<aside class="box warn">
+<p><strong>Warnung:</strong> Diese Tabelle enthält bewusst <strong>nur Platzhalter</strong>. Echte Werte gehören in einen Passwort-Manager, nicht in dieses Dokument.</p>
+</aside>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Zugangsdatum</th>
+<th>Woher</th>
+<th>Wo eingetragen</th>
+<th>Vertraulichkeit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Supabase <strong>Project URL</strong> <code>https://&lt;PROJEKT-REF&gt;.supabase.co</code></td>
+<td>Supabase → Project Settings → API</td>
+<td>App-Anmeldemaske „Supabase Project URL" (gespeichert als <code>lp_url</code>); Cron-Auftrag; Testaufruf</td>
+<td>nicht geheim</td>
+</tr>
+<tr>
+<td>Supabase <strong>anon public key</strong> <code>&lt;ANON_KEY&gt;</code></td>
+<td>Supabase → Project Settings → API</td>
+<td>App-Anmeldemaske „anon public key" (gespeichert als <code>lp_key</code>); <code>Authorization</code>-Header im Cron-Auftrag</td>
+<td>öffentlich gedacht, trotzdem nicht unnötig verbreiten</td>
+</tr>
+<tr>
+<td>Supabase <strong>service_role key</strong></td>
+<td>Supabase → Project Settings → API</td>
+<td><strong>Nirgends von Hand.</strong> Steht der Edge Function automatisch als <code>SUPABASE_SERVICE_ROLE_KEY</code> zur Verfügung</td>
+<td><strong>streng geheim</strong></td>
+</tr>
+<tr>
+<td><strong>Datenbank-Passwort</strong></td>
+<td>beim Anlegen des Projekts gewählt</td>
+<td>nur für <code>supabase link</code> / direkte DB-Verbindungen</td>
+<td>geheim</td>
+</tr>
+<tr>
+<td><strong>Supabase-Konto</strong> (Dashboard-Login)</td>
+<td>supabase.com</td>
+<td>Browser / <code>supabase login</code></td>
+<td>geheim</td>
+</tr>
+<tr>
+<td><strong>App-Benutzer</strong> (E-Mail + Passwort)</td>
+<td>Supabase → Authentication → Users</td>
+<td>App-Feld „E-Mail" / „Passwort"</td>
+<td>geheim, persönlich</td>
+</tr>
+<tr>
+<td><code>DROPBOX_APP_KEY</code> <code>&lt;APP_KEY&gt;</code></td>
+<td>Dropbox App Console → Settings</td>
+<td>Edge-Function-Secret</td>
+<td>wenig vertraulich</td>
+</tr>
+<tr>
+<td><code>DROPBOX_APP_SECRET</code> <code>&lt;APP_SECRET&gt;</code></td>
+<td>Dropbox App Console → Settings</td>
+<td>Edge-Function-Secret</td>
+<td><strong>geheim</strong></td>
+</tr>
+<tr>
+<td><code>DROPBOX_REFRESH_TOKEN</code> <code>&lt;REFRESH_TOKEN&gt;</code></td>
+<td>OAuth-Ablauf (<a href="#k3-9">3.9</a>)</td>
+<td>Edge-Function-Secret</td>
+<td><strong>geheim</strong></td>
+</tr>
+<tr>
+<td><code>DROPBOX_FOLDER</code> <code>/&lt;BACKUP-ORDNER&gt;</code></td>
+<td>selbst festgelegt</td>
+<td>Edge-Function-Secret (Standard siehe <a href="#k3-10">3.10</a>)</td>
+<td>nicht geheim</td>
+</tr>
+<tr>
+<td><code>JTL_FOLDER</code> <code>/&lt;JTL-ORDNER&gt;</code></td>
+<td>selbst festgelegt</td>
+<td>Edge-Function-Secret (optional)</td>
+<td>nicht geheim</td>
+</tr>
+<tr>
+<td><code>HEALTHCHECK_URL</code> <code>https://hc-ping.com/&lt;UUID&gt;</code></td>
+<td>healthchecks.io → Check</td>
+<td>Edge-Function-Secret (optional)</td>
+<td>vertraulich (wer sie kennt, kann falsche „OK"-Meldungen senden)</td>
+</tr>
+<tr>
+<td><strong>healthchecks.io-Konto</strong></td>
+<td>healthchecks.io</td>
+<td>Browser</td>
+<td>geheim</td>
+</tr>
+<tr>
+<td><strong>Dropbox-Konto</strong></td>
+<td>dropbox.com</td>
+<td>Browser</td>
+<td>geheim</td>
+</tr>
+</tbody>
+</table></div>
+<p><a id="k3-14"></a></p>
+<h3>3.14 Abschluss-Checkliste</h3>
+<ul>
+<li class="check-item"><span class="cb" aria-hidden="true"></span>SQL-Datei ohne Fehler ausgeführt; im Table Editor sind die 7 Tabellen sichtbar.</li>
+<li class="check-item"><span class="cb" aria-hidden="true"></span>(Optional) JTL-Artikelliste geladen.</li>
+<li class="check-item"><span class="cb" aria-hidden="true"></span>Mindestens ein Benutzer angelegt; Selbstregistrierung deaktiviert.</li>
+<li class="check-item"><span class="cb" aria-hidden="true"></span><code>index.html</code> unter HTTPS erreichbar; Verbinden und Anmelden klappt.</li>
+<li class="check-item"><span class="cb" aria-hidden="true"></span>Testweise einen Lagerplatz anlegen, einen Artikel anlegen, ein- und ausbuchen, Rückgängig testen.</li>
+<li class="check-item"><span class="cb" aria-hidden="true"></span>Edge Function deployt, alle Secrets gesetzt, Testaufruf liefert <code>"ok":true</code>.</li>
+<li class="check-item"><span class="cb" aria-hidden="true"></span>Datei <code>lagerpal_backup_&lt;heute&gt;.json.gz</code> liegt in Dropbox; <code>Lagerbestandskommentar.csv</code> liegt im JTL-Ordner.</li>
+<li class="check-item"><span class="cb" aria-hidden="true"></span>healthchecks.io zeigt den Ping.</li>
+<li class="check-item"><span class="cb" aria-hidden="true"></span>Cron-Aufträge angelegt; am nächsten Morgen in <code>cron.job_run_details</code> und healthchecks.io kontrolliert.</li>
+<li class="check-item"><span class="cb" aria-hidden="true"></span>Eine Sicherung testweise über „📥 Einspielen der JSON Backdatei" in einem <strong>Testprojekt</strong> zurückgespielt (siehe <a href="#kap-5">Kapitel 5</a>).</li>
+</ul>
+<hr class="sep">
+<p><a id="kap-4"></a></p>
+<h2 class="chapter">4. Bedienung</h2>
+<p><a id="k4-1"></a></p>
+<h3>4.1 Anmelden, Abmelden, Verbindung ändern</h3>
+<p><strong>Anmelden</strong></p>
+<ol>
+<li>App öffnen. (Beim allerersten Mal auf diesem Gerät: Project URL und anon-Key eingeben und „Verbinden" klicken – siehe <a href="#k3-7">3.7</a>.)</li>
+<li><strong>E-Mail</strong> und <strong>Passwort</strong> eingeben.</li>
+<li><strong>„Anmelden"</strong> klicken oder im Passwortfeld <strong>Enter</strong> drücken.</li>
+<li>Nach erfolgreicher Anmeldung öffnet sich der Reiter „🔎 Suche".</li>
+</ol>
+<p>Bei falschen Daten erscheint „Login fehlgeschlagen: …" mit der Meldung von Supabase (meist englisch, z. B. „Invalid login credentials").</p>
+<p><strong>Abmelden</strong>: Knopf <strong>„Abmelden"</strong> oben rechts.</p>
+<p><strong>Verbindung ändern</strong>: Im Anmeldebildschirm den Link <strong>„⚙️ Verbindung ändern (falsche URL/Schlüssel eingegeben?)"</strong> klicken. Die gespeicherten Werte werden gelöscht und die Eingabemaske erscheint erneut.</p>
+<p><a id="k4-2"></a></p>
+<h3>4.2 Aufbau der Oberfläche</h3>
+<ul>
+<li><strong>Kopfzeile</strong>: „📦 LagerPal", rechts die <strong>Glocke 🔔</strong> mit Zähler der offenen Leermeldungen (pulsiert orange, wenn neue vorliegen) und <strong>„Abmelden"</strong>.</li>
+<li><strong>Reiterleiste</strong> (in dieser Reihenfolge): „🔎 Suche", „📟 Scanner", „🔀 Umlagern", „🧮 Inventur", „📦 Lagerplätze", „📋 Protokoll", „🔄 Import/Export", „📊 Übersicht", „🧺 Palette sortieren".</li>
+<li><strong>Rückgängig-Leiste</strong> (gelb, unten): erscheint, wenn die letzte Aktion zurückgenommen werden kann (<a href="#k4-16">4.16</a>).</li>
+<li>Glocke und Rückgängig-Leiste aktualisieren sich automatisch <strong>alle 15 Sekunden</strong>.</li>
+</ul>
+<p><a id="k4-3"></a></p>
+<h3>4.3 Reiter „🔎 Suche"</h3>
+<p>Der Startreiter. Er zeigt <strong>alle Artikel</strong> mit ihren Lagerplätzen und erlaubt direktes Ein-/Ausbuchen.</p>
+<p><strong>Oberer Bereich</strong></p>
+<ul>
+<li><strong>„＋ Neuer Artikel"</strong> – öffnet das Artikel-Fenster (<a href="#k4-4">4.4</a>).</li>
+<li><strong>„Paletten — anklicken zeigt die Artikel darauf:"</strong> – je Palette ein Knopf „📦 P01" usw., zusätzlich „🚫 Ohne Palette". Mehrere Paletten gleichzeitig wählbar; nochmaliges Klicken hebt die Auswahl auf.</li>
+<li><strong>„Artikel suchen (Nummer, Name oder EAN)"</strong> – sucht während der Eingabe (Teiltreffer, Groß-/Kleinschreibung egal).</li>
+<li><strong>„Karton / Lagerplatz"</strong> – Auswahl eines einzelnen Lagerplatzes (schließt die Palettenauswahl aus und umgekehrt).</li>
+<li><strong>„Amazon-Status"</strong>: alle / online / nicht online / unbekannt.</li>
+<li><strong>„Set-Artikel"</strong>: alle / nur Set-Artikel / ohne Set-Artikel.</li>
+<li><strong>„Zurücksetzen"</strong> – setzt alle Filter und die Sortierung zurück.</li>
+<li>Darunter eine Statuszeile, z. B. „Palette P01: 37 Artikel · 412 Stück (gefiltert)".</li>
+</ul>
+<p><strong>Tabelle</strong> (eine Zeile je Artikel × Lagerplatz)</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Spalte</th>
+<th>Inhalt</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>☐</td>
+<td>Auswahlkästchen (Kopfzeile: alle sichtbaren wählen)</td>
+</tr>
+<tr>
+<td>Name</td>
+<td>Artikelname, Abzeichen „SET" und „AMA", Knöpfe 🏷️ (Etikett) und ✏️ (Bearbeiten)</td>
+</tr>
+<tr>
+<td>Artikelnummer, EAN</td>
+<td></td>
+</tr>
+<tr>
+<td>Gesamt</td>
+<td>Gesamtbestand über alle Plätze</td>
+</tr>
+<tr>
+<td>Lagerplatz, Menge</td>
+<td>je Platz; Plätze mit Menge 0 erscheinen grau als „Früherer Lagerort (leer)"</td>
+</tr>
+<tr>
+<td>Buchen</td>
+<td>Mengenfeld + <strong>„+ Ein"</strong> (grün) und <strong>„− Aus"</strong> (rot; nur bei Bestand &gt; 0)</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li>Spalten <strong>Name, Artikelnummer, EAN, Gesamt</strong> sind durch Klick sortierbar (▲/▼).</li>
+<li>Es werden zunächst 60 Artikel gezeigt; unten „weitere 60 laden".</li>
+<li>Bei Paletten- oder Kartonfilter werden nur Plätze mit Bestand in dieser Auswahl gezeigt.</li>
+</ul>
+<p><strong>Schnell buchen aus der Suche</strong></p>
+<ol>
+<li>In der Zeile des gewünschten Lagerplatzes die Menge eintragen.</li>
+<li><strong>„+ Ein"</strong> oder <strong>„− Aus"</strong> klicken.</li>
+<li>Hat der Artikel noch keinen Lagerplatz, erscheint die Frage „Auf welchen Lagerplatz buchen?" – Namen eintippen (auch ein neuer Name ist möglich).</li>
+<li>Bei Set-Artikeln erscheint eine Warnung („⚠️ SET-ARTIKEL … Fortfahren?").</li>
+</ol>
+<p><strong>Mehrfachauswahl und Sammelaktionen</strong></p>
+<p>Sobald Artikel angehakt sind, erscheint eine blaue Leiste „<strong>N</strong> ausgewählt" mit:</p>
+<ul>
+<li><strong>„🧾 Pickliste"</strong> – öffnet eine druckfertige Liste (Lagerplatz, Menge, EAN, Name, Spalte „Rest") sortiert nach Lagerplatz; der Druckdialog startet automatisch. Nur Plätze mit Bestand.</li>
+<li><strong>„− Komplett ausbuchen"</strong> – setzt den Bestand der gewählten Artikel auf <strong>allen</strong> Lagerplätzen auf 0 (Kommentar „Sammel-Ausbuchen (Suche)"). Jede Platzzeile wird als eigener „Ausgang" protokolliert und erzeugt eine Leermeldung.</li>
+<li><strong>„✕ Alle abwählen (N)"</strong>.</li>
+</ul>
+<aside class="box warn">
+<p><strong>Warnung:</strong> „− Komplett ausbuchen" lässt sich nicht mit einem Klick rückgängig machen – nur die zuletzt protokollierte Platzzeile über die Rückgängig-Leiste, alles andere einzeln. Die App empfiehlt, vorher „🛟 Sicherung jetzt herunterladen" im Reiter „🔄 Import/Export" zu nutzen.</p>
+</aside>
+<p><a id="k4-4"></a></p>
+<h3>4.4 Artikel anlegen, bearbeiten, löschen</h3>
+<p><strong>Neuen Artikel anlegen</strong></p>
+<ol>
+<li>Reiter „🔎 Suche" → <strong>„＋ Neuer Artikel"</strong>.</li>
+<li>Felder ausfüllen:<ul>
+<li><strong>Artikelnummer</strong> (Pflicht, eindeutig),</li>
+<li><strong>Artikelname *</strong> (Pflicht),</li>
+<li><strong>GTIN / EAN</strong> (optional; darunter erscheint „✓ gültige EAN" oder „⚠ Prüfziffer stimmt nicht" – nur ein Hinweis, gespeichert wird trotzdem),</li>
+<li><strong>Set-Artikel</strong> (Häkchen),</li>
+<li><strong>Amazon-Status</strong>: unbekannt / online / nicht online,</li>
+<li><strong>Lagerplatz (optional)</strong> und <strong>Anfangsbestand</strong>.</li>
+</ul>
+</li>
+<li><strong>„Speichern"</strong>.</li>
+</ol>
+<p>Mit Lagerplatz und Anfangsbestand &gt; 0 entsteht zusätzlich eine Buchung „Eingang" mit Kommentar „Neuanlage". Mit Lagerplatz, aber Bestand 0 wird der Platz als (leerer) Lagerort vermerkt. Ein Anfangsbestand ohne Lagerplatz wird abgelehnt („Anfangsbestand nur mit Lagerplatz möglich").</p>
+<p><strong>Artikel bearbeiten</strong></p>
+<ol>
+<li>In der Suche beim Artikel auf <strong>✏️</strong> klicken.</li>
+<li>Name, GTIN/EAN, Set-Artikel und Amazon-Status ändern. Die <strong>Artikelnummer ist nicht änderbar</strong>.</li>
+<li><strong>„Speichern"</strong>. Die Änderung wird als „Artikeländerung" protokolliert und ist rückgängig machbar.</li>
+</ol>
+<p><strong>Artikel löschen</strong></p>
+<ol>
+<li>Im Bearbeiten-Fenster <strong>„🗑️ Löschen"</strong>.</li>
+<li>Bestätigen. Liegt noch Bestand vor, erscheint eine zweite Abfrage „Es liegt noch Bestand vor. Wirklich MIT Bestand löschen?".</li>
+<li>Bestände und Artikel werden entfernt, offene Leermeldungen des Artikels als gesehen markiert. Protokoll-Typ „Artikel gelöscht" – <strong>nicht</strong> rückgängig machbar.</li>
+</ol>
+<p><a id="k4-5"></a></p>
+<h3>4.5 Reiter „📟 Scanner" – Einbuchen (Wareneingang)</h3>
+<ol>
+<li>Reiter „📟 Scanner" öffnen. Zunächst ist das Scanfeld gesperrt: „Bitte zuerst „− Ausbuchen" oder „＋ Einbuchen" wählen."</li>
+<li><strong>„＋ Einbuchen"</strong> klicken.</li>
+<li>Unter <strong>„📍 Lagerplatz wählen — bleibt aktiv bis zur Änderung:"</strong> einen Lagerplatz antippen (nochmal antippen = Auswahl aufheben). Es werden alle bekannten Lagerplätze angeboten, auch leere.</li>
+<li>Links die <strong>Menge</strong> einstellen (Standard 1). Die Menge gilt <strong>nur für den nächsten Scan</strong> und springt danach wieder auf 1.</li>
+<li>Barcode scannen (oder Artikelnummer/EAN tippen und Enter). Mit <strong>„✕"</strong> neben dem Feld lässt sich das Scanfeld leeren.</li>
+<li>Ergebnis: „✚ Eingebucht: <strong>N Stk</strong> auf <Platz> — <Name>" mit neuem Platz- und Gesamtbestand.</li>
+</ol>
+<p><strong>Ohne gewählten Lagerplatz</strong>: Nach dem Scan erscheint „⚠️ Lagerplatz zum Einbuchen wählen:" mit Knöpfen – zuerst die Plätze, auf denen der Artikel schon liegt (mit Menge), dann alle übrigen – plus <strong>„✕ Abbrechen"</strong>. Solange diese Wahl offen ist, wird <strong>kein neuer Scan angenommen</strong>: es ertönt ein Warnton, die Ansage „Erst Lagerplatz wählen" und die Meldung „⛔ Erst Lagerplatz für … wählen!". Der abgewiesene Artikel muss nach der Platzwahl erneut gescannt werden.</p>
+<p><strong>Besonderheiten</strong></p>
+<ul>
+<li><strong>Set-Artikel</strong>: Ansage „Set" und Rückfrage „⚠️ SET-ARTIKEL … mehrere Einheiten = 1 Stück … Fortfahren?".</li>
+<li><strong>EAN mehrdeutig</strong>: „⚠️ EAN mehrdeutig — bitte die Artikelnummer eingeben."</li>
+<li><strong>Unbekannte EAN</strong>: siehe <a href="#k4-7">4.7</a> – wird nicht abgewiesen, sondern im Klärfall-Karton gebucht. Darunter zeigt der Scanner im Einbuchen-Modus immer den Kasten „❓ Klärfall-Karton für unbekannte Artikel".</li>
+<li><strong>Zu schnelles Scannen</strong>: „⏳ Moment – vorheriger Scan läuft noch. Bitte gleich nochmal scannen." (Ansage „Moment, bitte nochmal scannen").</li>
+<li>Wird der Modus gewechselt, während eine Platzwahl offen ist, fragt die App, ob die Buchung verworfen werden soll.</li>
+<li>Neue Lagerplätze können im Scanner <strong>nicht</strong> angelegt werden – dafür den Reiter „📦 Lagerplätze" nutzen.</li>
+</ul>
+<p><a id="k4-6"></a></p>
+<h3>4.6 Reiter „📟 Scanner" – Ausbuchen (Entnahme)</h3>
+<ol>
+<li><strong>„− Ausbuchen"</strong> wählen. Status: „Artikel scannen — Lagerplatz wird danach gewählt".</li>
+<li>Menge einstellen, Artikel scannen.</li>
+<li>Liegt der Artikel auf <strong>genau einem</strong> Platz, wird sofort von dort ausgebucht: „− Ausgebucht: <strong>N Stk</strong> von <Platz> …".</li>
+<li>Liegt er auf <strong>mehreren</strong> Plätzen, erscheint „… von welchem Lagerplatz ausbuchen?" mit Knöpfen (Platz + Menge) und „✕ Abbrechen".</li>
+<li>Ohne Bestand: „⚠️ Aktuell kein Bestand vorhanden."</li>
+<li>Reicht der Bestand nicht: „Fehler: Bestand auf <Platz> würde negativ (aktuell: N)".</li>
+</ol>
+<p>Fällt der Platzbestand dabei auf 0, entsteht automatisch eine Leermeldung (<a href="#k4-15">4.15</a>). Unbekannte EANs werden beim Ausbuchen nicht angelegt („❌ Nicht gefunden: …").</p>
+<p><a id="k4-7"></a></p>
+<h3>4.7 Unbekannte Artikel und JTL-Artikelliste</h3>
+<p>Gilt beim <strong>Einbuchen im Scanner</strong> und bei <strong>„🧺 Palette sortieren"</strong>, wenn der gescannte Code eine EAN ist (8 bis 14 Ziffern) und in LagerPal nicht gefunden wird:</p>
+<ol>
+<li><strong>Nachschlagen in der JTL-Artikelliste.</strong> Steht die EAN dort <strong>genau einmal</strong>, wird der echte Artikel mit JTL-Nummer und -Name angelegt (Amazon-Status „nicht online", kein Set) und ganz normal gebucht. Anzeige „🆕 Neu angelegt aus JTL-Liste: …", Ansage „Neu angelegt, offline". Im Protokoll erscheint „Artikel angelegt" mit Kommentar „Neu angelegt aus JTL-Liste (Scan)".</li>
+<li><strong>Sonst: unbekannter Artikel.</strong> Beim ersten Scan dieser EAN wird ein Platzhalter angelegt (<code>WE-0-230</code>, <code>WE-0-231</code> … / „Unbekannt 1", „Unbekannt 2" …; nicht online). Weitere Scans derselben EAN erhöhen nur die Menge. Gebucht wird <strong>immer</strong> in den aktuellen Klärfall-Karton <strong><code>Unbekannt-NN</code></strong> (wird beim ersten Mal als <code>Unbekannt-01</code> angelegt) – unabhängig vom gewählten Lagerplatz. Es ertönt ein Dreiklang-Ton und die Ansage „Unbekannt", angezeigt wird „❓ UNBEKANNTER ARTIKEL → Karton Unbekannt-NN".</li>
+<li><strong>Karton voll</strong>: Im Kasten „❓ Klärfall-Karton für unbekannte Artikel" auf <strong>„📄 Karton voll → drucken &amp; nächster"</strong> klicken, bestätigen. Das Karton-Blatt wird gedruckt, danach geht es mit <code>Unbekannt-(NN+1)</code> weiter. Ist der aktuelle Karton noch leer, kommt die Meldung „Karton … ist noch leer - kein neuer Karton nötig".</li>
+</ol>
+<p>Unbekannte Artikel werden <strong>nicht</strong> in die JTL-Exporte geschrieben und beim Komplett-Import nicht auf 0 gesetzt.</p>
+<aside class="box check">
+<p><strong>Hinweis: bitte prüfen</strong> – Die Kommentare im Code verweisen auf „Paket B" (Zuordnung eines unbekannten Artikels zu einem echten Artikel im Büro). Diese Funktion ist im vorliegenden Code <strong>nicht</strong> enthalten. Die Artikelnummer und das Kennzeichen „unbekannt" lassen sich in der App nicht ändern. Bitte klären, wie Klärfälle derzeit aufgelöst werden (z. B. Platzhalter ausbuchen, echten Artikel einbuchen).</p>
+</aside>
+<p><a id="k4-8"></a></p>
+<h3>4.8 Reiter „🔀 Umlagern"</h3>
+<ol>
+<li>Im Feld <strong>„Artikelnummer oder EAN"</strong> den Artikel scannen/eintippen und mit Enter oder Tab bestätigen. Darunter erscheint der Artikelname.</li>
+<li><strong>„Von Lagerplatz (nur mit Bestand)"</strong> wählen – angezeigt mit aktueller Menge.</li>
+<li><strong>„Nach Lagerplatz"</strong> wählen. Für ein neues Ziel <strong>„＋ neuer Lagerplatz…"</strong> wählen und den Namen ins Feld „neuer Lagerplatz…" schreiben.</li>
+<li><strong>Menge</strong> eintragen.</li>
+<li><strong>„🔀 Umlagern"</strong> klicken.</li>
+</ol>
+<p>Ergebnis: „🔀 N× <Name> umgelagert" mit den neuen Mengen auf Quelle und Ziel. Wird die Quelle leer, entsteht eine Leermeldung; eine offene Leermeldung am Ziel verschwindet. Fehler: „Quelle und Ziel sind identisch.", „Auf <Platz> liegen nur N Stk".</p>
+<p><a id="k4-9"></a></p>
+<h3>4.9 Reiter „🧮 Inventur" (Zählen)</h3>
+<ol>
+<li><strong>„Lagerplatz"</strong> wählen. Angeboten werden nur Plätze <strong>mit Bestand</strong> (Anzeige „Name (Stück)").</li>
+<li>Die Tabelle zeigt je Artikel <strong>Soll</strong>, <strong>Ist (gezählt)</strong> und <strong>Diff</strong> (grün = mehr, rot = weniger).</li>
+<li>In „Ist (gezählt)" die gezählte Menge eintragen.</li>
+<li>Gefundene Artikel, die nicht in der Liste stehen: im Feld <strong>„Artikel ergänzen (Nummer/EAN)"</strong> scannen und Enter drücken (Soll = aktueller Bestand dort, meist 0).</li>
+<li><strong>„✓ Inventur übernehmen"</strong>. Nur geänderte Werte werden übernommen und je Artikel als „Inventur" protokolliert (Kommentar z. B. „Inventur: -2 (gezählt 5)").</li>
+</ol>
+<p>Meldungen: „✓ N Korrektur(en) übernommen." bzw. „Keine Änderungen.". Ist = 0 erzeugt eine Leermeldung.</p>
+<aside class="box warn">
+<p><strong>Warnung:</strong> Eine Inventur lässt sich <strong>nicht</strong> über die Rückgängig-Leiste zurücknehmen und blockiert danach auch das Rückgängigmachen älterer Aktionen.</p>
+<p><strong>Hinweis: bitte prüfen</strong> – Leere Lagerplätze erscheinen nicht in der Auswahl. Ware auf einem bisher leeren Platz muss daher über den Scanner eingebucht werden.</p>
+</aside>
+<p><a id="k4-10"></a></p>
+<h3>4.10 Reiter „📦 Lagerplätze" (inkl. Paletten)</h3>
+<p><strong>Karte „🛠 Lagerplätze verwalten"</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Feld / Knopf</th>
+<th>Funktion</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Neuer Lagerplatz</strong> + „Anlegen"</td>
+<td>Legt einen leeren Platz an (Fehler, wenn der Name schon existiert). Rückgängig machbar.</td>
+</tr>
+<tr>
+<td><strong>Umbenennen</strong> (Platz wählen, „neuer Name", „→")</td>
+<td>Benennt um; Bestände und offene Leermeldungen ziehen mit. Existiert der neue Name bereits: „… Zum Zusammenführen bitte „Zusammenlegen" verwenden." Rückgängig machbar.</td>
+</tr>
+<tr>
+<td><strong>Löschen</strong> + „Löschen"</td>
+<td>Löscht den Platz. Liegt Bestand darauf, folgt die Rückfrage „Es liegt noch Bestand darauf. Wirklich MIT Bestand löschen?" – der Bestand wird dann mit gelöscht. Rückgängig machbar (stellt den Platz mit seinen Mengen wieder her, Palette/Kanal aber leer).</td>
+</tr>
+<tr>
+<td><strong>Zusammenlegen</strong> (mehrere Quellen mit Strg/Cmd-Klick, „Zielname", „Zusammenlegen")</td>
+<td>Summiert die Bestände aller gewählten Plätze auf den Zielplatz; Quellplätze verschwinden. Mindestens zwei Quellen nötig. Rückgängig machbar.</td>
+</tr>
+<tr>
+<td><strong>Karton-Einstellungen (Palette / Kanal)</strong> (Karton wählen, „Palette", Kanal „gemischt/online/nicht online", „Speichern")</td>
+<td>Ordnet einen Platz einer Palette und einem Kanal zu.</td>
+</tr>
+</tbody>
+</table></div>
+<aside class="box check">
+<p><strong>Hinweis: bitte prüfen</strong> – Das Feld „Palette" bei den Karton-Einstellungen ist ein freies Textfeld und prüft nicht gegen die Palettenliste. Ein hier neu eingetippter Palettenname erscheint zwar in der Suche, aber nicht in der Auswahl von „🧺 Palette sortieren", solange er nicht unter „🎨 Paletten verwalten" angelegt ist.</p>
+</aside>
+<p><strong>Karte „🎨 Paletten verwalten"</strong> – „Diese Liste steuert, welche Paletten bei „Palette sortieren" zur Auswahl stehen."</p>
+<ul>
+<li><strong>Neue Palette</strong> (z. B. „P41") + „Anlegen".</li>
+<li><strong>Umbenennen (verschiebt alle zugehörigen Kartons mit)</strong> + „→". Die Kartons behalten dabei ihren Namen (z. B. <code>P01-K03</code>), nur ihre Palettenzuordnung ändert sich.</li>
+</ul>
+<aside class="box check">
+<p><strong>Hinweis: bitte prüfen</strong> – Eine Funktion zum <strong>Löschen</strong> von Paletten gibt es weder in der App noch in der Datenbank. Nicht mehr benötigte Paletten können nur per SQL-Editor entfernt werden (<code>delete from paletten where name = '&lt;NAME&gt;';</code>).</p>
+</aside>
+<p><strong>Karte „Paletten — anklicken zeigt die Kartons"</strong></p>
+<ul>
+<li>Kacheln je Palette mit Anzahl Kartons und Stück; „Ohne Palette" zuletzt.</li>
+<li>Klick auf eine Kachel zeigt die Kartons mit Kanal, SKUs und Stück, je Zeile <strong>„🖨️ Nachdruck"</strong> (Karton-Blatt) sowie oben <strong>„🏷️ Etiketten dieser Palette"</strong>.</li>
+<li><strong>„🏷️ Etiketten aller Lagerplätze"</strong> druckt Barcode-Etiketten für alle Plätze (Rückfrage ab mehr als 30).</li>
+<li><strong>„↻ Aktualisieren"</strong>.</li>
+</ul>
+<p><a id="k4-11"></a></p>
+<h3>4.11 Reiter „🧺 Palette sortieren"</h3>
+<p>Zweck laut App: „Quelle ausräumen: Artikel scannen, die App legt Kartons automatisch an (P01-K01, K02, …) und sagt nach Amazon-Status, in welchen Karton. Voraussetzung: Amazon-Status ist gepflegt."</p>
+<p><strong>Start</strong></p>
+<ol>
+<li><strong>„Quelle (ausräumen)"</strong> wählen – angeboten werden Plätze mit Bestand („Name (n SKUs / m Stk)").</li>
+<li><strong>„Palette"</strong> wählen.</li>
+<li>Es erscheinen <strong>„🟢 Online-Karton"</strong> und <strong>„🔴 Nicht-online-Karton"</strong>: jeweils „＋ Neuer Karton" (nächster freier <code>&lt;Palette&gt;-Knn</code>) oder ein vorhandener Karton dieser Palette mit passendem Kanal (z. B. halbvoll). Ein leerer vorhandener Karton ist vorausgewählt.</li>
+<li><strong>„▶︎ Starten"</strong>.</li>
+</ol>
+<p><strong>Sortieren</strong></p>
+<ol>
+<li>Oben stehen Palette, Quelle, die beiden aktiven Kartons mit Stückzahl und der Klärfall-Karton.</li>
+<li>Optional <strong>„🔊 Sprachansage"</strong> an/aus (Standard: an).</li>
+<li>Artikel im Feld <strong>„Artikel scannen (Nummer/EAN)"</strong> scannen; bei Bedarf vorher <strong>„Menge"</strong> ändern (springt nach jedem Scan auf 1 zurück). Mit Enter oder <strong>„Buchen"</strong>.</li>
+<li>Die App zeigt groß <strong>„🟢 ONLINE"</strong>, <strong>„🔴 NICHT ONLINE"</strong> oder <strong>„❓ UNBEKANNT"</strong> mit Artikel und Zielkarton und sagt „online"/„offline" an. Der Artikel wird <strong>in einem Schritt</strong> von der Quelle in den Zielkarton umgelagert.</li>
+<li>Wurde <strong>mehr</strong> gescannt als laut Bestand auf der Quelle lag, fragt die App: „Die N zusätzlichen als Inventur-Zugang in Karton … buchen?" – bei „OK" wird der Überschuss als „Eingang" mit Kommentar „Inventur-Zugang (Einräumen)" gebucht.</li>
+<li>Artikel mit Amazon-Status <strong>unbekannt</strong> werden abgewiesen: „❔ …: Amazon-Status unbekannt. Bitte erst Status setzen/importieren."</li>
+<li><strong>Set-Artikel</strong>: Hinweis „⚠️ SET-ARTIKEL: mehrere Teile = 1 Stück – Teile zusammen lassen!" und Ansage „Set, online/offline" (immer, auch bei ausgeschalteter Sprachansage).</li>
+<li>Neu aus der JTL-Liste angelegte Artikel gehen als „nicht online" in den Nicht-online-Karton (Ansage „Neu angelegt, offline", immer).</li>
+</ol>
+<p><strong>Kartons wechseln</strong></p>
+<ul>
+<li><strong>„📄 Karton voll → drucken &amp; nächster"</strong> – druckt das Karton-Blatt und legt den nächsten Karton an.</li>
+<li><strong>„🔁 Anderen Karton wählen"</strong> – Auswahl eines anderen (z. B. halbvollen) Kartons oder „＋ Neuer Karton", dann „Übernehmen" bzw. „Abbrechen".</li>
+</ul>
+<p><strong>Abschließen: „✓ Palette fertig"</strong></p>
+<ul>
+<li>Druckt die Karton-Blätter beider aktiven Kartons (sofern nicht leer).</li>
+<li>Liegt auf der Quelle noch Bestand, entsteht ein <strong>Einräum-Hinweis</strong> in der Glocke: „Einräumen Palette …: auf „…" waren nach dem Einräumen noch N Artikel / M Stück gebucht, aber nicht gefunden (stehen gelassen)."</li>
+<li>Der Bestand auf der Quelle wird <strong>nicht</strong> automatisch verändert.</li>
+</ul>
+<aside class="box info">
+<p><strong>Hinweis:</strong> „✓ Palette fertig" fragt nicht nach – ein versehentlicher Klick beendet die Sortierung. Sie kann aber jederzeit mit denselben Kartons neu gestartet werden (Kartons in der Auswahl wählen).</p>
+</aside>
+<p><strong>Unterbrechung</strong>: Die aktuelle Sortierung wird im Browser gemerkt (Schlüssel <code>lp_er_session</code>, nur auf diesem Gerät). Beim nächsten Öffnen erscheint „⏸️ Unterbrochene Sortierung gefunden" mit <strong>„▶︎ Fortsetzen"</strong> oder <strong>„Verwerfen"</strong> (verwirft nur den Hinweis, löscht nichts). Alles bisher Gescannte ist bereits gebucht.</p>
+<p><strong>Protokoll der Sitzung</strong>: Die Karte darunter zeigt den Inhalt der aktiven Kartons (EAN, Artikel, Menge) und aufklappbar den „Verlauf dieser Sortierung".</p>
+<p><strong>„📊 Bisher sortierte Paletten"</strong> – Knopf <strong>„↻ Übersicht laden"</strong>. Reine Auswertung aus Protokoll und Bestand, ändert nichts:</p>
+<ul>
+<li>Je Quelle: Palette(n), Zeitraum, Balken (grün = runtergebucht, orange = liegt noch drauf, lila = mehr gebucht als drauf war) und Status „Rest: N Stk" bzw. „Quelle leer".</li>
+<li>Filter: „Alle", „Mit Rest", „Mehr gebucht", „Quelle leer".</li>
+<li>Klick auf eine Quelle öffnet die Detailansicht mit Kacheln „War drauf", „Runtergebucht", „Liegt noch drauf", „Mehr gebucht" (anklicken = filtern), einer Artikeltabelle und den Knöpfen <strong>„🖨️ Drucken"</strong>, <strong>„⬇️ Als CSV"</strong> und <strong>„← Alle sortierten Paletten"</strong>.</li>
+</ul>
+<p><a id="k4-12"></a></p>
+<h3>4.12 Reiter „📋 Protokoll"</h3>
+<p>Zeigt die <strong>letzten 200</strong> Einträge (neueste zuerst) mit Zeit, Typ (farbig), Artikel, EAN, Platz, Menge, Platzbestand vorher → nachher, Gesamtbestand vorher → nachher und Kommentar.</p>
+<p>Filter:</p>
+<ul>
+<li>Textfeld <strong>„Artikel, Nr., EAN, Platz…"</strong> (filtert die geladenen 200 Einträge),</li>
+<li><strong>Typ</strong> („Alle Typen", Eingang, Ausgang, Umlagerung, Inventur, Artikeländerung, Lagerplatz angelegt, Lagerplatz gelöscht, Umbenennung, Zusammenlegung, Rückgängig, CSV-Import, Artikel gelöscht),</li>
+<li>Zeitraum <strong>„von"</strong> / <strong>„bis"</strong> (Tagesgrenzen in Ortszeit),</li>
+<li><strong>„Zurücksetzen"</strong> und <strong>„↻"</strong> (neu laden).</li>
+</ul>
+<p>Bei 200 Treffern erscheint „max. 200 geladen — Filter nutzen". Für ältere bzw. alle Einträge den Export „📋 Protokoll" im Reiter „🔄 Import/Export" nutzen (berücksichtigt Typ und Zeitraum, nicht das Textfeld).</p>
+<aside class="box info">
+<p><strong>Hinweis:</strong> Die Typen „Artikel angelegt", „Palette angelegt" und „Palette umbenannt" erscheinen im Protokoll, sind aber im Typ-Filter nicht auswählbar.</p>
+</aside>
+<p><a id="k4-13"></a></p>
+<h3>4.13 Reiter „🔄 Import/Export"</h3>
+<h4>Bestände per CSV/Excel importieren („⬆️ Bestände per CSV/Excel importieren (JTL-kompatibel)")</h4>
+<p>Die Datei braucht die Spalten <strong>Artikelnummer</strong>, <strong>Lagerplatz</strong> und <strong>Bestand/Menge</strong> (ganze Zahl, nicht negativ), optional <strong>Artikelname</strong>, <strong>GTIN</strong>, <strong>Set</strong>. CSV (Trennzeichen und Kodierung UTF-8/Windows-1252 werden automatisch erkannt) und Excel (.xlsx, erstes Tabellenblatt) werden unterstützt.</p>
+<p>Erkannte Spaltenüberschriften (Groß-/Kleinschreibung egal, exakter Name):</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Inhalt</th>
+<th>erlaubte Überschriften</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Artikelnummer</td>
+<td><code>artikelnummer</code>, <code>artnr</code>, <code>artikel_nr</code>, <code>nr</code></td>
+</tr>
+<tr>
+<td>Lagerplatz</td>
+<td><code>lagerplatz</code>, <code>lager</code>, <code>standort</code></td>
+</tr>
+<tr>
+<td>Bestand</td>
+<td><code>bestand</code>, <code>menge</code>, <code>einzubuchende menge</code>, <code>stock</code>, <code>anzahl</code></td>
+</tr>
+<tr>
+<td>Artikelname</td>
+<td><code>artikelname</code>, <code>name</code>, <code>bezeichnung</code></td>
+</tr>
+<tr>
+<td>GTIN</td>
+<td><code>gtin</code>, <code>ean</code>, <code>barcode</code></td>
+</tr>
+<tr>
+<td>Set</td>
+<td><code>set</code>, <code>setartikel</code>, <code>set-artikel</code>, <code>set artikel</code>, <code>ist_set</code>, <code>bundle</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>Ablauf:</p>
+<ol>
+<li>Modus wählen:<ul>
+<li><strong>„Teil-Import"</strong> – „Nur Artikel in der Datei werden aktualisiert. Alle anderen bleiben unverändert."</li>
+<li><strong>„Komplett-Import"</strong> – „⚠️ Artikel in der Datei werden aktualisiert, alle anderen (bzw. deren nicht genannte Plätze) werden auf 0 gesetzt!"</li>
+</ul>
+</li>
+<li>Optional <strong>„Unbekannte Artikel neu anlegen (Name/GTIN aus der Datei, falls vorhanden)"</strong> anhaken.</li>
+<li><strong>„Datei wählen"</strong>.</li>
+<li>Die Datei wird zuerst geprüft.<ul>
+<li><strong>Teil-Import startet danach sofort, ohne Rückfrage.</strong></li>
+<li>Komplett-Import zeigt eine Warnung mit Zeilen-, Artikel- und Platzanzahl; erst <strong>„Ja, fortfahren"</strong> startet, „Abbrechen" bricht ab.</li>
+</ul>
+</li>
+<li>Ergebnis: „✅ Import erfolgreich (…)" mit geänderten/unveränderten Zeilen, neu angelegten Artikeln, auf 0 gesetzten Artikeln und übersprungenen Zeilen.</li>
+</ol>
+<p>Regeln:</p>
+<ul>
+<li>Die Datei setzt den Bestand je Artikel+Platz auf den <strong>genannten Wert</strong> (keine Addition). Unveränderte Werte werden nicht protokolliert, geänderte als „CSV-Import".</li>
+<li>Zeilen mit leerem oder nicht ganzzahligem Bestand werden beim Teil-Import übersprungen und gemeldet; beim Komplett-Import bricht der Import ab.</li>
+<li>Negative Bestände → Abbruch, nichts wird importiert.</li>
+<li>Ohne Häkchen „Unbekannte Artikel neu anlegen" werden unbekannte Artikelnummern übersprungen („Übersprungen (unbekannt)").</li>
+<li><strong>Mit</strong> Häkchen werden außerdem bei vorhandenen Artikeln <strong>Name und GTIN aus der Datei übernommen</strong> (wenn dort gefüllt).</li>
+<li>Eine Set-Spalte wird immer übernommen, wenn vorhanden.</li>
+<li>Unbekannte Platzhalter-Artikel (<code>WE-0-…</code>) werden beim Komplett-Import nie auf 0 gesetzt.</li>
+</ul>
+<aside class="box warn">
+<p><strong>Warnung:</strong> Ein CSV-Import lässt sich <strong>nicht</strong> per „Rückgängig" aufheben – nur einzeln über das Protokoll korrigieren. Vor einem Komplett-Import „🛟 Sicherung jetzt herunterladen" nutzen.</p>
+<p><strong>Hinweis: bitte prüfen</strong> – Die Ergebnismeldung „GTIN nicht übernommen (gehört schon einem anderen Artikel)" ist irreführend: Laut Datenbankfunktion wird die GTIN in diesen Fällen <strong>trotzdem übernommen</strong> und nur zur Information gemeldet (mehrfache EANs sind erlaubt).</p>
+</aside>
+<h4>Amazon-Status importieren („🛒 Amazon-Status importieren")</h4>
+<p>Datei (CSV oder Excel) mit Artikelnummer, optional mit Status-Spalte.</p>
+<ul>
+<li>Artikelnummer-Spalte: <code>artikelnummer</code>, <code>sku</code>, <code>artnr</code>, <code>artikel_nr</code>, <code>nr</code>, <code>merchant-sku</code>, <code>seller-sku</code>, <code>msku</code>, <code>artikel</code>.</li>
+<li>Status-Spalte: <code>online</code>, <code>status</code>, <code>amazon</code>, <code>amazon-status</code>, <code>gelistet</code>, <code>aktiv</code>, <code>listing</code>, <code>zustand</code>, <code>state</code>.</li>
+<li>Als <strong>online</strong> gelten: <code>1</code>, <code>online</code>, <code>ja</code>, <code>j</code>, <code>aktiv</code>, <code>active</code>, <code>x</code>, <code>true</code>, <code>wahr</code>, <code>yes</code>, <code>y</code>, <code>gelistet</code>.</li>
+<li>Als <strong>nicht online</strong> gelten: <code>0</code>, <code>offline</code>, <code>nein</code>, <code>n</code>, <code>nicht online</code>, <code>nicht-online</code>, <code>inaktiv</code>, <code>inactive</code>, <code>false</code>, <code>falsch</code>, <code>no</code>, <code>ungelistet</code>.</li>
+<li>Ohne Status-Spalte – <strong>und bei nicht erkannten Werten</strong> – gilt der Artikel als <strong>online</strong>.</li>
+</ul>
+<p>Ablauf:</p>
+<ol>
+<li>Modus: <strong>„Nur genannte setzen"</strong> oder <strong>„Vollabgleich"</strong> („Datei = Liste der Online-Artikel. Alle anderen werden auf „nicht online" gesetzt.").</li>
+<li><strong>„Datei wählen"</strong> → Vorschau mit Anzahl „→ auf online", „→ auf nicht online", „unverändert" und „Nicht gefunden".</li>
+<li><strong>„✓ Status übernehmen"</strong> → Rückfrage bestätigen. Oder „Abbrechen".</li>
+<li>Ergebnis mit Gesamtzahlen online / nicht online / unbekannt. Protokolliert als „CSV-Import" („Amazon-Status-Import (…)"); nicht rückgängig machbar.</li>
+</ol>
+<h4>Exportieren („⬇️ Exportieren")</h4>
+<p>Alle Exporte sind CSV mit Semikolon, UTF-8 mit BOM (öffnet sich korrekt in Excel).</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Knopf</th>
+<th>Datei</th>
+<th>Inhalt</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>„📄 Artikel (mit Bestand)"</td>
+<td><code>artikel.csv</code></td>
+<td>Artikelnummer, Artikelname, GTIN, Set-Artikel (ja/nein), Amazon-Status, Gesamtbestand, Lagerplätze (<code>Platz:Menge, …</code>) – alle Artikel</td>
+</tr>
+<tr>
+<td>„📋 Protokoll"</td>
+<td><code>protokoll.csv</code></td>
+<td>alle Protokolleinträge (Filter Typ/von/bis aus dem Reiter Protokoll werden übernommen)</td>
+</tr>
+<tr>
+<td>„📦 Lagerplätze/Kartons"</td>
+<td><code>lagerplaetze.csv</code></td>
+<td>Lagerplatz/Karton, Palette, Kanal, Artikel (SKUs), Stück</td>
+</tr>
+<tr>
+<td>„⬇️ Lagerbestand (JTL)"</td>
+<td><code>Lagerbestand.csv</code></td>
+<td><code>Artikelnummer;Lagerplatz;Einzubuchende Menge</code> – siehe <a href="#kap-6">Kapitel 6</a></td>
+</tr>
+<tr>
+<td>„💬 Lagerbestandskommentar (JTL)"</td>
+<td><code>Lagerbestandskommentar.csv</code></td>
+<td><code>Artikelnummer;Kommentar</code> – siehe <a href="#kap-6">Kapitel 6</a></td>
+</tr>
+</tbody>
+</table></div>
+<h4>Datensicherung, Reset, Backup einspielen</h4>
+<ul>
+<li><strong>„🛟 Datensicherung"</strong> → „🛟 Sicherung jetzt herunterladen": siehe <a href="#kap-5">Kapitel 5</a>.</li>
+<li><strong>„☢️ Kompletter Reset — alle Daten löschen"</strong>: siehe <a href="#kap-8">Kapitel 8</a>.</li>
+<li><strong>„📥 Einspielen der JSON Backdatei (tägliche Sicherung)"</strong>: siehe <a href="#kap-5">Kapitel 5</a>.</li>
+</ul>
+<p><a id="k4-14"></a></p>
+<h3>4.14 Reiter „📊 Übersicht"</h3>
+<p>Kennzahlen (Knopf <strong>„↻ Aktualisieren"</strong>):</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Kachel</th>
+<th>Bedeutung</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Artikel gesamt</td>
+<td>Anzahl Artikel</td>
+</tr>
+<tr>
+<td>Bestand (Stück)</td>
+<td>Summe aller Bestände</td>
+</tr>
+<tr>
+<td>Lagerplätze (x belegt)</td>
+<td>alle bekannten Plätze, davon mit Bestand</td>
+</tr>
+<tr>
+<td>Ohne Bestand</td>
+<td>Artikel ohne Bestand auf irgendeinem Platz (orange, wenn &gt; 0)</td>
+</tr>
+<tr>
+<td>Offene Leermeldungen</td>
+<td>ungesehene Meldungen der Glocke</td>
+</tr>
+<tr>
+<td>Mehrdeutige EANs</td>
+<td>EANs, die bei mehreren Artikeln stehen (rot, wenn &gt; 0)</td>
+</tr>
+<tr>
+<td>Nicht online</td>
+<td>Artikel mit Amazon-Status „nicht online"</td>
+</tr>
+<tr>
+<td>Status unbekannt</td>
+<td>Artikel mit Amazon-Status „unbekannt"</td>
+</tr>
+<tr>
+<td>Set-Artikel</td>
+<td>Anzahl Set-Artikel</td>
+</tr>
+<tr>
+<td>Heute ein / aus</td>
+<td>Stück Eingang/Ausgang heute (deutsche Zeit, ohne zurückgenommene Buchungen)</td>
+</tr>
+<tr>
+<td>Woche ein / aus</td>
+<td>dito seit Montag</td>
+</tr>
+</tbody>
+</table></div>
+<p>Darunter <strong>„Letzte Bewegungen"</strong>: die 8 neuesten Protokolleinträge.</p>
+<p><a id="k4-15"></a></p>
+<h3>4.15 Leermeldungen (Glocke 🔔)</h3>
+<p><strong>Wann entsteht eine Leermeldung?</strong> Immer wenn der Bestand eines Artikels auf einem Platz von mehr als 0 auf <strong>0</strong> fällt – durch Ausbuchen, Umlagern (Quelle), Palette sortieren (Quelle), Inventur, CSV-Import oder „Komplett ausbuchen". Pro Artikel und Platz gibt es höchstens eine offene Meldung.</p>
+<p><strong>Wann verschwindet sie automatisch?</strong> Wenn auf denselben Platz wieder eingebucht/umgelagert/per Inventur oder Import aufgefüllt wird.</p>
+<p><strong>Bedienung</strong></p>
+<ol>
+<li>Auf die <strong>Glocke</strong> klicken → Fenster „🔔 Offene Leermeldungen" mit Artikel, Artikelnummer, EAN, Platz und Zeitpunkt („… leer — …"). Einräum-Hinweise erscheinen als „📦 Einräum-Hinweis".</li>
+<li><strong>„Alle als gesehen markieren"</strong> → bestätigen. Die Glocke ist danach leer.</li>
+<li><strong>„✕"</strong> schließt das Fenster.</li>
+</ol>
+<p>Angezeigt werden höchstens 200 Meldungen; der Zähler zeigt die echte Gesamtzahl. Einzelne Meldungen lassen sich nicht separat abhaken.</p>
+<p><a id="k4-16"></a></p>
+<h3>4.16 Rückgängig-Leiste</h3>
+<p>Die gelbe Leiste unten zeigt „Letzte Aktion (hh:mm Uhr): …" und den Knopf <strong>„↩︎ Rückgängig"</strong>.</p>
+<p>Regeln (in Datenbank und App gleich):</p>
+<ul>
+<li>Maßgeblich ist die <strong>neueste, noch nicht zurückgenommene</strong> Aktion <strong>aller</strong> Benutzer.</li>
+<li>Rückgängig machbar sind nur: <strong>Eingang, Ausgang, Umlagerung, Artikeländerung, Lagerplatz angelegt, Lagerplatz gelöscht, Umbenennung, Zusammenlegung</strong>.</li>
+<li>Ist die neueste Aktion von einem anderen Typ (z. B. Inventur, CSV-Import, Artikel gelöscht, Artikel angelegt, Palette angelegt/umbenannt), wird <strong>keine</strong> Leiste gezeigt – auch ältere Aktionen sind dann nicht mehr per Klick zurücknehmbar.</li>
+<li>Die Aktion darf höchstens <strong>2 Stunden</strong> alt sein.</li>
+<li>Nach erfolgreichem Rückgängig erscheint 4 Sekunden lang „✅ Rückgängig gemacht: …". Danach rückt die nächstältere Aktion nach und kann ebenfalls zurückgenommen werden.</li>
+<li>Rücknahmen werden als Typ „Rückgängig" protokolliert.</li>
+</ul>
+<p>Mögliche Meldungen: „VERALTET: … bitte Leiste aktualisieren" (jemand anderes hat inzwischen gebucht), „Aktion ist älter als 02:00:00 — bitte über Protokoll bzw. Inventur korrigieren.", „Rückgängig nicht möglich — auf <Platz> sind nur N Stk" (Ware wurde inzwischen weiterbewegt).</p>
+<p><a id="k4-17"></a></p>
+<h3>4.17 Drucken: Karton-Blatt, Etiketten, Pickliste</h3>
+<p>Alle Druckfunktionen öffnen ein <strong>neues Fenster</strong> und starten den Druckdialog automatisch. Werden Pop-ups blockiert, erscheint „Bitte Pop-ups erlauben …" – dann im Browser Pop-ups für die LagerPal-Adresse zulassen.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Druck</th>
+<th>Auslöser</th>
+<th>Inhalt / Format</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Karton-Blatt</strong></td>
+<td>„📄 Karton voll → drucken &amp; nächster", „✓ Palette fertig", „🖨️ Nachdruck"</td>
+<td>A4; Kartonname sehr groß, farbiger Punkt (grün = online, rot = nicht online, kein Punkt = gemischt); Tabelle EAN, Artikelname, Menge, „Weitere Lagerplätze" (wo derselbe Artikel sonst noch liegt). Sortierung nach EAN, von der letzten Ziffer aus. Für den Punkt Farbdruck nutzen.</td>
+</tr>
+<tr>
+<td><strong>Lagerplatz-Etiketten</strong></td>
+<td>„🏷️ Etiketten aller Lagerplätze", „🏷️ Etiketten dieser Palette"</td>
+<td>Etiketten 55 × 30 mm mit Name und Code-128-Barcode; bei Sonderzeichen „Barcode nicht möglich (Sonderzeichen)".</td>
+</tr>
+<tr>
+<td><strong>Artikel-Etikett</strong></td>
+<td>🏷️ in der Suche → Fenster „🏷️ Artikel-Etikett", <strong>Anzahl</strong> (1–200), „🖨️ Drucken"</td>
+<td>Etikett 60 × 35 mm mit Name, Barcode, EAN und Artikelnummer. Echte <strong>EAN-13</strong>, wenn die EAN 13-stellig und gültig ist, sonst <strong>Code 128</strong> aus EAN bzw. Artikelnummer.</td>
+</tr>
+<tr>
+<td><strong>Pickliste</strong></td>
+<td>„🧾 Pickliste" in der Suche</td>
+<td>A4 hoch; siehe <a href="#k4-3">4.3</a>.</td>
+</tr>
+<tr>
+<td><strong>Sortier-Auswertung</strong></td>
+<td>„🖨️ Drucken" in „📊 Bisher sortierte Paletten"</td>
+<td>Tabelle der angezeigten Artikel.</td>
+</tr>
+</tbody>
+</table></div>
+<hr class="sep">
+<p><a id="kap-5"></a></p>
+<h2 class="chapter">5. Datensicherung und Wiederherstellung</h2>
+<h3>5.1 Überblick</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Art</th>
+<th>Auslöser</th>
+<th>Ziel</th>
+<th>Inhalt</th>
+<th>Dateiname</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Automatisch</strong></td>
+<td>Edge Function <code>lagerpal-backup</code>, täglich 03:00 Uhr</td>
+<td>Dropbox, <code>DROPBOX_FOLDER</code></td>
+<td>Tabellen <code>artikel</code>, <code>bestaende</code>, <code>lagerplaetze</code>, <code>buchungen</code>, <code>leermeldungen</code>, <code>paletten</code> + Feld <code>erstellt_am</code>; gzip-komprimiert</td>
+<td><code>lagerpal_backup_JJJJ-MM-TT.json.gz</code> (Datum nach deutscher Zeit)</td>
+</tr>
+<tr>
+<td><strong>Manuell</strong></td>
+<td>„🛟 Sicherung jetzt herunterladen" (Reiter „🔄 Import/Export")</td>
+<td>Download-Ordner des Browsers</td>
+<td>dieselben 6 Tabellen + Felder <code>erstellt</code>, <code>quelle</code> („LagerPal Web-App"); unkomprimiert</td>
+<td><code>lagerpal_backup_JJJJ-MM-TT-hh-mm-ss.json</code> (Zeit in UTC)</td>
+</tr>
+<tr>
+<td><strong>Automatisch vor Gefahr</strong></td>
+<td>vor „☢️ Jetzt alles löschen" und vor „📥 Backup jetzt einspielen"</td>
+<td>Download-Ordner</td>
+<td>wie manuell</td>
+<td>wie manuell</td>
+</tr>
+</tbody>
+</table></div>
+<p>Nicht gesichert wird die Tabelle <code>jtl_artikelliste</code> (sie lässt sich aus <code>21b_jtl_artikelliste_daten.sql</code> neu laden) sowie die Benutzerkonten (Supabase Auth).</p>
+<aside class="box info">
+<p><strong>Hinweis:</strong> Die App weist darauf hin: „Der kostenlose Supabase-Plan legt <strong>keine</strong> automatischen Backups an (erst ab dem kostenpflichtigen Pro-Plan)." Die Dropbox-Sicherung ist deshalb die eigentliche Absicherung.</p>
+</aside>
+<h3>5.2 Ablauf der täglichen Sicherung</h3>
+<ol>
+<li>Der Zeitplan ruft die Edge Function auf.</li>
+<li>Die Function liest alle 6 Tabellen vollständig (seitenweise je 1000 Zeilen, stabil sortiert).</li>
+<li>Sie holt sich mit dem Refresh-Token ein Dropbox-Zugriffstoken.</li>
+<li><strong>Backup</strong>: JSON erzeugen, mit gzip packen, als <code>lagerpal_backup_&lt;Datum&gt;.json.gz</code> hochladen (eine vorhandene Datei vom selben Tag wird überschrieben).</li>
+<li><strong>Aufbewahrung</strong> anwenden (siehe 5.3).</li>
+<li><strong>JTL-Export</strong>: siehe <a href="#kap-6">Kapitel 6</a>.</li>
+<li>Ergebnis an healthchecks.io melden.</li>
+</ol>
+<p>Backup (Schritte 4–5) und JTL-Export (Schritt 6) laufen unabhängig: Scheitert einer, wird der andere trotzdem versucht; gemeldet wird dann ein Fehler. Scheitern das Lesen der Daten oder die Dropbox-Anmeldung, fällt beides aus.</p>
+<h3>5.3 Aufbewahrung (30 Tage + Monatsletzte)</h3>
+<p>Nach jedem Upload prüft die Function <strong>alle Dateien im Ordner <code>DROPBOX_FOLDER</code></strong>, deren Name dem Muster <code>lagerpal_backup_JJJJ-MM-TT.json.gz</code> entspricht (auch alte Dubletten wie <code>… (1).json.gz</code>):</p>
+<ul>
+<li>Das <strong>jeweils letzte Backup jedes Kalendermonats</strong> wird <strong>dauerhaft</strong> behalten.</li>
+<li>Alle anderen Backups, die <strong>älter als 30 Tage</strong> sind (gerechnet ab dem Datum im Dateinamen), werden gelöscht.</li>
+<li>Dateien mit anderem Namen (z. B. manuelle Sicherungen <code>lagerpal_backup_…-hh-mm-ss.json</code>) werden <strong>nie</strong> angefasst.</li>
+</ul>
+<p>Beispiel: Am 15. März liegen alle Tagesbackups seit dem 14. Februar vor, dazu das letzte Backup von Januar, Dezember usw.</p>
+<aside class="box check">
+<p><strong>Hinweis: bitte prüfen</strong> – Gelöschte Dateien landen bei Dropbox im Bereich „Gelöschte Dateien" und sind dort je nach Dropbox-Tarif noch eine Zeit lang wiederherstellbar. Die genaue Frist hängt vom Dropbox-Vertrag ab.</p>
+</aside>
+<h3>5.4 Backup zurückspielen (Wiederherstellung)</h3>
+<aside class="box warn">
+<p><strong>Warnung:</strong> Beim Einspielen wird <strong>alles überschrieben</strong>: alle aktuellen Artikel, Bestände, Lagerplätze, das Protokoll und alle Leermeldungen werden gelöscht und durch den Inhalt der Datei ersetzt. Die Palettenliste wird ersetzt, wenn die Datei Paletten enthält.</p>
+</aside>
+<ol>
+<li>Die gewünschte Sicherung aus Dropbox herunterladen (z. B. <code>lagerpal_backup_2026-09-30.json.gz</code>). Die <code>.json.gz</code>-Datei muss <strong>nicht</strong> entpackt werden.</li>
+<li>In LagerPal anmelden → Reiter <strong>„🔄 Import/Export"</strong> → Karte <strong>„📥 Einspielen der JSON Backdatei (tägliche Sicherung)"</strong>.</li>
+<li>Datei auswählen (<code>.json.gz</code> vom Auto-Backup oder <code>.json</code> von „🛟 Sicherung jetzt herunterladen").</li>
+<li>Im Feld exakt <strong><code>BACKUP EINSPIELEN</code></strong> eingeben – erst dann wird der Knopf aktiv.</li>
+<li><strong>„📥 Backup jetzt einspielen"</strong> klicken und die Rückfrage bestätigen.</li>
+<li>Die App lädt <strong>zuerst automatisch eine Sicherung des jetzigen Stands</strong> herunter. Schlägt das fehl, fragt sie, ob trotzdem fortgefahren werden soll (nicht empfohlen).</li>
+<li>Datei wird gelesen, entpackt und eingespielt. Ergebnis: „✓ Eingespielt: N Artikel, … Paletten."</li>
+</ol>
+<p>Mögliche Zusatzhinweise nach dem Einspielen:</p>
+<ul>
+<li>„⚠️ N negative Bestände aus der Sicherung wurden auf 0 gesetzt (bitte per Inventur prüfen)." – betrifft sehr alte Sicherungen.</li>
+<li>„⚠️ N Bestände übersprungen, weil der Artikel in der Sicherung fehlt …" – entsteht, wenn während des Backups gebucht wurde.</li>
+<li>„⚠️ Doppelte bzw. unvollständige Zeilen in der Sicherung übersprungen: …"</li>
+<li>„(Paletten-Liste unverändert, war nicht in dieser Sicherung enthalten)" – ältere Sicherungen ohne Paletten.</li>
+</ul>
+<p>Die Protokoll-IDs bleiben erhalten; die Nummernkreise werden automatisch nachgezogen.</p>
+<aside class="box tip">
+<p><strong>Tipp:</strong> Eine Wiederherstellung vorher in einem <strong>separaten Testprojekt</strong> ausprobieren (neues Supabase-Projekt, SQL-Datei ausführen, App mit dessen URL/Key verbinden).</p>
+<p><strong>Hinweis: bitte prüfen</strong> – Ist die App selbst nicht nutzbar, kann die Datenbankfunktion grundsätzlich auch im SQL-Editor aufgerufen werden (<code>select backup_wiederherstellen('&lt;JSON-INHALT&gt;'::jsonb);</code>, Datei vorher entpacken). Bei großen Sicherungen ist das Einfügen des JSON in den Editor unpraktisch; dieser Weg ist im Code nicht vorgesehen und sollte vorher getestet werden.</p>
+</aside>
+<hr class="sep">
+<p><a id="kap-6"></a></p>
+<h2 class="chapter">6. JTL-Anbindung</h2>
+<p>LagerPal liefert JTL zwei CSV-Formate. Der <strong>Lagerbestandskommentar</strong> wird zusätzlich <strong>täglich automatisch</strong> nach Dropbox geschrieben.</p>
+<h3>6.1 Format „Lagerbestandskommentar"</h3>
+<ul>
+<li>Spalten: <code>Artikelnummer;Kommentar</code></li>
+<li>Kommentar: alle Plätze mit Bestand &gt; 0 im Format <code>Platz (Menge)</code>, durch <code>,</code> getrennt, Plätze alphabetisch. Beispiel: <code>P01-K03 (5), R2-F4 (1)</code>.</li>
+<li><strong>Alle</strong> Artikel stehen in der Datei – Artikel <strong>ohne</strong> Bestand mit <strong>leerem</strong> Kommentar (damit in JTL kein alter Lagerplatz stehen bleibt).</li>
+<li>Artikel sortiert nach Artikelnummer (einfache Zeichensortierung).</li>
+<li><strong>Unbekannte Artikel</strong> (<code>WE-0-…</code>) werden nicht exportiert.</li>
+<li>Technisch: Trennzeichen <code>;</code>, Zeilenende CRLF, UTF-8 <strong>mit BOM</strong>; Felder mit <code>"</code>, <code>;</code> oder Zeilenumbruch stehen in Anführungszeichen.</li>
+</ul>
+<p>Beispiel:</p>
+<pre><code>Artikelnummer;Kommentar
+&lt;ARTNR-1&gt;;P01-K03 (5), R2-F4 (1)
+&lt;ARTNR-2&gt;;
+&lt;ARTNR-3&gt;;P02-K01 (12)
+</code></pre>
+<h3>6.2 Format „Lagerbestand"</h3>
+<p>Nur manuell über „⬇️ Lagerbestand (JTL)":</p>
+<ul>
+<li>Spalten: <code>Artikelnummer;Lagerplatz;Einzubuchende Menge</code></li>
+<li>Eine Zeile je Artikel und Lagerplatz – <strong>auch Zeilen mit Menge 0</strong> (frühere Lagerorte).</li>
+<li>Unbekannte Artikel werden nicht exportiert.</li>
+<li>Die Datei lässt sich auch wieder in LagerPal importieren (Spalte „Einzubuchende Menge" wird als Bestand erkannt).</li>
+</ul>
+<h3>6.3 Automatischer täglicher Ablauf (Edge Function)</h3>
+<ol>
+<li>Pfad der Datei: <code>JTL_FOLDER/Lagerbestandskommentar.csv</code> (Standard-<code>JTL_FOLDER</code>: <code>/ScannerPro/LagerPal/JTL_lagerbestandskommentare_ex_import</code>).</li>
+<li>Liegt dort bereits eine Datei <strong>vom Vortag oder älter</strong> (Datum der letzten Änderung in Dropbox, deutsche Zeit), wird sie verschoben nach <code>JTL_FOLDER/Archiv/Lagerbestandskommentar_JJJJ-MM-TT.csv</code> (Datum = Änderungsdatum der alten Datei). Der Ordner <code>Archiv</code> wird bei Bedarf angelegt. Gibt es die Archivdatei schon, legt Dropbox <code>… (1).csv</code> an.</li>
+<li>Stammt die vorhandene Datei von <strong>heute</strong> (zweiter Lauf am selben Tag), wird sie einfach überschrieben.</li>
+<li>Die neue Datei wird hochgeladen.</li>
+</ol>
+<p>Das Archiv wird <strong>nicht</strong> automatisch bereinigt.</p>
+<aside class="box check">
+<p><strong>Hinweis: bitte prüfen</strong> – Wie JTL die Datei abholt und importiert (z. B. JTL-Ameise mit gespeicherter Importvorlage, Zeitplan, ob der Dropbox-Ordner auf dem JTL-Rechner synchronisiert wird – der Ordnername „ScannerPro" deutet auf eine bestehende Integration hin), geht aus dem LagerPal-Code nicht hervor. Bitte die Importvorlage und den Zeitplan auf JTL-Seite hier dokumentieren.</p>
+<p><strong>Hinweis:</strong> Manueller Export (App) und automatischer Export (Edge Function) müssen exakt gleich aufgebaut sein. Wer das Format ändert, muss <strong>beide</strong> Stellen anpassen: <code>exportJtlKommentarCsv</code> in <code>index.html</code> und <code>jtlKommentarCsv</code> in <code>supabase/functions/lagerpal-backup/index.ts</code>.</p>
+</aside>
+<hr class="sep">
+<p><a id="kap-7"></a></p>
+<h2 class="chapter">7. Fehlerbehebung und FAQ</h2>
+<h3>7.1 Meldungen in der App</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Meldung</th>
+<th>Ursache</th>
+<th>Was tun</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>„URL und Schlüssel eingeben."</td>
+<td>Feld leer</td>
+<td>Beide Felder ausfüllen (<a href="#k3-7">3.7</a>).</td>
+</tr>
+<tr>
+<td>„Login fehlgeschlagen: Invalid login credentials"</td>
+<td>E-Mail/Passwort falsch oder Benutzer existiert nicht</td>
+<td>Daten prüfen; Benutzer im Supabase-Dashboard prüfen/anlegen (<a href="#k3-5">3.5</a>).</td>
+</tr>
+<tr>
+<td>Anmeldung klappt nicht, obwohl Daten stimmen</td>
+<td>falsche URL oder falscher Schlüssel gespeichert</td>
+<td>„⚙️ Verbindung ändern (…)" und neu eingeben.</td>
+</tr>
+<tr>
+<td>Leere Listen / „Fehler: permission denied …"</td>
+<td>nicht angemeldet, Sitzung abgelaufen oder SQL-Datei nicht vollständig ausgeführt</td>
+<td>Abmelden, neu anmelden; ggf. SQL-Datei prüfen.</td>
+</tr>
+<tr>
+<td>„Could not find the function public.… in the schema cache" (o. ä.)</td>
+<td>Datenbankfunktion fehlt (SQL nicht oder veraltet eingespielt)</td>
+<td>Aktuelle SQL-Datei bzw. betroffene Funktion im SQL-Editor ausführen.</td>
+</tr>
+<tr>
+<td>„Fehler: Bestand auf <Platz> würde negativ (aktuell: N)"</td>
+<td>mehr ausbuchen als vorhanden</td>
+<td>Menge prüfen; ggf. Inventur.</td>
+</tr>
+<tr>
+<td>„Auf <Platz> liegen nur N Stk"</td>
+<td>Umlagern mit zu großer Menge</td>
+<td>Menge anpassen.</td>
+</tr>
+<tr>
+<td>„Quelle und Ziel sind identisch."</td>
+<td>Von = Nach</td>
+<td>anderes Ziel wählen.</td>
+</tr>
+<tr>
+<td>„❌ Nicht gefunden: <Code>"</td>
+<td>Artikel unbekannt (beim Ausbuchen, oder keine EAN)</td>
+<td>Code prüfen, Artikel anlegen.</td>
+</tr>
+<tr>
+<td>„⚠️ EAN mehrdeutig — bitte die Artikelnummer eingeben."</td>
+<td>EAN gehört zu mehreren Artikeln</td>
+<td>Artikelnummer eintippen. Übersicht zeigt „Mehrdeutige EANs".</td>
+</tr>
+<tr>
+<td>„⛔ Erst Lagerplatz für … wählen!"</td>
+<td>offene Platzwahl beim Scanner</td>
+<td>Platz antippen oder „✕ Abbrechen", dann erneut scannen.</td>
+</tr>
+<tr>
+<td>„⏳ Moment – vorheriger Scan läuft noch."</td>
+<td>zu schnell gescannt</td>
+<td>kurz warten, erneut scannen.</td>
+</tr>
+<tr>
+<td>„Keine gültige EAN: „…""</td>
+<td>unbekannter Code, der keine 8–14-stellige Ziffernfolge ist</td>
+<td>Code prüfen (z. B. Karton-Barcode verscannt).</td>
+</tr>
+<tr>
+<td>„EAN … gehört zu einem bekannten Artikel"</td>
+<td>Sonderfall beim Anlegen eines Platzhalters</td>
+<td>Artikelnummer statt EAN scannen/eintippen.</td>
+</tr>
+<tr>
+<td>„❔ …: Amazon-Status unbekannt. Bitte erst Status setzen/importieren."</td>
+<td>Palette sortieren mit Status 0</td>
+<td>Status über ✏️ oder Amazon-Import setzen.</td>
+</tr>
+<tr>
+<td>„Karton … ist noch leer - kein neuer Karton nötig"</td>
+<td>„Karton voll" beim leeren Klärfall-Karton</td>
+<td>nichts tun.</td>
+</tr>
+<tr>
+<td>„Lagerplatz „…" existiert bereits"</td>
+<td>Name schon vergeben</td>
+<td>anderen Namen oder „Zusammenlegen".</td>
+</tr>
+<tr>
+<td>„BESTAND_VORHANDEN: …"</td>
+<td>Löschen mit Bestand</td>
+<td>zweite Rückfrage bestätigen oder vorher umlagern.</td>
+</tr>
+<tr>
+<td>„Bitte mindestens zwei Lagerplätze auswählen" / „Mindestens zwei Quellen wählen."</td>
+<td>Zusammenlegen</td>
+<td>Strg/Cmd-Klick für Mehrfachauswahl.</td>
+</tr>
+<tr>
+<td>„Artikelnummer und Artikelname sind Pflicht" / „Artikel … existiert bereits"</td>
+<td>Neuanlage</td>
+<td>Felder prüfen.</td>
+</tr>
+<tr>
+<td>„Anfangsbestand nur mit Lagerplatz möglich"</td>
+<td>Anfangsbestand ohne Platz</td>
+<td>Lagerplatz eintragen oder Bestand 0.</td>
+</tr>
+<tr>
+<td>„VERALTET: …"</td>
+<td>Rückgängig, aber inzwischen gab es eine neuere Aktion</td>
+<td>Leiste aktualisiert sich; ggf. per Protokoll/Inventur korrigieren.</td>
+</tr>
+<tr>
+<td>„Aktion ist älter als 02:00:00 — …"</td>
+<td>Rückgängig nach mehr als 2 Stunden</td>
+<td>per Gegenbuchung oder Inventur korrigieren.</td>
+</tr>
+<tr>
+<td>„Rückgängig nicht möglich — auf … sind nur N Stk"</td>
+<td>Ware wurde inzwischen weiterbewegt</td>
+<td>manuell korrigieren.</td>
+</tr>
+<tr>
+<td>„Spalte „Artikelnummer" nicht gefunden. Gefunden: …"</td>
+<td>Import: Überschrift passt nicht</td>
+<td>Überschrift umbenennen (<a href="#k4-13">4.13</a>).</td>
+</tr>
+<tr>
+<td>„Spalte „Lagerplatz" nicht gefunden (erlaubte Namen: Lagerplatz, Lager, Standort)."</td>
+<td>Import ohne Lagerplatz-Spalte</td>
+<td>Spalte ergänzen.</td>
+</tr>
+<tr>
+<td>„Datei enthält negative Bestände …"</td>
+<td>Import</td>
+<td>Datei korrigieren.</td>
+</tr>
+<tr>
+<td>„❌ Komplett-Import abgebrochen: N Zeile(n) ohne gültigen ganzzahligen Bestand …"</td>
+<td>Komplett-Import mit Leer-/Dezimalwerten</td>
+<td>Datei korrigieren.</td>
+</tr>
+<tr>
+<td>„Datei leer oder keine Daten gefunden."</td>
+<td>leere Datei / falsches Blatt</td>
+<td>Datei prüfen (Excel: erstes Blatt).</td>
+</tr>
+<tr>
+<td>„❌ Diese Datei sieht nicht wie eine LagerPal-Sicherung aus …"</td>
+<td>falsche Datei beim Einspielen</td>
+<td>richtige <code>.json</code>/<code>.json.gz</code> wählen.</td>
+</tr>
+<tr>
+<td>„❌ Datei konnte nicht gelesen werden: …"</td>
+<td>Datei beschädigt oder Browser zu alt (kein Entpacken möglich)</td>
+<td>Datei erneut laden; aktuellen Browser nutzen.</td>
+</tr>
+<tr>
+<td>„⚠️ Die Funktion meldete Erfolg, aber es sind noch N Artikel vorhanden …"</td>
+<td>veraltete Funktion <code>alles_loeschen</code> in der Datenbank</td>
+<td>Funktion aus der aktuellen SQL-Datei neu einspielen (die Meldung nennt eine Datei „alles_loeschen.sql"; die aktuelle Fassung steht in <code>00_KOMPLETT_neu_aufsetzen.sql</code>).</td>
+</tr>
+<tr>
+<td>„Bitte Pop-ups erlauben …" / „Popup blockiert …"</td>
+<td>Browser blockiert Druckfenster</td>
+<td>Pop-ups für die App-Adresse erlauben.</td>
+</tr>
+<tr>
+<td>Keine Sprachansage</td>
+<td>Browser ohne Sprachausgabe, Ton aus, Häkchen „🔊 Sprachansage" aus</td>
+<td>Lautstärke prüfen; anderen Browser testen.</td>
+</tr>
+</tbody>
+</table></div>
+<h3>7.2 Meldungen der Edge Function (Antwort, Supabase-Logs, healthchecks.io)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Meldung (Feld <code>fehler</code>)</th>
+<th>Ursache</th>
+<th>Was tun</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>„Dropbox-Token-Refresh fehlgeschlagen: 400 … invalid_grant"</td>
+<td>Refresh-Token ungültig/widerrufen, App-Key/Secret falsch</td>
+<td>Secrets prüfen; neuen Refresh-Token erzeugen (<a href="#k3-9">3.9</a>).</td>
+</tr>
+<tr>
+<td>„Dropbox-Upload fehlgeschlagen: 401 / 403 …"</td>
+<td>fehlende Berechtigung (<code>files.content.write</code>) oder Pfad außerhalb des App-Ordners</td>
+<td>Permissions setzen, neuen Token erzeugen; Zugriffsart prüfen.</td>
+</tr>
+<tr>
+<td>„Dropbox-Upload fehlgeschlagen: 409 …"</td>
+<td>Pfadproblem (z. B. ungültiger Ordnername)</td>
+<td><code>DROPBOX_FOLDER</code> / <code>JTL_FOLDER</code> prüfen.</td>
+</tr>
+<tr>
+<td>„Dropbox list_folder fehlgeschlagen …" / „get_metadata …" / „move …" / „create_folder …"</td>
+<td>Rechte oder Pfad</td>
+<td>wie oben.</td>
+</tr>
+<tr>
+<td>„Fehler beim Lesen von <tabelle>: …"</td>
+<td>Tabelle fehlt (z. B. <code>paletten</code>) oder Datenbank nicht erreichbar</td>
+<td>SQL-Datei vollständig ausführen; Supabase-Status prüfen.</td>
+</tr>
+<tr>
+<td>„Backup: …" bzw. „JTL-Export: …"</td>
+<td>nur dieser Teil ist gescheitert</td>
+<td>Text der Meldung folgen.</td>
+</tr>
+<tr>
+<td>healthchecks.io meldet „down", aber keine Fehlermeldung</td>
+<td>Function wurde gar nicht aufgerufen</td>
+<td>Cron-Aufträge prüfen (<code>cron.job</code>, <code>cron.job_run_details</code>, <code>net._http_response</code>); Authorization-Header prüfen (HTTP 401 = Schlüssel fehlt/falsch).</td>
+</tr>
+</tbody>
+</table></div>
+<p>Logs der Function: Supabase-Dashboard → <strong>Edge Functions → lagerpal-backup → Logs</strong>.</p>
+<h3>7.3 Häufige Fragen</h3>
+<p><strong>Warum kann ich einen Lagerplatz im Scanner nicht neu anlegen?</strong>
+Der Scanner bietet nur bekannte Plätze an. Neue Plätze im Reiter „📦 Lagerplätze" („Neuer Lagerplatz") oder beim Umlagern („＋ neuer Lagerplatz…") anlegen.</p>
+<p><strong>Ein Platz ist leer, steht aber noch in der Suche.</strong>
+Plätze mit Menge 0 bleiben als „früherer Lagerort" (grau) sichtbar, damit man schnell wieder dorthin buchen kann. Endgültig entfernen: „Löschen" im Reiter „📦 Lagerplätze".</p>
+<p><strong>Ich habe versehentlich etwas gebucht.</strong>
+Innerhalb von 2 Stunden und solange nichts Neueres gebucht wurde: „↩︎ Rückgängig". Sonst eine Gegenbuchung oder Inventur.</p>
+<p><strong>Zwei Personen buchen gleichzeitig – geht das gut?</strong>
+Ja. Alle Buchungen laufen als Datenbank-Transaktionen; ein Bestand kann nicht durch gleichzeitige Entnahmen negativ werden.</p>
+<p><strong>Die App ist langsam bei sehr vielen Artikeln.</strong>
+Die Suche lädt beim Start alle Artikel und Bestände in den Browser. Bei schwacher Verbindung kurz warten („Wird geladen…").</p>
+<p><strong>Wie sehe ich, ob das Backup heute gelaufen ist?</strong>
+In Dropbox nach <code>lagerpal_backup_&lt;heute&gt;.json.gz</code> sehen oder bei healthchecks.io den letzten Ping prüfen.</p>
+<hr class="sep">
+<p><a id="kap-8"></a></p>
+<h2 class="chapter">8. Wartung</h2>
+<h3>8.1 Neue Version der App (index.html) einspielen</h3>
+<ol>
+<li>Neue <code>index.html</code> an derselben Adresse bereitstellen (z. B. Commit auf den GitHub-Pages-Branch oder Upload auf den Webspace).</li>
+<li>Auf den Geräten die Seite neu laden (bei Bedarf ohne Cache: Strg + F5 bzw. Cmd + Shift + R).</li>
+<li>URL, Schlüssel und Anmeldung bleiben erhalten, solange die Adresse gleich bleibt.</li>
+</ol>
+<aside class="box warn">
+<p><strong>Warnung:</strong> Läuft auf einem Gerät gerade eine „Palette sortieren"-Sitzung, diese vorher mit „✓ Palette fertig" abschließen. (Die Sitzung wird zwar im Browser gemerkt, ein Abschluss vor dem Update ist aber sicherer.)</p>
+</aside>
+<p>Zusammenpassen müssen: neue App-Funktionen setzen oft neue oder geänderte Datenbankfunktionen voraus. <strong>Erst die SQL-Änderungen, dann die neue <code>index.html</code></strong> einspielen.</p>
+<h3>8.2 Datenbankfunktionen aktualisieren</h3>
+<ul>
+<li>Funktionen werden mit <code>create or replace function</code> angelegt und lassen sich durch erneutes Ausführen <strong>nur des betreffenden Abschnitts</strong> aktualisieren. Daten bleiben dabei erhalten.</li>
+<li>Die komplette Datei <code>00_KOMPLETT_neu_aufsetzen.sql</code> <strong>nicht</strong> auf einer laufenden Datenbank erneut ausführen, ohne vorher zu prüfen, ob sie dort durchläuft (siehe Warnung in <a href="#k3-3">3.3</a>).</li>
+<li>Vor jeder Änderung: „🛟 Sicherung jetzt herunterladen".</li>
+</ul>
+<h3>8.3 Edge Function aktualisieren</h3>
+<pre><code>supabase functions deploy lagerpal-backup
+</code></pre>
+<p>Secrets bleiben erhalten. Danach einen Testaufruf machen (<a href="#k3-10">3.10</a>).</p>
+<h3>8.4 Datenbank neu aufsetzen</h3>
+<aside class="box warn">
+<p><strong>Warnung – Datenverlust!</strong> Beide folgenden Wege löschen Daten unwiderruflich. Immer <strong>vorher</strong> eine Sicherung herunterladen und prüfen, dass die Datei vollständig ist.</p>
+</aside>
+<p><strong>Weg A – nur die Daten leeren (Struktur bleibt): „☢️ Kompletter Reset — alle Daten löschen"</strong></p>
+<ol>
+<li>Reiter „🔄 Import/Export" → rote Karte „☢️ Kompletter Reset — alle Daten löschen".</li>
+<li>Exakt <strong><code>ALLES LOESCHEN</code></strong> eingeben → Knopf <strong>„☢️ Jetzt alles löschen"</strong> wird aktiv.</li>
+<li>Rückfrage bestätigen. Die App lädt <strong>zuerst automatisch eine Sicherung</strong> herunter.</li>
+<li>Gelöscht werden: alle Artikel, Bestände, Lagerplätze/Kartons (inkl. Paletten-/Kanal-Zuordnung), das gesamte Protokoll und alle Leermeldungen.</li>
+<li><strong>Nicht</strong> gelöscht werden: die Palettenliste (<code>paletten</code>), die JTL-Artikelliste, Benutzerkonten.</li>
+<li>Danach empfiehlt die App: Bestände per <strong>Komplett-Import</strong> mit „Unbekannte Artikel neu anlegen" einspielen, Amazon-Status importieren, Paletten/Kanäle neu zuordnen.</li>
+</ol>
+<p><strong>Weg B – komplett neues Projekt</strong></p>
+<ol>
+<li>Sicherung herunterladen (Dropbox oder „🛟 Sicherung jetzt herunterladen").</li>
+<li>Neues Supabase-Projekt anlegen (<a href="#k3-2">3.2</a>) und die SQL-Datei ausführen (<a href="#k3-3">3.3</a>).</li>
+<li>JTL-Artikelliste laden (<a href="#k3-4">3.4</a>), Benutzer anlegen (<a href="#k3-5">3.5</a>).</li>
+<li>App mit neuer URL und neuem anon-Key verbinden („⚙️ Verbindung ändern …") – auf <strong>jedem</strong> Gerät.</li>
+<li>Sicherung einspielen (<a href="#kap-5">5.4</a>).</li>
+<li>Edge Function im neuen Projekt deployen, Secrets setzen, Cron-Aufträge neu anlegen (<a href="#k3-10">3.10</a>–<a href="#k3-12">3.12</a>).</li>
+<li>Altes Projekt erst löschen, wenn alles geprüft ist.</li>
+</ol>
+<h3>8.5 Regelmäßige Kontrollen</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Wann</th>
+<th>Was</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>täglich (automatisch)</td>
+<td>healthchecks.io meldet Ausfälle per E-Mail</td>
+</tr>
+<tr>
+<td>wöchentlich</td>
+<td>Glocke leeren; „📊 Übersicht": „Mehrdeutige EANs", „Status unbekannt", Klärfall-Kartons <code>Unbekannt-NN</code> prüfen</td>
+</tr>
+<tr>
+<td>monatlich</td>
+<td>in Dropbox stichprobenartig prüfen, ob Monatsletzte vorhanden sind; Archivordner der JTL-CSV ggf. aufräumen</td>
+</tr>
+<tr>
+<td>vierteljährlich</td>
+<td>Probe-Wiederherstellung in einem Testprojekt; Benutzerliste prüfen (ausgeschiedene Personen entfernen)</td>
+</tr>
+<tr>
+<td>bei Personalwechsel</td>
+<td>Benutzer in Supabase löschen; bei Bedarf Passwörter ändern</td>
+</tr>
+<tr>
+<td>bei Verdacht auf Schlüsselverlust</td>
+<td>Dropbox-Token widerrufen und neu erzeugen; Supabase-Schlüssel rotieren</td>
+</tr>
+</tbody>
+</table></div>
+<aside class="box check">
+<p><strong>Hinweis: bitte prüfen</strong> – Supabase pausiert Projekte im kostenlosen Tarif nach längerer Inaktivität. Ob der tägliche Cron-Lauf dafür als Aktivität zählt, ist aus dem Code nicht ersichtlich; bitte die aktuellen Supabase-Regeln prüfen.</p>
+<p><strong>Hinweis:</strong> Die App lädt Bibliotheken in festen Versionen aus dem Internet (supabase-js <code>@2</code>, PapaParse <code>5.4.1</code>, xlsx <code>0.18.5</code>). <code>@2</code> bedeutet „neueste 2.x" – eine neue 2.x-Version wird automatisch genutzt.</p>
+</aside>
+<hr class="sep">
+<p><a id="kap-9"></a></p>
+<h2 class="chapter">9. Anhang</h2>
+<p><a id="anh-a"></a></p>
+<h3>A – Datenbanktabellen und Sichten</h3>
+<p><strong><code>artikel</code></strong> – Artikelstamm</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Spalte</th>
+<th>Typ</th>
+<th>Bedeutung</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>artikelnummer</code></td>
+<td>text, Primärschlüssel</td>
+<td>eindeutige Nummer</td>
+</tr>
+<tr>
+<td><code>artikelname</code></td>
+<td>text</td>
+<td>Name</td>
+</tr>
+<tr>
+<td><code>gtin</code></td>
+<td>text</td>
+<td>EAN/GTIN (darf mehrfach vorkommen)</td>
+</tr>
+<tr>
+<td><code>ist_set</code></td>
+<td>0/1</td>
+<td>Set-Artikel</td>
+</tr>
+<tr>
+<td><code>online</code></td>
+<td>0/1/2</td>
+<td>Amazon-Status: unbekannt / online / nicht online</td>
+</tr>
+<tr>
+<td><code>unbekannt</code></td>
+<td>0/1</td>
+<td>Platzhalter für unbekannten Artikel</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong><code>bestaende</code></strong> – Menge je Artikel und Lagerplatz (Primärschlüssel: Artikelnummer + Lagerplatz; Fremdschlüssel auf <code>artikel</code>; <code>menge</code> ≥ 0)</p>
+<p><strong><code>lagerplaetze</code></strong> – Metadaten der Plätze/Kartons: <code>name</code> (Primärschlüssel), <code>angelegt</code> (Zeitpunkt als Text), <code>palette</code> ('' = keine), <code>kanal</code> (0 gemischt / 1 online / 2 nicht online). Ein Platz kann auch nur in <code>bestaende</code> existieren.</p>
+<p><strong><code>buchungen</code></strong> – Protokoll: <code>id</code>, <code>zeitstempel</code>, <code>typ</code>, <code>artikelnummer</code> (kann „—" sein), <code>artikelname</code>, <code>gtin</code>, <code>lagerplatz</code>, <code>menge</code>, <code>bestand_lp_vorher/nachher</code>, <code>bestand_gesamt_vorher/nachher</code>, <code>kommentar</code> (bei umkehrbaren Aktionen mit Steuerdaten wie <code>MOVE|{…}</code>), <code>rueckgaengig_gemacht</code> (0/1).</p>
+<p><strong><code>leermeldungen</code></strong> – <code>id</code>, <code>zeitstempel</code>, <code>artikelnummer</code>, <code>artikelname</code>, <code>gtin</code>, <code>lagerplatz</code>, <code>gesehen</code> (0/1), <code>hinweis</code> (Text bei Einräum-Hinweisen).</p>
+<p><strong><code>paletten</code></strong> – <code>name</code> (Primärschlüssel), <code>erstellt</code>.</p>
+<p><strong><code>jtl_artikelliste</code></strong> – <code>artikelnummer</code> (Primärschlüssel), <code>artikelname</code>, <code>gtin</code>. Nur Nachschlagen.</p>
+<p><strong>Sicht <code>v_lagerplaetze</code></strong> – je Platz: <code>name</code>, <code>artikel</code> (Anzahl Artikel mit Bestand), <code>stueck</code>, <code>palette</code>, <code>kanal</code>.</p>
+<p><strong>Sicht <code>v_dashboard</code></strong> – eine Zeile mit: <code>artikel_gesamt</code>, <code>bestand_gesamt</code>, <code>lp_mit_bestand</code>, <code>lp_gesamt</code>, <code>set_artikel</code>, <code>artikel_ohne_bestand</code>, <code>leermeldungen_offen</code>, <code>gtin_mehrdeutig</code>, <code>nicht_online</code>, <code>online_unbekannt</code>, <code>ein_heute</code>, <code>aus_heute</code>, <code>ein_woche</code>, <code>aus_woche</code>.</p>
+<p><strong>Rechte:</strong> <code>anon</code> – kein Zugriff. <code>authenticated</code> – nur <code>SELECT</code> auf alle Tabellen und Sichten, <code>EXECUTE</code> auf die Funktionen. Geschrieben wird ausschließlich über die Funktionen (<code>SECURITY DEFINER</code>).</p>
+<p><a id="anh-b"></a></p>
+<h3>B – Datenbankfunktionen</h3>
+<p>Alle Funktionen sind nur für angemeldete Benutzer ausführbar und laufen jeweils in <strong>einer</strong> Transaktion (alles oder nichts).</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Funktion</th>
+<th>Zweck</th>
+<th>Aufgerufen von (App)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>buchen(artikelnummer, lagerplatz, typ 'ein'/'aus', menge, kommentar)</code></td>
+<td>Ein-/Ausbuchen, pflegt Leermeldungen</td>
+<td>Scanner, Suche (+ Ein/− Aus)</td>
+</tr>
+<tr>
+<td><code>umlagern(artikelnummer, von, nach, menge)</code></td>
+<td>Umlagern</td>
+<td>Reiter Umlagern</td>
+</tr>
+<tr>
+<td><code>einraeumen_scan(artikelnummer, quelle, ziel, menge)</code></td>
+<td>Palette sortieren: Umlagern + ggf. Inventur-Zugang</td>
+<td>Palette sortieren</td>
+</tr>
+<tr>
+<td><code>einraeumen_rest_melden(quelle, palette)</code></td>
+<td>Einräum-Hinweis für Rest auf der Quelle</td>
+<td>„✓ Palette fertig"</td>
+</tr>
+<tr>
+<td><code>karton_setzen(name, palette, kanal)</code></td>
+<td>Karton anlegen bzw. Palette/Kanal setzen</td>
+<td>Karton-Einstellungen, Palette sortieren</td>
+</tr>
+<tr>
+<td><code>artikel_neu(…)</code></td>
+<td>Artikel anlegen, optional mit Anfangsbestand</td>
+<td>„＋ Neuer Artikel"</td>
+</tr>
+<tr>
+<td><code>artikel_bearbeiten(…)</code></td>
+<td>Name/GTIN/Set/Status ändern</td>
+<td>✏️</td>
+</tr>
+<tr>
+<td><code>artikel_loeschen(artikelnummer, erzwingen)</code></td>
+<td>Artikel löschen</td>
+<td>„🗑️ Löschen"</td>
+</tr>
+<tr>
+<td><code>sammel_ausbuchen(artikelnummern[])</code></td>
+<td>Bestände der Auswahl auf 0</td>
+<td>„− Komplett ausbuchen"</td>
+</tr>
+<tr>
+<td><code>inventur_anwenden(lagerplatz, zaehlungen)</code></td>
+<td>Inventur übernehmen</td>
+<td>„✓ Inventur übernehmen"</td>
+</tr>
+<tr>
+<td><code>rueckgaengig(buchung_id)</code></td>
+<td>letzte umkehrbare Aktion zurücknehmen (max. 2 h)</td>
+<td>„↩︎ Rückgängig"</td>
+</tr>
+<tr>
+<td><code>lagerplatz_neu(name)</code></td>
+<td>Lagerplatz anlegen</td>
+<td>Lagerplätze</td>
+</tr>
+<tr>
+<td><code>lagerplatz_umbenennen(alt, neu)</code></td>
+<td>Lagerplatz umbenennen</td>
+<td>Lagerplätze</td>
+</tr>
+<tr>
+<td><code>lagerplatz_zusammenlegen(quellen, ziel)</code></td>
+<td>Plätze zusammenlegen</td>
+<td>Lagerplätze</td>
+</tr>
+<tr>
+<td><code>lagerplatz_loeschen(name, mit_bestand)</code></td>
+<td>Lagerplatz löschen</td>
+<td>Lagerplätze</td>
+</tr>
+<tr>
+<td><code>amazon_status_setzen(mapping, modus 'nur'/'voll')</code></td>
+<td>Amazon-Status-Import</td>
+<td>Import/Export</td>
+</tr>
+<tr>
+<td><code>bestand_csv_import(zeilen, modus 'teil'/'komplett', anlegen)</code></td>
+<td>Bestandsimport</td>
+<td>Import/Export</td>
+</tr>
+<tr>
+<td><code>alles_loeschen('ALLES LOESCHEN')</code></td>
+<td>alle Daten löschen (außer Paletten, JTL-Liste)</td>
+<td>Kompletter Reset</td>
+</tr>
+<tr>
+<td><code>backup_wiederherstellen(daten)</code></td>
+<td>Sicherung einspielen</td>
+<td>Backup einspielen</td>
+</tr>
+<tr>
+<td><code>leermeldungen_alle_gesehen()</code></td>
+<td>alle Leermeldungen als gesehen markieren</td>
+<td>Glocke</td>
+</tr>
+<tr>
+<td><code>unbekannt_karton_aktuell()</code></td>
+<td>aktueller Klärfall-Karton</td>
+<td>Scanner, Palette sortieren</td>
+</tr>
+<tr>
+<td><code>unbekannt_einbuchen(gtin, menge, kommentar, artikelnummer)</code></td>
+<td>Platzhalter anlegen und in Klärfall-Karton buchen</td>
+<td>Scanner, Palette sortieren</td>
+</tr>
+<tr>
+<td><code>unbekannt_karton_naechster()</code></td>
+<td>nächsten Klärfall-Karton anlegen</td>
+<td>„📄 Karton voll → drucken &amp; nächster"</td>
+</tr>
+<tr>
+<td><code>artikel_aus_liste(gtin)</code></td>
+<td>Artikel aus JTL-Artikelliste anlegen</td>
+<td>Scanner (Einbuchen), Palette sortieren</td>
+</tr>
+<tr>
+<td><code>palette_neu(name)</code></td>
+<td>Palette anlegen</td>
+<td>Paletten verwalten</td>
+</tr>
+<tr>
+<td><code>palette_umbenennen(alt, neu)</code></td>
+<td>Palette umbenennen, Kartons ziehen mit</td>
+<td>Paletten verwalten</td>
+</tr>
+</tbody>
+</table></div>
+<p><a id="anh-c"></a></p>
+<h3>C – Buchungstypen im Protokoll</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Typ</th>
+<th>entsteht durch</th>
+<th>rückgängig?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Eingang</td>
+<td>Einbuchen, Neuanlage mit Anfangsbestand, Inventur-Zugang (Einräumen), unbekannte Artikel</td>
+<td>ja</td>
+</tr>
+<tr>
+<td>Ausgang</td>
+<td>Ausbuchen, Sammel-Ausbuchen</td>
+<td>ja</td>
+</tr>
+<tr>
+<td>Umlagerung</td>
+<td>Umlagern, Palette sortieren</td>
+<td>ja</td>
+</tr>
+<tr>
+<td>Inventur</td>
+<td>Inventur übernehmen</td>
+<td>nein</td>
+</tr>
+<tr>
+<td>Artikeländerung</td>
+<td>Artikel bearbeiten</td>
+<td>ja</td>
+</tr>
+<tr>
+<td>Artikel angelegt</td>
+<td>Neuanlage aus JTL-Liste beim Scannen</td>
+<td>nein</td>
+</tr>
+<tr>
+<td>Artikel gelöscht</td>
+<td>Artikel löschen</td>
+<td>nein</td>
+</tr>
+<tr>
+<td>Lagerplatz angelegt</td>
+<td>Neuer Lagerplatz</td>
+<td>ja</td>
+</tr>
+<tr>
+<td>Lagerplatz gelöscht</td>
+<td>Lagerplatz löschen</td>
+<td>ja</td>
+</tr>
+<tr>
+<td>Umbenennung</td>
+<td>Lagerplatz umbenennen</td>
+<td>ja</td>
+</tr>
+<tr>
+<td>Zusammenlegung</td>
+<td>Lagerplätze zusammenlegen</td>
+<td>ja</td>
+</tr>
+<tr>
+<td>Palette angelegt</td>
+<td>Neue Palette</td>
+<td>nein</td>
+</tr>
+<tr>
+<td>Palette umbenannt</td>
+<td>Palette umbenennen</td>
+<td>nein</td>
+</tr>
+<tr>
+<td>CSV-Import</td>
+<td>Bestandsimport, Amazon-Status-Import</td>
+<td>nein</td>
+</tr>
+<tr>
+<td>Rückgängig</td>
+<td>jede Rücknahme</td>
+<td>–</td>
+</tr>
+</tbody>
+</table></div>
+<p><a id="anh-d"></a></p>
+<h3>D – Liste aller „bitte prüfen"-Stellen</h3>
+<ol>
+<li><strong>[3.2]</strong> Menübezeichnungen/Schlüsselformate bei Supabase (anon public key vs. neue <code>sb_publishable_…</code>-Schlüssel).</li>
+<li><strong>[3.5]</strong> Menübezeichnungen im Supabase-Dashboard für Benutzer und Selbstregistrierung.</li>
+<li><strong>[3.6]</strong> Tatsächlicher Hosting-Dienst und Adresse der App.</li>
+<li><strong>[3.9]</strong> Dropbox-Zugriffsart („Full Dropbox") und Berechtigungen der bestehenden App.</li>
+<li><strong>[4.7]</strong> „Paket B" (Zuordnung unbekannter Artikel) ist nicht umgesetzt – wie werden Klärfälle aufgelöst?</li>
+<li><strong>[4.9]</strong> Inventur nur für Plätze mit Bestand auswählbar.</li>
+<li><strong>[4.10]</strong> Palettenfeld bei Karton-Einstellungen ist Freitext; keine Löschfunktion für Paletten.</li>
+<li><strong>[4.13]</strong> Irreführende Meldung „GTIN nicht übernommen" beim Bestandsimport.</li>
+<li><strong>[5.3]</strong> Wiederherstellungsfrist gelöschter Dateien in Dropbox.</li>
+<li><strong>[5.4]</strong> Notfall-Wiederherstellung per SQL-Editor ist ungetestet.</li>
+<li><strong>[6.3]</strong> Import der CSV auf JTL-Seite (Vorlage, Zeitplan, Ordner-Synchronisation).</li>
+<li><strong>[8.5]</strong> Pausieren von Supabase-Projekten im kostenlosen Tarif.</li>
+</ol>
+<hr class="sep">
+<p><em>Ende des Handbuchs.</em></p>
+</main>
+<a class="totop" href="#inhalt">Inhalt ↑</a>
+<script type="module">
+  try {
+    const { default: mermaid } = await import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs');
+    mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'strict' });
+    for (const box of document.querySelectorAll('.diagram[data-mermaid]')) {
+      const pre = document.createElement('pre');
+      pre.className = 'mermaid';
+      pre.textContent = box.dataset.mermaid;
+      box.appendChild(pre);
+      box.hidden = false;
+    }
+    await mermaid.run({ querySelector: '.diagram pre.mermaid' });
+  } catch (e) { /* ohne Internet bleibt die Textfassung des Diagramms sichtbar */ }
+</script>
+</body>
+</html>
