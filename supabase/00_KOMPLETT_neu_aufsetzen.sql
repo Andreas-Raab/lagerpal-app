@@ -249,11 +249,13 @@ select
   (select count(*) from artikel where online=2)                             as nicht_online,
   (select count(*) from artikel where online=0)                             as online_unbekannt,
   (select coalesce(sum(menge),0) from buchungen
-     where typ='Eingang' and rueckgaengig_gemacht=0 and zeitstempel >= (select tag_beginn from grenzen)) as ein_heute,
+     where typ='Eingang' and rueckgaengig_gemacht=0 and kommentar is distinct from 'Inventur-Zugang (Einräumen)'
+       and zeitstempel >= (select tag_beginn from grenzen)) as ein_heute,
   (select coalesce(sum(menge),0) from buchungen
      where typ='Ausgang' and rueckgaengig_gemacht=0 and zeitstempel >= (select tag_beginn from grenzen)) as aus_heute,
   (select coalesce(sum(menge),0) from buchungen
-     where typ='Eingang' and rueckgaengig_gemacht=0 and zeitstempel >= (select woche_beginn from grenzen)) as ein_woche,
+     where typ='Eingang' and rueckgaengig_gemacht=0 and kommentar is distinct from 'Inventur-Zugang (Einräumen)'
+       and zeitstempel >= (select woche_beginn from grenzen)) as ein_woche,
   (select coalesce(sum(menge),0) from buchungen
      where typ='Ausgang' and rueckgaengig_gemacht=0 and zeitstempel >= (select woche_beginn from grenzen)) as aus_woche;
 
@@ -438,6 +440,7 @@ declare
     v_verf integer;
     v_surplus integer;
     v_vorgang uuid := gen_random_uuid();   -- Umlagerung + Inventur-Zugang = ein Vorgang
+    v_gesamt integer;
 begin
     if p_menge is null or p_menge <= 0 then raise exception 'Menge muss eine positive ganze Zahl sein'; end if;
     if p_quelle = p_ziel then raise exception 'Quelle und Ziel sind identisch'; end if;
@@ -456,6 +459,7 @@ begin
     select coalesce(menge,0) into v_ziel_nachher from bestaende
         where artikelnummer = p_artikelnummer and lagerplatz = p_ziel;
     v_ziel_nachher := coalesce(v_ziel_nachher, 0);
+    select coalesce(sum(menge), 0) into v_gesamt from bestaende where artikelnummer = p_artikelnummer;
 
     if v_verf > 0 then
         insert into bestaende (artikelnummer, lagerplatz, menge) values (p_artikelnummer, p_ziel, v_verf)
@@ -467,7 +471,7 @@ begin
         insert into buchungen (zeitstempel, typ, artikelnummer, artikelname, gtin, lagerplatz, menge,
             bestand_lp_vorher, bestand_lp_nachher, bestand_gesamt_vorher, bestand_gesamt_nachher, kommentar, vorgang)
             values (now(), 'Umlagerung', p_artikelnummer, v_name, v_gtin, p_quelle || ' → ' || p_ziel, v_verf,
-                v_von_vorher, v_von_nachher, null, null,
+                v_von_vorher, v_von_nachher, v_gesamt, v_gesamt,
                 'MOVE|' || json_build_object('artnr', p_artikelnummer, 'von', p_quelle, 'nach', p_ziel, 'menge', v_verf)::text, v_vorgang);
     end if;
 
@@ -476,9 +480,9 @@ begin
             on conflict (artikelnummer, lagerplatz) do update set menge = bestaende.menge + v_surplus
             returning menge into v_ziel_nachher;
         insert into buchungen (zeitstempel, typ, artikelnummer, artikelname, gtin, lagerplatz, menge,
-            bestand_lp_vorher, bestand_lp_nachher, kommentar, vorgang)
+            bestand_lp_vorher, bestand_lp_nachher, bestand_gesamt_vorher, bestand_gesamt_nachher, kommentar, vorgang)
             values (now(), 'Eingang', p_artikelnummer, v_name, v_gtin, p_ziel, v_surplus,
-                v_ziel_nachher - v_surplus, v_ziel_nachher, 'Inventur-Zugang (Einräumen)', v_vorgang);
+                v_ziel_nachher - v_surplus, v_ziel_nachher, v_gesamt, v_gesamt + v_surplus, 'Inventur-Zugang (Einräumen)', v_vorgang);
         -- für den Reiter „Abgleich": mehr gefunden, als auf der Quelle gebucht war
         insert into mengen_abweichungen (art, artikelnummer, menge, offen, quelle, karton, vorgang)
             values ('mehr', p_artikelnummer, v_surplus, v_surplus, p_quelle, p_ziel, v_vorgang);
@@ -704,7 +708,7 @@ grant execute on function artikel_loeschen(text,boolean) to authenticated;
 create or replace function sammel_ausbuchen(p_artikelnummern text[])
 returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
 declare
-    r record; v_name text; v_gtin text;
+    r record; v_name text; v_gtin text; v_gesamt integer;
     v_stueck integer := 0; v_plaetze integer := 0;
     v_vorgang uuid := gen_random_uuid();
 begin
@@ -717,11 +721,12 @@ begin
              for update   -- gelesene Menge = tatsächlich ausgebuchte Menge (kein Zwischenbuchen)
     loop
         select artikelname, gtin into v_name, v_gtin from artikel where artikelnummer = r.artikelnummer;
+        select coalesce(sum(menge), 0) into v_gesamt from bestaende where artikelnummer = r.artikelnummer;
         update bestaende set menge = 0 where artikelnummer = r.artikelnummer and lagerplatz = r.lagerplatz;
         insert into buchungen (zeitstempel, typ, artikelnummer, artikelname, gtin, lagerplatz, menge,
-            bestand_lp_vorher, bestand_lp_nachher, kommentar, vorgang)
+            bestand_lp_vorher, bestand_lp_nachher, bestand_gesamt_vorher, bestand_gesamt_nachher, kommentar, vorgang)
             values (now(), 'Ausgang', r.artikelnummer, v_name, v_gtin, r.lagerplatz, r.menge,
-                    r.menge, 0, 'Sammel-Ausbuchen (Suche)', v_vorgang);
+                    r.menge, 0, v_gesamt, v_gesamt - r.menge, 'Sammel-Ausbuchen (Suche)', v_vorgang);
         if not exists (select 1 from leermeldungen where artikelnummer=r.artikelnummer and lagerplatz=r.lagerplatz and gesehen=0) then
             insert into leermeldungen (zeitstempel, artikelnummer, artikelname, gtin, lagerplatz, gesehen, hinweis)
                 values (now(), r.artikelnummer, v_name, v_gtin, r.lagerplatz, 0, 'Sammel-Ausbuchen') on conflict do nothing;
@@ -744,11 +749,32 @@ declare
     r record; v_artnr text; v_ist integer; v_vorher integer;
     v_gesamt_vorher integer; v_gesamt_nachher integer; v_diff integer;
     v_name text; v_gtin text; v_anzahl integer := 0;
+    v_soll integer; v_konflikte jsonb := '[]'::jsonb;
 begin
     if p_lagerplatz is null or trim(p_lagerplatz) = '' then raise exception 'Kein Lagerplatz angegeben'; end if;
-    for r in select key as artnr, value as wert from jsonb_each_text(p_zaehlungen) loop
+    -- Werte: entweder die gezählte Menge (alte App) oder {ist, soll}. Mit „soll"
+    -- wird geprüft, ob seit dem Laden der Liste auf dem Platz gebucht wurde - dann
+    -- wird NICHTS übernommen und die abweichenden Zeilen gehen an die App zurück.
+    perform 1 from bestaende where lagerplatz = p_lagerplatz for update;
+    for r in select key as artnr, value as wert from jsonb_each(p_zaehlungen) loop
+        if jsonb_typeof(r.wert) = 'object' and r.wert ? 'soll' then
+            v_soll := (r.wert->>'soll')::integer;
+            select coalesce((select menge from bestaende
+                             where artikelnummer = trim(r.artnr) and lagerplatz = p_lagerplatz), 0) into v_vorher;
+            if v_vorher <> v_soll then
+                v_konflikte := v_konflikte || jsonb_build_object('artikelnummer', trim(r.artnr), 'soll', v_soll, 'aktuell', v_vorher);
+            end if;
+        end if;
+    end loop;
+    if jsonb_array_length(v_konflikte) > 0 then
+        return jsonb_build_object('ok', false, 'lagerplatz', p_lagerplatz, 'anzahl_geaendert', 0, 'konflikte', v_konflikte);
+    end if;
+    for r in select key as artnr, value as wert from jsonb_each(p_zaehlungen) loop
         v_artnr := trim(r.artnr);
-        begin v_ist := r.wert::integer; exception when others then continue; end;
+        begin
+            v_ist := case when jsonb_typeof(r.wert) = 'object' then r.wert->>'ist' else r.wert #>> '{}' end::integer;
+        exception when others then continue; end;
+        if v_ist is null then continue; end if;
         if v_artnr = '' or v_ist < 0 then continue; end if;
         select artikelname, gtin into v_name, v_gtin from artikel where artikelnummer = v_artnr;
         if not found then continue; end if;
@@ -1161,13 +1187,25 @@ declare
     v_geaendert integer := 0;
     v_online integer; v_offline integer; v_unbekannt integer;
 begin
-    if p_modus = 'voll' then
-        update artikel set online = 2 where true;  -- "where true": Supabase (pg-safeupdate) blockiert UPDATE ohne WHERE
+    if p_modus is null or p_modus not in ('nur','voll') then
+        raise exception 'Ungültiger Modus „%" (erlaubt: nur, voll)', p_modus;
     end if;
+    -- Ziel je Artikel: Wert aus der Datei (online = null heißt „nicht ändern", z. B. bei
+    -- einem unbekannten Status), sonst beim Vollabgleich „nicht online". Geschrieben
+    -- und gezählt werden nur echte Änderungen.
     update artikel a
-        set online = x.online
-        from jsonb_to_recordset(p_mapping) as x(artikelnummer text, online integer)
-        where a.artikelnummer = x.artikelnummer;
+        set online = z.ziel
+        from (select a2.artikelnummer,
+                     case when x.artikelnummer is not null
+                               then coalesce(case when x.online in (1,2) then x.online end, a2.online)
+                          when p_modus = 'voll' then 2
+                          else a2.online end as ziel
+              from artikel a2
+              left join (select distinct on (artikelnummer) artikelnummer, online
+                         from jsonb_to_recordset(p_mapping) as m(artikelnummer text, online integer)
+                         order by artikelnummer) x
+                on x.artikelnummer = a2.artikelnummer) z
+        where a.artikelnummer = z.artikelnummer and a.online is distinct from z.ziel;
     get diagnostics v_geaendert = row_count;
     select count(*) into v_online    from artikel where online = 1;
     select count(*) into v_offline   from artikel where online = 2;
@@ -1205,6 +1243,8 @@ declare
     v_beispiele text;
     v_gtin_besitzer text;
     v_gtin_konflikte text[] := '{}';
+    v_alt_name text; v_alt_gtin text; v_alt_set integer; v_aend text;
+    v_stamm integer := 0;
     a record; b record;
 begin
     if p_modus is null or p_modus not in ('teil','komplett') then
@@ -1262,7 +1302,7 @@ begin
         v_setflag := r.set_flag;
         v_bestand := r.bestand;
 
-        select artikelname, gtin into v_art_name, v_art_gtin from artikel where artikelnummer = v_artnr;
+        select artikelname, gtin, ist_set into v_art_name, v_art_gtin, v_alt_set from artikel where artikelnummer = v_artnr;
         if not found then
             if p_anlegen then
                 -- GTIN schon bei einem anderen Artikel? Wird trotzdem übernommen (z.B. ein als
@@ -1278,11 +1318,19 @@ begin
                     values (v_artnr, coalesce(v_name, v_artnr), v_gtin, coalesce(v_setflag,0));
                 v_neu_angelegt := v_neu_angelegt + 1;
                 v_art_name := coalesce(v_name, v_artnr); v_art_gtin := v_gtin;
+                insert into buchungen (zeitstempel, typ, artikelnummer, artikelname, gtin, lagerplatz, menge, kommentar)
+                    values (v_now, 'Artikel angelegt', v_artnr, v_art_name, v_art_gtin, '—', null, 'Neu angelegt beim CSV-Import');
             else
                 v_nicht_gefunden := array_append(v_nicht_gefunden, v_artnr);
                 continue;
             end if;
         else
+            v_alt_name := v_art_name; v_alt_gtin := v_art_gtin;
+            -- Excel lässt führende Nullen weg („0012345678905" → „12345678905"):
+            -- unterscheidet sich die EAN nur darin, bleibt die vorhandene stehen
+            if v_gtin <> '' and ltrim(v_gtin, '0') = ltrim(coalesce(v_art_gtin, ''), '0') then
+                v_gtin := coalesce(v_art_gtin, '');
+            end if;
             -- neue GTIN gehört schon einem anderen Artikel? Wird trotzdem übernommen (siehe
             -- Kommentar oben) - nur zur Information im Ergebnis gemeldet, nicht blockiert.
             if p_anlegen and v_gtin <> '' and v_gtin <> coalesce(v_art_gtin,'') then
@@ -1299,9 +1347,22 @@ begin
                     where artikelnummer = v_artnr
                     returning artikelname, gtin into v_art_name, v_art_gtin;
             end if;
-        end if;
-        if v_setflag is not null then
-            update artikel set ist_set = v_setflag where artikelnummer = v_artnr;
+            if v_setflag is not null and v_setflag is distinct from coalesce(v_alt_set, 0) then
+                update artikel set ist_set = v_setflag where artikelnummer = v_artnr;
+            end if;
+            -- Stammdaten-Änderungen nachvollziehbar protokollieren (früher still)
+            v_aend := concat_ws(' · ',
+                case when v_art_name is distinct from v_alt_name
+                     then 'Name: „' || coalesce(v_alt_name, '') || '" → „' || coalesce(v_art_name, '') || '"' end,
+                case when coalesce(v_art_gtin, '') <> coalesce(v_alt_gtin, '')
+                     then 'EAN: ' || coalesce(nullif(v_alt_gtin, ''), '—') || ' → ' || coalesce(nullif(v_art_gtin, ''), '—') end,
+                case when v_setflag is not null and v_setflag is distinct from coalesce(v_alt_set, 0)
+                     then 'Set: ' || case when v_alt_set = 1 then 'ja' else 'nein' end || ' → ' || case when v_setflag = 1 then 'ja' else 'nein' end end);
+            if v_aend <> '' then
+                insert into buchungen (zeitstempel, typ, artikelnummer, artikelname, gtin, lagerplatz, menge, kommentar)
+                    values (v_now, 'Artikeländerung (Import)', v_artnr, v_art_name, v_art_gtin, '—', null, v_aend);
+                v_stamm := v_stamm + 1;
+            end if;
         end if;
 
         if v_lp is null then
@@ -1377,7 +1438,7 @@ begin
     drop table if exists pg_temp.tmp_csv_artikel;
 
     return jsonb_build_object('ok', true, 'aktualisiert', v_aktualisiert, 'unveraendert', v_unveraendert,
-        'ohne_lagerplatz', v_ohne_lp, 'neu_angelegt', v_neu_angelegt,
+        'ohne_lagerplatz', v_ohne_lp, 'neu_angelegt', v_neu_angelegt, 'stammdaten_geaendert', v_stamm,
         'auf_null_gesetzt', v_auf_null, 'nicht_gefunden', coalesce(array_length(v_nicht_gefunden,1),0),
         'beispiele_nicht_gefunden', to_jsonb(v_nicht_gefunden[1:5]),
         'gtin_konflikte', coalesce(array_length(v_gtin_konflikte,1),0),

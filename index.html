@@ -459,7 +459,7 @@ tbody tr:hover td{background:#eef4fb;}
           <select id="prot-typ" onchange="protokollLaden()" style="width:160px;">
             <option value="">Alle Typen</option>
             <option>Eingang</option><option>Ausgang</option><option>Umlagerung</option>
-            <option>Inventur</option><option>Artikeländerung</option>
+            <option>Inventur</option><option>Artikeländerung</option><option>Artikeländerung (Import)</option><option>Artikel angelegt</option>
             <option>Lagerplatz angelegt</option><option>Lagerplatz gelöscht</option>
             <option>Umbenennung</option><option>Zusammenlegung</option><option>Rückgängig</option>
             <option>CSV-Import</option><option>Artikel gelöscht</option>
@@ -490,7 +490,7 @@ tbody tr:hover td{background:#eef4fb;}
       </div>
       <div class="hint" id="bimp-modus-hint" style="margin-top:6px;">Nur Artikel in der Datei werden aktualisiert. Alle anderen bleiben unverändert.</div>
       <label style="display:flex;gap:8px;align-items:center;margin-top:10px;">
-        <input type="checkbox" id="bimp-anlegen" style="width:auto;"> Unbekannte Artikel neu anlegen (Name/GTIN aus der Datei, falls vorhanden)
+        <input type="checkbox" id="bimp-anlegen" style="width:auto;" onchange="if (bestandFile && !bestandImportLaeuft) handleBestandFile(bestandFile)"> Unbekannte Artikel neu anlegen und Name/EAN vorhandener Artikel aus der Datei übernehmen
       </label>
       <label style="margin-top:12px;">Datei wählen</label>
       <input type="file" id="bimp-file" accept=".csv,.txt,.xlsx" onchange="handleBestandFile(this.files[0])">
@@ -2950,15 +2950,39 @@ async function amazonStatusAusDatei(file) {
   const colSku = spalteFinden(rows, ['artikelnummer','sku','artnr','artikel_nr','nr','merchant-sku','seller-sku','msku','artikel']);
   if (!colSku) throw new Error('Spalte mit Artikelnummer nicht gefunden. Gefunden: ' + Object.keys(rows[0]).join(', '));
   const colStatus = spalteFinden(rows, ['online','status','amazon','amazon-status','gelistet','aktiv','listing','zustand','state']);
-  const mapping = {};
+  // Unbekannte Statuswerte („Unvollständig", „Gesperrt" …) wurden früher still als
+  // „online" übernommen. Jetzt werden sie gesammelt und in der Vorschau zugeordnet.
+  const eintraege = {}, unbekannt = {};
   for (const row of rows) {
     const sku = String(row[colSku] ?? '').trim().replace(/^"|"$/g, '');
     if (!sku) continue;
-    let st = 1;
-    if (colStatus) { const erk = statusAusWert(row[colStatus]); if (erk !== null) st = erk; }
-    mapping[sku] = st;
+    if (!colStatus) { eintraege[sku] = { st: 1 }; continue; }
+    const roh = String(row[colStatus] ?? '').trim();
+    const st = statusAusWert(roh);
+    if (st !== null) { eintraege[sku] = { st }; continue; }
+    const key = roh.toLowerCase();
+    (unbekannt[key] = unbekannt[key] || { anzeige: roh || '(leer)', anzahl: 0 }).anzahl++;
+    eintraege[sku] = { key };
   }
-  return { mapping, colStatus };
+  return { eintraege, unbekannt, colStatus };
+}
+// Zuordnung unbekannter Statuswerte: 1 = online, 2 = nicht online, '' = Artikel nicht ändern.
+// Wird im Browser gemerkt, damit dieselbe Amazon-Datei beim nächsten Mal gleich passt.
+let amazonZuordnung = {};
+try { amazonZuordnung = JSON.parse(localStorage.getItem('lp-amazon-zuordnung') || '{}') || {}; } catch (e) { amazonZuordnung = {}; }
+function amazonZuordnen(key, wert) {
+  amazonZuordnung[key] = wert === '' ? '' : Number(wert);
+  try { localStorage.setItem('lp-amazon-zuordnung', JSON.stringify(amazonZuordnung)); } catch (e) {}
+  importVorschau();
+}
+// Datei-Einträge + Zuordnung → { sku: 1 | 2 | null }  (null = nicht ändern)
+function amazonMapping(datei) {
+  const m = {};
+  for (const sku in datei.eintraege) {
+    const e = datei.eintraege[sku];
+    m[sku] = e.st != null ? e.st : (amazonZuordnung[e.key] === 1 || amazonZuordnung[e.key] === 2 ? amazonZuordnung[e.key] : null);
+  }
+  return m;
 }
 
 // ── Bestände per CSV/Excel importieren (JTL-artig) ──────────────────────────
@@ -3001,7 +3025,7 @@ async function bestandZeilenAusDatei(file) {
       artikelnummer, bestand,
       lagerplatz: colLp ? String(row[colLp] ?? '').trim() : '',
       artikelname: colName ? String(row[colName] ?? '').trim() : '',
-      gtin: colGtin ? String(row[colGtin] ?? '').trim() : '',
+      gtin: colGtin ? String(row[colGtin] ?? '').replace(/\s+/g, '') : '',
       set_flag: colSet ? setflagAusWert(row[colSet]) : null
     });
   }
@@ -3009,6 +3033,78 @@ async function bestandZeilenAusDatei(file) {
     throw new Error('Datei enthält negative Bestände (' + negativ.length + ' Zeilen, z. B. ' + negativ.slice(0, 5).join(', ') + '). Nichts wurde importiert.');
   }
   return { zeilen, ungueltig };
+}
+// GTIN-Prüfziffer (EAN-8, UPC-12, EAN-13, GTIN-14): von rechts abwechselnd ×3 / ×1
+function gtinGueltig(s) {
+  if (!/^\d+$/.test(s) || ![8, 12, 13, 14].includes(s.length)) return false;
+  let sum = 0;
+  for (let i = s.length - 2, f = 3; i >= 0; i--, f = 4 - f) sum += Number(s[i]) * f;
+  return (10 - sum % 10) % 10 === Number(s[s.length - 1]);
+}
+const ohneNullen = s => String(s || '').replace(/^0+/, '');
+// Prüft die Datei gegen die vorhandenen Artikel, BEVOR etwas geschrieben wird:
+//  • Excel speichert Zahlen ohne führende Nullen („0012345678905" → „12345678905").
+//    Eine solche EAN würde die richtige überschreiben → vorhandene EAN behalten bzw.
+//    die Nullen wieder ergänzen. Gleiches für Artikelnummern aus Ziffern.
+//  • EANs mit falscher Länge/Prüfziffer werden nicht übernommen.
+//  • Stammdaten-Änderungen (Name, EAN, Set) werden für die Vorschau gesammelt.
+async function bestandDateiPruefen(vorab) {
+  const anlegen = el('bimp-anlegen').checked;
+  const arts = await fetchAll('artikel', 'artikelnummer,artikelname,gtin,ist_set');
+  const art = {}, nachZiffern = {};
+  arts.forEach(a => {
+    art[a.artikelnummer] = a;
+    if (/^\d+$/.test(a.artikelnummer)) {
+      const k = ohneNullen(a.artikelnummer);
+      nachZiffern[k] = k in nachZiffern ? null : a.artikelnummer;   // null = nicht eindeutig
+    }
+  });
+  const h = { artnrNullen: [], gtinNullen: [], gtinUngueltig: [], stamm: [], neu: new Set() };
+  for (const z of vorab.zeilen) {
+    if (!art[z.artikelnummer] && /^\d+$/.test(z.artikelnummer) && nachZiffern[ohneNullen(z.artikelnummer)]) {
+      const richtig = nachZiffern[ohneNullen(z.artikelnummer)];
+      h.artnrNullen.push(z.artikelnummer + ' → ' + richtig);
+      z.artikelnummer = richtig;
+    }
+    const a = art[z.artikelnummer];
+    if (z.gtin) {
+      if (a && a.gtin && ohneNullen(a.gtin) === ohneNullen(z.gtin)) {
+        if (a.gtin !== z.gtin) h.gtinNullen.push(z.artikelnummer + ': ' + z.gtin + ' → ' + a.gtin);
+        z.gtin = a.gtin;
+      } else if (!gtinGueltig(z.gtin)) {
+        // nur 9-11 Ziffern auffüllen: so lang wird eine EAN-13, der Excel 2-4 Nullen
+        // weggenommen hat. Kürzere Zahlen sind keine abgeschnittenen EANs.
+        const lang = /^\d{9,11}$/.test(z.gtin) ? z.gtin.padStart(13, '0') : '';
+        if (lang && gtinGueltig(lang)) { h.gtinNullen.push(z.artikelnummer + ': ' + z.gtin + ' → ' + lang); z.gtin = lang; }
+        else { h.gtinUngueltig.push(z.artikelnummer + ': ' + z.gtin); z.gtin = ''; }
+      }
+    }
+    if (!a) { if (anlegen && z.lagerplatz) h.neu.add(z.artikelnummer); continue; }
+    const aend = [];
+    if (anlegen && z.artikelname && z.artikelname !== (a.artikelname || '')) aend.push(['Name', a.artikelname || '', z.artikelname]);
+    if (anlegen && z.gtin && z.gtin !== (a.gtin || '')) aend.push(['EAN', a.gtin || '—', z.gtin]);
+    if (z.set_flag != null && z.set_flag !== (a.ist_set || 0)) aend.push(['Set', a.ist_set ? 'ja' : 'nein', z.set_flag ? 'ja' : 'nein']);
+    if (aend.length && !h.stamm.some(s => s.artnr === z.artikelnummer)) h.stamm.push({ artnr: z.artikelnummer, aend });
+  }
+  h.bekannt = new Set(Object.keys(art));
+  // doppelte Meldungen (mehrere Zeilen je Artikel) zusammenfassen
+  for (const k of ['artnrNullen', 'gtinNullen', 'gtinUngueltig']) h[k] = [...new Set(h[k])];
+  vorab.hinweise = h;
+}
+function bestandHinweiseHtml(h) {
+  const bsp = l => esc(l.slice(0, 5).join(' · ')) + (l.length > 5 ? ' …' : '');
+  let s = '';
+  if (h.artnrNullen.length) s += `<div style="margin-top:6px;">🔧 <b>${h.artnrNullen.length}</b> Artikelnummer(n) ohne führende Nullen erkannt und zugeordnet (Excel-Zahlenformat), z. B. ${bsp(h.artnrNullen)}</div>`;
+  if (h.gtinNullen.length) s += `<div style="margin-top:6px;">🔧 <b>${h.gtinNullen.length}</b> EAN(s) ohne führende Nullen erkannt, die Nullen werden ergänzt bzw. die vorhandene EAN bleibt, z. B. ${bsp(h.gtinNullen)}</div>`;
+  if (h.gtinUngueltig.length) s += `<div style="margin-top:6px;" class="err">⚠️ <b>${h.gtinUngueltig.length}</b> EAN(s) mit falscher Länge oder Prüfziffer werden <b>nicht</b> übernommen, z. B. ${bsp(h.gtinUngueltig)}</div>`;
+  if (h.stamm.length) {
+    const ZEIGEN = 50;
+    s += `<div style="margin-top:8px;"><b>${h.stamm.length}</b> Artikel bekommen geänderte Stammdaten (wird im Protokoll vermerkt):</div>
+      <div style="max-height:200px;overflow:auto;margin-top:4px;"><table><tr><th>Artikel</th><th>Feld</th><th>bisher → neu</th></tr>${
+        h.stamm.slice(0, ZEIGEN).map(x => x.aend.map(([f, v, n], i) => `<tr>${i ? '<td></td>' : `<td class="mono">${esc(x.artnr)}</td>`}<td>${f}</td><td>${esc(v)} → <b>${esc(n)}</b></td></tr>`).join('')).join('')
+      }</table></div>${h.stamm.length > ZEIGEN ? `<div class="hint">… und ${h.stamm.length - ZEIGEN} weitere Artikel</div>` : ''}`;
+  }
+  return s;
 }
 let bestandModus = 'teil';
 let bestandFile = null;
@@ -3041,6 +3137,7 @@ async function handleBestandFile(file) {
   rd.innerHTML = '<span class="hint">⏳ Datei wird geprüft…</span>';
   try {
     bestandVorab = await bestandZeilenAusDatei(file);
+    await bestandDateiPruefen(bestandVorab);
   } catch (e) {
     rd.innerHTML = '<span class="err">❌ ' + esc(e.message || String(e)) + '</span>';
     bestandImportZuruecksetzen();
@@ -3062,6 +3159,7 @@ async function handleBestandFile(file) {
     rd.innerHTML = `<div style="background:#fff5f5;border:2px solid #9b2c2c;border-radius:8px;padding:12px 14px;color:#9b2c2c;">
       <div style="font-weight:700;">⚠️ Komplett-Import: Alle nicht in der Datei enthaltenen Plätze werden auf 0 gesetzt!</div>
       <div style="margin-top:6px;">Die Datei enthält <b>${zeilen.length}</b> Zeilen mit <b>${nArt}</b> Artikeln auf <b>${nLp}</b> Lagerplätzen. Passt das zu deinem Gesamtbestand?</div>
+      <div style="color:#1a202c;">${bestandHinweiseHtml(bestandVorab.hinweise)}</div>
       <div class="row" style="margin-top:10px;">
         <button style="background:#9b2c2c;" onclick="bestandImportieren('komplett')">Ja, fortfahren</button>
         <button class="sec" onclick="el('bimp-result').innerHTML='';bestandImportZuruecksetzen()">Abbrechen</button>
@@ -3079,16 +3177,12 @@ async function bestandTeilVorschau() {
   // aktuellen Bestand und vorhandene Artikel für ALLE Zeilen der Datei holen
   // (in Häppchen, damit die Anfrage-URL nicht zu lang wird)
   const arts = [...new Set(zeilen.map(z => z.artikelnummer))];
-  const aktuell = {}, bekannt = new Set();
+  const aktuell = {}, bekannt = bestandVorab.hinweise.bekannt;
   try {
     for (let i = 0; i < arts.length; i += 150) {
       const teil = arts.slice(i, i + 150);
-      const [best, art] = await Promise.all([
-        fetchAll('bestaende', 'artikelnummer,lagerplatz,menge', { build: q => q.in('artikelnummer', teil) }),
-        fetchAll('artikel', 'artikelnummer', { build: q => q.in('artikelnummer', teil) })
-      ]);
+      const best = await fetchAll('bestaende', 'artikelnummer,lagerplatz,menge', { build: q => q.in('artikelnummer', teil) });
       best.forEach(b => { aktuell[b.artikelnummer + '|' + b.lagerplatz] = b.menge; });
-      art.forEach(x => bekannt.add(x.artikelnummer));
     }
   } catch (e) {
     rd.innerHTML = '<span class="err">❌ Vorschau konnte nicht geladen werden: ' + esc(buchFehlerText(e)) + '</span>';
@@ -3108,16 +3202,18 @@ async function bestandTeilVorschau() {
       <td style="text-align:right;">${vorher} → <b>${z.bestand}</b></td>
       <td style="text-align:right;color:${diff > 0 ? 'var(--green)' : 'var(--red)'};font-weight:700;">${diff > 0 ? '+' : ''}${diff}</td></tr>`;
   };
-  const nichts = !geaendert.length && !(anlegen && unbekannt.length);
+  const hinweise = bestandVorab.hinweise;
+  const nichts = !geaendert.length && !(anlegen && unbekannt.length) && !hinweise.stamm.length;
   rd.innerHTML = `<div style="background:#fffbea;border:2px solid var(--amber);border-radius:8px;padding:12px 14px;">
     <div style="font-weight:700;">Vorschau Teil-Import „${esc(bestandFile.name)}"</div>
     <div style="margin-top:6px;"><b>${geaendert.length}</b> Plätze ändern sich · ${gleich} bleiben gleich
       ${unbekannt.length ? ` · <span class="err">${unbekannt.length} Zeilen mit unbekanntem Artikel (${anlegen ? 'werden neu angelegt' : 'werden übersprungen'})</span>` : ''}
       ${ohneLp.length ? ` · <span class="err">${ohneLp.length} ohne Lagerplatz (übersprungen)</span>` : ''}
       ${ungueltig.length ? ` · <span class="err">${ungueltig.length} ohne gültigen Bestand (übersprungen)</span>` : ''}</div>
+    ${bestandHinweiseHtml(hinweise)}
     ${geaendert.length ? `<div style="max-height:320px;overflow:auto;margin-top:8px;"><table><tr><th>Artikel</th><th>Lagerplatz</th><th style="text-align:right;">Bestand jetzt → neu</th><th style="text-align:right;">Änderung</th></tr>${geaendert.slice(0, ZEIGEN).map(zeile).join('')}</table></div>
       ${geaendert.length > ZEIGEN ? `<div class="hint">… und ${geaendert.length - ZEIGEN} weitere Änderungen</div>` : ''}`
-      : '<div class="hint" style="margin-top:8px;">Keine Bestandsänderungen gegenüber dem aktuellen Stand.</div>'}
+      : `<div class="hint" style="margin-top:8px;">Keine Bestandsänderungen gegenüber dem aktuellen Stand${hinweise.stamm.length ? ', nur Stammdaten' : ''}.</div>`}
     <div class="hint" style="margin-top:6px;">Der Import lässt sich nicht per Rückgängig zurücknehmen.</div>
     <div class="row" style="margin-top:10px;">
       ${nichts ? '' : `<button onclick="bestandImportieren('teil')">Import ausführen</button>`}
@@ -3143,7 +3239,8 @@ async function bestandImportieren(modus) {
       ${data.auf_null_gesetzt > 0 ? hinweis(`Auf 0 gesetzt: <b>${data.auf_null_gesetzt}</b> Artikel`) : ''}
       ${data.nicht_gefunden > 0 ? hinweis(`Übersprungen (unbekannt): ${data.nicht_gefunden}${data.beispiele_nicht_gefunden?.length ? ' (z.B. ' + esc(data.beispiele_nicht_gefunden.join(', ')) + ')' : ''}`) : ''}
       ${data.ohne_lagerplatz > 0 ? hinweis(`Übersprungen (Lagerplatz leer): <b>${data.ohne_lagerplatz}</b> Zeilen`) : ''}
-      ${data.gtin_konflikte > 0 ? hinweis(`GTIN nicht übernommen (gehört schon einem anderen Artikel): <b>${data.gtin_konflikte}</b>${data.beispiele_gtin_konflikte?.length ? ', z. B. ' + esc(data.beispiele_gtin_konflikte.join(' · ')) : ''}`) : ''}
+      ${data.stammdaten_geaendert > 0 ? `<div style="margin-top:4px;">Stammdaten geändert: <b>${data.stammdaten_geaendert}</b> Artikel (siehe Protokoll)</div>` : ''}
+      ${data.gtin_konflikte > 0 ? hinweis(`EAN übernommen, gehört aber auch einem anderen Artikel: <b>${data.gtin_konflikte}</b>${data.beispiele_gtin_konflikte?.length ? ', z. B. ' + esc(data.beispiele_gtin_konflikte.join(' · ')) : ''}`) : ''}
       ${ungueltig.length ? hinweis(`Übersprungen (Bestand leer/keine ganze Zahl): <b>${ungueltig.length}</b> Zeilen, z. B. ${esc(ungueltig.slice(0, 5).join(', '))}`) : ''}
     </div>`;
     bestandImportZuruecksetzen();
@@ -3330,6 +3427,7 @@ async function backupEinspielen() {
 
 let importModus = 'nur';
 let importFile = null;
+let importDatei = null;   // geprüfter Dateiinhalt (amazonStatusAusDatei)
 function setImportModus(m) {
   importModus = m;
   el('imp-mode-nur').classList.toggle('active', m === 'nur');
@@ -3337,38 +3435,59 @@ function setImportModus(m) {
   el('imp-modus-hint').textContent = m === 'voll'
     ? 'Datei = Liste der Online-Artikel. Alle anderen werden auf „nicht online" gesetzt.'
     : 'Nur Artikel aus der Datei bekommen einen Status. Alle anderen bleiben unverändert.';
-  if (importFile) importVorschau();
+  if (importDatei) importVorschau();
 }
 async function handleImportFile(file) {
   if (!file) return;
-  importFile = file;
+  importFile = file; importDatei = null;
+  const rd = el('imp-result');
+  rd.innerHTML = '<span class="hint">⏳ Datei wird geprüft…</span>';
+  try { importDatei = await amazonStatusAusDatei(file); }
+  catch (e) { rd.innerHTML = '<span class="err">❌ ' + esc(e.message || String(e)) + '</span>'; return; }
   await importVorschau();
 }
+let importVorschauSeq = 0;
 async function importVorschau() {
+  if (!importDatei) return;
   const rd = el('imp-result');
-  rd.innerHTML = '<span class="hint">⏳ Vorschau…</span>';
+  const seq = ++importVorschauSeq;
   try {
-    const { mapping, colStatus } = await amazonStatusAusDatei(importFile);
+    const { colStatus, unbekannt } = importDatei;
+    const mapping = amazonMapping(importDatei);
     const aktRows = await fetchAll('artikel', 'artikelnummer,online');
+    if (seq !== importVorschauSeq) return;
     const aktuell = {}; aktRows.forEach(r => aktuell[r.artikelnummer] = r.online || 0);
-    let zuOnline = 0, zuOffline = 0, unveraendert = 0, nichtGefunden = 0; const beispieleNf = [];
+    let zuOnline = 0, zuOffline = 0, unveraendert = 0, nichtGefunden = 0, offenGelassen = 0; const beispieleNf = [];
     for (const artnr in aktuell) {
       let ziel;
       if (artnr in mapping) ziel = mapping[artnr];
       else if (importModus === 'voll') ziel = 2;
       else continue;
       const akt = aktuell[artnr];
-      if (ziel === akt) unveraendert++;
+      if (ziel === null) offenGelassen++;
+      else if (ziel === akt) unveraendert++;
       else if (ziel === 1) zuOnline++;
       else if (ziel === 2) zuOffline++;
     }
+    const unbKeys = Object.keys(unbekannt);
+    const opt = (key, v, txt) => `<option value="${v}"${String(amazonZuordnung[key] ?? '') === String(v) ? ' selected' : ''}>${txt}</option>`;
+    const unbHtml = unbKeys.length ? `<div style="margin-top:10px;background:#fffbea;border:1px solid var(--amber);border-radius:8px;padding:10px 12px;">
+        <div style="font-weight:700;">Unbekannte Statuswerte – bitte zuordnen</div>
+        <div class="hint" style="margin:2px 0 6px;">Artikel mit „nicht ändern" behalten ihren bisherigen Status, auch beim Vollabgleich. Die Auswahl wird gemerkt.</div>
+        ${unbKeys.map(k => `<div class="row" style="gap:8px;align-items:center;margin-top:4px;">
+          <span style="min-width:160px;"><b>„${esc(unbekannt[k].anzeige)}"</b> <span class="muted">(${unbekannt[k].anzahl}×)</span></span>
+          <select style="width:auto;" onchange="amazonZuordnen('${jsAttr(k)}', this.value)">
+            ${opt(k, '', 'nicht ändern')}${opt(k, 1, 'online')}${opt(k, 2, 'nicht online')}
+          </select></div>`).join('')}
+      </div>` : '';
     for (const sku in mapping) if (!(sku in aktuell)) { nichtGefunden++; if (beispieleNf.length < 5) beispieleNf.push(sku); }
     rd.innerHTML = `
       <div style="background:var(--blue-tint);border-radius:8px;padding:12px 14px;">
         <div style="font-weight:700;">Vorschau — ${importModus === 'voll' ? 'Vollabgleich' : 'nur genannte Artikel'}</div>
         <div style="margin-top:6px;">Positionen in der Datei: <b>${Object.keys(mapping).length}</b>${colStatus ? ' · mit Status-Spalte' : ' · ohne Status-Spalte (alle = online)'}</div>
-        <div style="margin-top:6px;">→ auf <b style="color:#276749;">online</b>: ${zuOnline} &nbsp;·&nbsp; → auf <b style="color:#9b2c2c;">nicht online</b>: ${zuOffline} &nbsp;·&nbsp; unverändert: ${unveraendert}</div>
+        <div style="margin-top:6px;">→ auf <b style="color:#276749;">online</b>: ${zuOnline} &nbsp;·&nbsp; → auf <b style="color:#9b2c2c;">nicht online</b>: ${zuOffline} &nbsp;·&nbsp; unverändert: ${unveraendert}${offenGelassen ? ` &nbsp;·&nbsp; nicht geändert (unbekannter Status): ${offenGelassen}` : ''}</div>
         ${nichtGefunden ? `<div style="margin-top:6px;color:#7c4a12;">Nicht gefunden (SKU ohne passenden Artikel): ${nichtGefunden}${beispieleNf.length ? ' (z.B. ' + esc(beispieleNf.join(', ')) + ')' : ''}</div>` : ''}
+        ${unbHtml}
       </div>
       <div class="row" style="margin-top:12px;">
         <button onclick="importAnwenden()">✓ Status übernehmen</button>
@@ -3376,25 +3495,25 @@ async function importVorschau() {
       </div>`;
   } catch (e) { rd.innerHTML = '<span class="err">❌ ' + esc(e.message || String(e)) + '</span>'; }
 }
-async function importAnwenden() {
-  if (!importFile) return;
+function importAnwenden() { return einmalig('amazon-import', importAnwendenIntern); }
+async function importAnwendenIntern() {
+  if (!importFile || !importDatei) return;
   const warn = importModus === 'voll' ? '\n\nVollabgleich: Alle Artikel, die NICHT in der Datei stehen, werden auf „nicht online" gesetzt.' : '';
   if (!confirm('Amazon-Status übernehmen? Das lässt sich nicht per Rückgängig aufheben.' + warn)) return;
   const rd = el('imp-result');
   rd.innerHTML = '<span class="hint">⏳ Wird übernommen…</span>';
   try {
-    const { mapping } = await amazonStatusAusDatei(importFile);
-    const arr = Object.entries(mapping).map(([artikelnummer, online]) => ({ artikelnummer, online }));
+    const arr = Object.entries(amazonMapping(importDatei)).map(([artikelnummer, online]) => ({ artikelnummer, online }));
     const { data, error } = await client.rpc('amazon_status_setzen', { p_mapping: arr, p_modus: importModus });
     if (error) throw error;
     rd.innerHTML = `<div style="background:#C6F6D5;border-radius:8px;padding:12px 14px;color:#276749;">
       <div style="font-weight:700;">✅ Amazon-Status übernommen</div>
       <div style="margin-top:6px;">geändert: <b>${data.geaendert}</b> · online: <b>${data.online_gesamt}</b> · nicht online: <b>${data.offline_gesamt}</b> · unbekannt: <b>${data.unbekannt_gesamt}</b></div>
     </div>`;
-    importFile = null; el('imp-file').value = '';
+    importFile = null; importDatei = null; el('imp-file').value = '';
   } catch (e) { rd.innerHTML = '<span class="err">❌ ' + esc(e.message || String(e)) + '</span>'; }
 }
-function importReset() { importFile = null; el('imp-file').value = ''; el('imp-result').innerHTML = ''; }
+function importReset() { importFile = null; importDatei = null; importVorschauSeq++; el('imp-file').value = ''; el('imp-result').innerHTML = ''; }
 
 // Alle Zeilen einer Tabelle holen (überwindet das 1000-Zeilen-API-Limit)
 // Primärschlüssel je Tabelle/View – eindeutige Sortierung fürs Blättern in fetchAll()
@@ -3482,15 +3601,17 @@ async function exportArtikelCsv() {
       fetchAll('artikel', 'artikelnummer,artikelname,gtin,ist_set,online', { order: { col: 'artikelnummer', asc: true } }),
       fetchAll('bestaende', 'artikelnummer,lagerplatz,menge', {})
     ]);
-    const bmap = {};
-    best.filter(b => b.menge > 0).forEach(b => { (bmap[b.artikelnummer] = bmap[b.artikelnummer] || []).push(b.lagerplatz + ':' + b.menge); });
+    // Summe direkt aus den Zahlen - früher aus dem Text „Platz:Menge" zurückgerechnet,
+    // was bei Platznamen mit „:" (z. B. „A:1") falsche Summen ergab
+    const bmap = {}, summe = {};
+    best.filter(b => b.menge > 0).forEach(b => {
+      (bmap[b.artikelnummer] = bmap[b.artikelnummer] || []).push(b.lagerplatz + ':' + b.menge);
+      summe[b.artikelnummer] = (summe[b.artikelnummer] || 0) + b.menge;
+    });
     const onlineTxt = o => o === 1 ? 'online' : o === 2 ? 'nicht online' : 'unbekannt';
     const head = ['Artikelnummer','Artikelname','GTIN','Set-Artikel','Amazon-Status','Gesamtbestand','Lagerplätze'];
-    const data = arts.map(a => {
-      const lps = bmap[a.artikelnummer] || [];
-      const gesamt = lps.reduce((s, x) => s + parseInt(x.split(':')[1], 10), 0);
-      return [a.artikelnummer, a.artikelname, a.gtin, a.ist_set ? 'ja' : 'nein', onlineTxt(a.online || 0), gesamt, lps.join(', ')];
-    });
+    const data = arts.map(a => [a.artikelnummer, a.artikelname, a.gtin, a.ist_set ? 'ja' : 'nein',
+      onlineTxt(a.online || 0), summe[a.artikelnummer] || 0, (bmap[a.artikelnummer] || []).join(', ')]);
     csvDownload('artikel.csv', [head, ...data]);
   } catch (e) { alert('Fehler beim Export: ' + (e.message || e)); }
 }
@@ -3499,7 +3620,7 @@ async function exportArtikelCsv() {
 let allProt = [];
 function ptClass(t) {
   return t==='Eingang'?'pt-ein':t==='Ausgang'?'pt-aus':t==='Umlagerung'?'pt-um'
-    :(t==='Inventur'||t==='Inventurdifferenz'||t==='Abgleich'||t==='Ausgleich')?'pt-inv':(t==='Artikeländerung'||t==='Artikel angelegt')?'pt-art':t==='Rückgängig'?'pt-undo'
+    :(t==='Inventur'||t==='Inventurdifferenz'||t==='Abgleich'||t==='Ausgleich')?'pt-inv':(t==='Artikeländerung'||t==='Artikeländerung (Import)'||t==='Artikel angelegt')?'pt-art':t==='Rückgängig'?'pt-undo'
     :t==='Artikel gelöscht'?'pt-art'
     :(t==='Lagerplatz angelegt'||t==='Lagerplatz gelöscht'||t==='Umbenennung'||t==='Zusammenlegung')?'pt-lp':'pt-csv';
 }
@@ -3568,18 +3689,22 @@ let invRows = [];
 async function invInit() {
   invRows = []; el('inv-table').innerHTML = ''; el('inv-status').textContent = ''; el('inv-add').value = '';
   let data;
-  try { data = await fetchAll('v_lagerplaetze', 'name,stueck', { build: q => q.gt('stueck', 0) }); }
+  // auch LEERE Plätze anbieten: dort gefundene Ware lässt sich per „Artikel ergänzen" zählen
+  try { data = await fetchAll('v_lagerplaetze', 'name,stueck'); }
   catch (e) { el('inv-status').innerHTML = '<span class="err">Lagerplätze konnten nicht geladen werden: ' + esc(buchFehlerText(e)) + '</span>'; return; }
   const q = (data||[]).sort((a,b)=>a.name.localeCompare(b.name));
   el('inv-lp').innerHTML = '<option value="">— Lagerplatz wählen —</option>'
-    + q.map(x=>`<option value="${escAttr(x.name)}">${esc(x.name)} (${x.stueck})</option>`).join('');
+    + q.map(x=>`<option value="${escAttr(x.name)}">${esc(x.name)} (${x.stueck > 0 ? x.stueck : 'leer'})</option>`).join('');
 }
+let invLadeSeq = 0;
 async function invLadePlatz() {
   const lp = el('inv-lp').value;
-  invRows = [];
+  const seq = ++invLadeSeq;
+  invRows = []; el('inv-status').textContent = '';
   if (!lp) { el('inv-table').innerHTML = ''; return; }
   const r = await client.from('bestaende')
     .select('artikelnummer,menge,artikel(artikelname,gtin)').eq('lagerplatz', lp).gt('menge',0);
+  if (seq !== invLadeSeq) return;   // inzwischen anderer Platz gewählt
   if (r.error) { el('inv-status').innerHTML = '<span class="err">Ladefehler: ' + esc(buchFehlerText(r.error)) + '</span>'; el('inv-table').innerHTML = ''; return; }
   const data = r.data;
   invRows = (data||[]).map(r => ({ artnr:r.artikelnummer, name:(r.artikel&&r.artikel.artikelname)||'', gtin:(r.artikel&&r.artikel.gtin)||'', soll:r.menge, ist:r.menge }))
@@ -3587,12 +3712,19 @@ async function invLadePlatz() {
   invRender();
 }
 function invRender() {
-  if (!invRows.length) { el('inv-table').innerHTML = '<div class="hint">Keine Artikel — Lagerplatz wählen oder Artikel ergänzen.</div>'; return; }
+  if (!invRows.length) {
+    el('inv-table').innerHTML = el('inv-lp').value
+      ? '<div class="hint">Auf diesem Platz ist laut System nichts. Gefundene Artikel oben unter „Artikel ergänzen" scannen.</div>'
+      : '<div class="hint">Keine Artikel — Lagerplatz wählen oder Artikel ergänzen.</div>';
+    return;
+  }
   el('inv-table').innerHTML = '<table><tr><th>Artikel</th><th style="text-align:right;">Soll</th><th style="text-align:right;">Ist (gezählt)</th><th style="text-align:right;">Diff</th></tr>'
     + invRows.map((r,i) => {
         const diff = (Number(r.ist)||0) - r.soll;
         const dc = diff===0?'#718096':(diff>0?'#276749':'#9b2c2c');
-        return `<tr><td>${esc(r.name)}<br><span class="muted mono">${esc(r.artnr)}</span></td>
+        const hinweis = r.sollVorher != null
+          ? `<div style="color:#7c4a12;font-size:.8rem;margin-top:2px;">⚠️ Während der Zählung gebucht: Soll war ${r.sollVorher}, jetzt ${r.soll}. Zählung prüfen.</div>` : '';
+        return `<tr${r.sollVorher != null ? ' style="background:#fffbea;"' : ''}><td>${esc(r.name)}<br><span class="muted mono">${esc(r.artnr)}</span>${hinweis}</td>
           <td style="text-align:right;">${r.soll}</td>
           <td style="text-align:right;"><input type="number" min="0" value="${r.ist}" style="width:80px;text-align:right;" onchange="invSetIst(${i},this.value)"></td>
           <td style="text-align:right;color:${dc};font-weight:700;">${diff>0?'+':''}${diff}</td></tr>`;
@@ -3614,17 +3746,36 @@ async function invAddArtikel() {
   invRows.push({ artnr:g.artnr, name:g.name||'', gtin:'', soll, ist:soll });
   el('inv-add').value=''; el('inv-status').textContent=''; invRender();
 }
-async function invAbschliessen() {
+function invAbschliessen() { return einmalig('inventur', invAbschliessenIntern); }
+async function invAbschliessenIntern() {
   const lp = el('inv-lp').value;
   if (!lp) { el('inv-status').innerHTML = '<span class="err">Kein Lagerplatz.</span>'; return; }
-  const zaehl = {};
-  invRows.forEach(r => { const ist = parseInt(r.ist,10); if (Number.isInteger(ist) && ist >= 0 && ist !== r.soll) zaehl[r.artnr] = ist; });
-  if (!Object.keys(zaehl).length) { el('inv-status').textContent = 'Keine Änderungen.'; return; }
+  // ALLE gezählten Zeilen mit ihrem Soll schicken: die Datenbank prüft, ob seit dem
+  // Laden auf dem Platz gebucht wurde (sonst würde die Inventur diese Buchung überschreiben)
+  const zaehl = {}; let aenderungen = 0;
+  invRows.forEach(r => {
+    const ist = parseInt(r.ist,10);
+    if (!Number.isInteger(ist) || ist < 0) return;
+    zaehl[r.artnr] = { ist, soll: r.soll };
+    if (ist !== r.soll) aenderungen++;
+  });
+  if (!aenderungen) { el('inv-status').textContent = 'Keine Änderungen.'; return; }
   el('inv-status').textContent = 'Übernehme…';
   const { data, error } = await client.rpc('inventur_anwenden', { p_lagerplatz: lp, p_zaehlungen: zaehl });
-  if (error) { el('inv-status').innerHTML = '<span class="err">Fehler: ' + esc(error.message) + '</span>'; return; }
+  if (error) { el('inv-status').innerHTML = '<span class="err">Fehler: ' + esc(buchFehlerText(error)) + '</span>'; return; }
+  if (data.ok === false && data.konflikte) {
+    data.konflikte.forEach(k => {
+      const r = invRows.find(x => x.artnr === k.artikelnummer);
+      if (r) { if (r.sollVorher == null) r.sollVorher = r.soll; r.soll = k.aktuell; }
+    });
+    invRender();
+    el('inv-status').innerHTML = '<span class="err">⚠️ Während der Zählung wurde auf diesem Platz gebucht. Nichts übernommen. '
+      + 'Soll ist aktualisiert – bitte die gelb markierten Zeilen prüfen und erneut übernehmen.</span>';
+    return;
+  }
   el('inv-status').innerHTML = `<span class="ok">✓ ${data.anzahl_geaendert} Korrektur(en) übernommen.</span>`;
-  invLadePlatz();
+  await invLadePlatz();
+  el('inv-status').innerHTML = `<span class="ok">✓ ${data.anzahl_geaendert} Korrektur(en) übernommen.</span>`;
 }
 
 // ── Lagerplatz-Operationen ──────────────────────────────────────────────────
