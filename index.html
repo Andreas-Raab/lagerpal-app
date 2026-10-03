@@ -29,7 +29,15 @@ header h1{font-size:1rem;font-weight:700;}
 .leer-item-meta{font-size:.78rem;color:var(--text-2);margin-top:2px;}
 .leer-panel-foot{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;background:#f9fafb;}
 .lp{display:inline-block;background:var(--amber-soft);color:#7c4a12;border:1px solid #f3dfc0;padding:1px 8px;border-radius:6px;font-weight:600;font-size:.76rem;margin:2px 4px 0 0;}
-.tabs{display:flex;flex-wrap:wrap;background:var(--ink-2);padding:0 8px;gap:1px;position:sticky;top:50px;z-index:15;}
+.tabs{display:flex;flex-wrap:wrap;background:var(--ink-2);padding:0 8px;gap:1px;position:sticky;top:var(--tabs-oben,50px);z-index:15;}
+/* Lange Tabellen scrollen in sich; Kopf der App, Reiter und Spaltenköpfe bleiben stehen.
+   --kopf-hoehe = Test-Balken + Kopfzeile + Reiter (per JS gemessen, kopfMessen()) */
+.tabelle-scroll th{position:sticky;z-index:3;background:var(--blue-tint);}
+/* breite Bildschirme: Seite scrollt normal, Spaltenköpfe kleben unter den Reitern */
+@media (min-width:800px){ .tabelle-scroll{overflow:visible;} .tabelle-scroll th{top:var(--kopf-hoehe,110px);} }
+/* schmale Bildschirme: Tabelle scrollt in sich (auch seitlich), Köpfe kleben oben in der Tabelle */
+@media (max-width:799px){ .tabelle-scroll{max-height:calc(100vh - var(--kopf-hoehe,110px) - 16px);overflow:auto;} .tabelle-scroll th{top:0;} }
+.tabelle-scroll th.sortable:hover{background:#dfeaf7;}
 .tab{padding:10px 15px;color:rgba(255,255,255,.55);font-size:.85rem;font-weight:600;border:none;border-bottom:2px solid transparent;background:transparent;font-family:var(--font);}
 .tab:hover{color:rgba(255,255,255,.85);background:rgba(255,255,255,.04);}
 .tab.active{color:#fff;border-bottom-color:var(--amber);background:rgba(255,255,255,.06);}
@@ -178,10 +186,13 @@ tbody tr:hover td{background:#eef4fb;}
 .abg-best .row{gap:8px;}
 .abg-step{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff;}
 .abg-step button{border:0;border-radius:0;background:var(--line-soft);color:var(--text);width:30px;height:32px;padding:0;}
-.abg-step span{min-width:40px;text-align:center;font-weight:800;}
-.abg-matrix{overflow-x:auto;margin-top:12px;border:1px solid var(--line);border-radius:12px;background:#fff;}
+.abg-step input{width:56px;height:32px;border:0;text-align:center;font-weight:800;padding:0;}
+.abg-mengenwahl{display:inline-flex;align-items:center;gap:8px;font-weight:600;}
+#tab-abgleich .abg-step button:disabled{opacity:.35;cursor:not-allowed;}
+.abg-matrix{overflow:auto;max-height:calc(100vh - var(--kopf-hoehe,110px) - 16px);margin-top:12px;border:1px solid var(--line);border-radius:12px;background:#fff;}
 .abg-matrix table{min-width:600px;}
 .abg-matrix td,.abg-matrix th{text-align:center;white-space:nowrap;}
+.abg-matrix th{position:sticky;top:0;z-index:3;background:var(--blue-tint);}
 .abg-matrix td.art{text-align:left;white-space:normal;min-width:200px;}
 .abg-z{display:inline-block;min-width:42px;padding:2px 6px;border-radius:6px;font-weight:800;}
 .abg-z.mehr{background:#e3f4f1;color:#0f7a6c;} .abg-z.fehlt{background:#fbe9e4;color:var(--red);}
@@ -281,7 +292,7 @@ tbody tr:hover td{background:#eef4fb;}
       </div>
       <div id="such-status" class="hint" style="margin-top:6px;"></div>
       <div id="such-sammel" class="such-sammel" style="display:none;"></div>
-      <div id="such-tabelle" style="margin-top:8px;overflow-x:auto;"></div>
+      <div id="such-tabelle" class="tabelle-scroll" style="margin-top:8px;"></div>
     </div>
   </div>
 
@@ -390,7 +401,7 @@ tbody tr:hover td{background:#eef4fb;}
         <label>Artikel ergänzen (Nummer/EAN)</label>
         <input id="inv-add" placeholder="scannen, dann Enter" onkeydown="if(event.key==='Enter'){event.preventDefault();invAddArtikel();}">
       </div>
-      <div id="inv-table" style="margin-top:10px;"></div>
+      <div id="inv-table" class="tabelle-scroll" style="margin-top:10px;"></div>
       <div class="row" style="margin-top:12px;"><button onclick="invAbschliessen()">✓ Inventur übernehmen</button>
         <span id="inv-status" class="hint"></span></div>
     </div>
@@ -435,7 +446,7 @@ tbody tr:hover td{background:#eef4fb;}
           <button class="sec" onclick="kartonsLaden()">↻ Aktualisieren</button>
         </span></div>
       <div id="kartons-grid" class="lager-grid" style="margin-top:10px;">Wird geladen…</div>
-      <div id="kartons-detail" style="margin-top:14px;"></div>
+      <div id="kartons-detail" class="tabelle-scroll" style="margin-top:14px;"></div>
     </div>
   </div>
 
@@ -463,7 +474,7 @@ tbody tr:hover td{background:#eef4fb;}
         </div>
       </div>
       <div id="prot-count" class="hint" style="margin-top:8px;"></div>
-      <div id="protokoll-body" style="margin-top:8px;overflow-x:auto;">Wird geladen…</div>
+      <div id="protokoll-body" class="tabelle-scroll" style="margin-top:8px;">Wird geladen…</div>
     </div>
   </div>
 
@@ -643,6 +654,8 @@ function scanFrage(text, jaText, neinText, ansage) {
   return new Promise(resolve => {
     const bg = el('scan-frage');
     el('scan-frage-text').textContent = text;
+    el('scan-frage-optionen').innerHTML = '';
+    el('scan-frage-ja').style.display = '';
     el('scan-frage-ja').textContent = jaText || 'Ja';
     el('scan-frage-nein').textContent = neinText || 'Nein';
     const fertig = ja => {
@@ -682,6 +695,56 @@ function fehlerToast(e) {
 window.addEventListener('unhandledrejection', ev => { fehlerToast(ev.reason); });
 // Supabase-Antwort auswerten: bei Fehler werfen statt leer weiterzumachen
 function daten(r) { if (r.error) throw r.error; return r.data; }
+// Auswahl aus mehreren Möglichkeiten im selben scan-sicheren Fenster (nur Tippen
+// zählt). optionen: [{ label, wert }]. Ergebnis: { wert (null = Abbrechen), gescannt }
+function scanAuswahl(text, optionen, ansage) {
+  if (scanFrageOffen) scanFrageOffen.fertig(false);
+  const panel = el('leer-panel');
+  if (panel) panel.style.display = 'none';
+  return new Promise(resolve => {
+    const bg = el('scan-frage');
+    el('scan-frage-text').textContent = text;
+    el('scan-frage-ja').style.display = 'none';
+    el('scan-frage-nein').textContent = 'Abbrechen';
+    const box = el('scan-frage-optionen');
+    box.innerHTML = '';
+    const fertig = wahl => {
+      if (!scanFrageOffen) return;
+      const gescannt = scanFrageOffen.gescannt;
+      scanFrageOffen = null;
+      bg.style.display = 'none';
+      resolve({ wert: wahl === false ? null : wahl, gescannt });
+    };
+    scanFrageOffen = { fertig, gescannt: false };
+    optionen.forEach(o => {
+      const b = document.createElement('button');
+      b.style.cssText = 'justify-content:flex-start;text-align:left;height:auto;padding:10px 12px;white-space:normal;';
+      b.textContent = o.label;
+      b.onclick = () => fertig(o.wert);
+      box.appendChild(b);
+    });
+    el('scan-frage-nein').onclick = () => fertig(false);
+    bg.style.display = 'flex';
+    if (document.activeElement) document.activeElement.blur();
+    bg.querySelector('.modal-box').focus();
+    ssWarnen(ansage || 'Bitte Artikel wählen');
+  });
+}
+// Mehrere Artikel mit derselben EAN: zur Auswahl anbieten statt abzuweisen.
+// Liefert den gewählten Artikel (Format wie resolveArtikel) oder null.
+async function eindeutigerArtikel(g, code) {
+  if (!g || !g.mehrdeutig) return g;
+  const liste = g.mehrdeutig.map(artikelAusZeile);
+  const best = {};
+  try {
+    (daten(await client.from('bestaende').select('artikelnummer,menge').in('artikelnummer', liste.map(a => a.artnr)).gt('menge', 0)) || [])
+      .forEach(b => { best[b.artikelnummer] = (best[b.artikelnummer] || 0) + b.menge; });
+  } catch (e) { /* ohne Bestandsangabe weiter */ }
+  const r = await scanAuswahl(`Die EAN ${code} gehört zu ${liste.length} Artikeln. Welcher ist es?`,
+    liste.map(a => ({ wert: a, label: `${a.name || a.artnr}  ·  ${a.artnr}  ·  Bestand ${best[a.artnr] || 0}${a.istSet ? '  ·  SET' : ''}` })),
+    'Mehrere Artikel, bitte wählen');
+  return r.wert || null;
+}
 const SCAN_VERWORFEN_HINWEIS = '<div class="ss-block" style="margin-top:6px;">⛔ Während der Rückfrage wurde gescannt – dieser Artikel wurde <b>nicht</b> gebucht. Bitte noch einmal scannen.</div>';
 
 // Echtes (produktives) Supabase-Projekt. Ist die App mit einem ANDEREN Projekt
@@ -689,6 +752,17 @@ const SCAN_VERWORFEN_HINWEIS = '<div class="ss-block" style="margin-top:6px;">�
 // Fenstertitel beginnt mit „TEST". (Zieht das echte System einmal um, hier die
 // neue Projekt-Kennung eintragen - sonst zeigt die echte App den Test-Balken.)
 const PRODUKTIV_PROJEKT = 'csrjwhqhvkuvdnshazix';
+// Höhe von Test-Balken + Kopfzeile + Reitern messen: die Reiter kleben direkt unter
+// der Kopfzeile, Tabellen bekommen den restlichen Platz (siehe .tabelle-scroll)
+function kopfMessen() {
+  const balken = el('testsystem-balken'), kopf = document.querySelector('header'), reiter = document.querySelector('.tabs');
+  const b = balken && balken.style.display !== 'none' ? balken.offsetHeight : 0;
+  const k = kopf ? kopf.offsetHeight : 50;
+  const r = reiter && reiter.offsetParent ? reiter.offsetHeight : 0;
+  document.documentElement.style.setProperty('--tabs-oben', (b + k) + 'px');
+  document.documentElement.style.setProperty('--kopf-hoehe', (b + k + r) + 'px');
+}
+window.addEventListener('resize', kopfMessen);
 function testsystemAnzeigen(url) {
   const m = String(url || '').match(/^https?:\/\/([^./]+)/i);
   const projekt = m ? m[1] : String(url || '');
@@ -698,6 +772,7 @@ function testsystemAnzeigen(url) {
   document.title = (istTest ? 'TEST · ' : '') + 'LagerPal (Web)';
   // Header klebt sonst über dem Balken
   document.querySelector('header').style.top = istTest ? el('testsystem-balken').offsetHeight + 'px' : '0';
+  kopfMessen();
 }
 function verbinden() {
   let url = el('url').value.trim();
@@ -744,6 +819,7 @@ async function zeigeApp(email) {
   el('glocke').style.display = 'inline-block';
   el('hdr-logout').style.display = 'inline-block';
   el('main-container').classList.add('wide'); // Suche ist der Standard-Tab beim Start
+  kopfMessen();
   // Glocke/Rückgängig zuerst starten - sie sollen auch laufen, wenn das erste Laden scheitert
   refreshLeer(); refreshUndo();
   if (!refreshTimer) refreshTimer = setInterval(() => { refreshLeer(); refreshUndo(); }, 15000);
@@ -1322,7 +1398,9 @@ function abgKarte(f, i) {
       ? `<b>${a.menge} Stk</b> werden von <b>${esc(a.fehlt.quelle)}</b> als <b>Inventurdifferenz</b> ausgebucht.`
       : `<b>${a.menge} Stk</b> der Fehlmenge auf <b>${esc(a.fehlt.quelle)}</b> werden als erledigt markiert. Der Bestand wird <b>nicht</b> geändert.`;
     best = `<div class="abg-best"><div>${text}</div><div class="row">
-      ${a.max > 1 ? `<span class="abg-step"><button onclick="abgMenge(-1)" aria-label="weniger">−</button><span>${a.menge}</span><button onclick="abgMenge(1)" aria-label="mehr">+</button></span>` : ''}
+      <label class="abg-mengenwahl">Menge
+        <span class="abg-step"><button onclick="abgMenge(-1)" aria-label="weniger" ${a.menge <= 1 ? 'disabled' : ''}>−</button><input type="number" id="abg-menge" min="1" max="${a.max}" value="${a.menge}" onchange="abgMengeSetzen(this.value)" aria-label="Menge"><button onclick="abgMenge(1)" aria-label="mehr" ${a.menge >= a.max ? 'disabled' : ''}>+</button></span>
+        <span class="muted">von max. ${a.max} Stk</span></label>
       <button class="abg-gruen" id="abg-ok" onclick="abgBuchen()">Bestätigen</button><button class="sec" onclick="abgAbbruch()">Abbrechen</button></div></div>`;
   }
   return `<div class="abg-fall${st === 'erledigt' ? ' erledigt' : ''}">
@@ -1379,6 +1457,12 @@ function abgWaehlen(i, art) {
   abgleichRender();
 }
 function abgMenge(d) { if (!abgAktion) return; abgAktion.menge = Math.min(abgAktion.max, Math.max(1, abgAktion.menge + d)); abgleichRender(); }
+function abgMengeSetzen(v) {
+  if (!abgAktion) return;
+  const n = parseInt(v, 10);
+  abgAktion.menge = Number.isInteger(n) ? Math.min(abgAktion.max, Math.max(1, n)) : abgAktion.menge;
+  abgleichRender();
+}
 function abgAbbruch() { abgAktion = null; abgleichRender(); }
 function abgSpaeter() { abgAktion = null; el('abg-status').innerHTML = '<span class="hint">Bleibt offen – du findest den Fall jederzeit wieder unter „Offen".</span>'; abgleichRender(); }
 async function abgBuchen() {
@@ -1779,7 +1863,10 @@ async function erScanIntern() {
       return;
     }
     if (!g) { st.innerHTML='<span class="err">❌ Nicht gefunden: '+esc(code)+'</span>'; erVersteckeFlash(); erFeldZurueck(code); return; }
-    if (g.mehrdeutig) { st.innerHTML='<span class="err">EAN mehrdeutig – Artikelnummer eingeben</span>'; erVersteckeFlash(); erFeldZurueck(code); return; }
+    if (g.mehrdeutig) {
+      g = await eindeutigerArtikel(g, code);
+      if (!g) { st.innerHTML='<span class="err">Abgebrochen – nichts gebucht.</span>'; erVersteckeFlash(); feld.focus(); return; }
+    }
     let ziel, label, kanal;
     if (g.online === 1) { ziel = erSession.aktivOnline; label='🟢 ONLINE'; kanal='online'; }
     else if (g.online === 2) { ziel = erSession.aktivOffline; label='🔴 NICHT ONLINE'; kanal='offline'; }
@@ -2343,7 +2430,11 @@ async function umlagernArtikelGeladen() {
   try { g = await resolveArtikel(eingabe); }
   catch (e) { el('u-artikel').innerHTML = '<span class="err">Ladefehler: ' + esc(buchFehlerText(e)) + '</span>'; vsel.innerHTML = '<option value="">—</option>'; return; }
   if (!g)          { el('u-artikel').innerHTML = '<span class="err">Artikel nicht gefunden</span>'; vsel.innerHTML = '<option value="">—</option>'; return; }
-  if (g.mehrdeutig){ el('u-artikel').innerHTML = '<span class="err">EAN mehrdeutig – Artikelnummer eingeben</span>'; vsel.innerHTML = '<option value="">—</option>'; return; }
+  if (g.mehrdeutig) {
+    g = await eindeutigerArtikel(g, eingabe);
+    if (!g) { el('u-artikel').textContent = 'Abgebrochen – bitte Artikel wählen.'; vsel.innerHTML = '<option value="">—</option>'; return; }
+    el('u-artnr').value = g.artnr;   // ab jetzt eindeutig (auch für „Umlagern")
+  }
   el('u-artikel').textContent = g.name || g.artnr;
   const stock = await artikelPlaetze(g.artnr);
   vsel.innerHTML = stock.length
@@ -2382,10 +2473,11 @@ async function umlagernIntern() {
 
 // Löst eine Eingabe (Artikelnummer ODER EAN) zur Artikelnummer auf.
 // Rückgabe: {artnr,name} | {mehrdeutig:[…]} | null
+const artikelAusZeile = a => ({ artnr: a.artikelnummer, name: a.artikelname, gtin: a.gtin||'', online: a.online, istSet: !!a.ist_set, unbekannt: a.unbekannt === 1 });
 async function resolveArtikel(code) {
   // select('*') statt fester Spaltenliste: liefert „unbekannt" mit, sobald die
   // Spalte existiert (Migration 19), und läuft auch vorher noch fehlerfrei.
-  const conv = a => ({ artnr: a.artikelnummer, name: a.artikelname, gtin: a.gtin||'', online: a.online, istSet: !!a.ist_set, unbekannt: a.unbekannt === 1 });
+  const conv = artikelAusZeile;
   // Lesefehler werfen - sonst hieße ein Netzaussetzer „nicht gefunden" (und beim
   // Einbuchen würde ein Platzhalter für einen bekannten Artikel versucht)
   let r1 = await client.from('artikel').select('*').eq('artikelnummer', code).limit(1);
@@ -2707,7 +2799,10 @@ async function ssScanIntern() {
     return;
   }
   if (!g)            { ssStatus('❌ Nicht gefunden: ' + esc(code), 'err'); el('ss-scan').focus(); return; }
-  if (g.mehrdeutig)  { ssStatus('⚠️ EAN mehrdeutig — bitte die Artikelnummer eingeben.', 'err'); el('ss-scan').focus(); return; }
+  if (g.mehrdeutig) {
+    g = await eindeutigerArtikel(g, code);
+    if (!g) { ssStatus('Abgebrochen – nichts gebucht.'); el('ss-scan').focus(); return; }
+  }
   if (g.istSet) {
     const hinweis = ssMode === 'ein' ? 'mehrere Einheiten = 1 Stück' : 'mehrere Einheiten ins Paket legen!';
     const r = await scanFrage('⚠️ SET-ARTIKEL\n\n' + (g.name||g.artnr) + '\n\n' + hinweis + '\n\nFortfahren?', 'Fortfahren', 'Abbrechen', 'Set, bitte bestätigen');
@@ -2980,31 +3075,53 @@ async function handleBestandFile(file) {
 async function bestandTeilVorschau() {
   const rd = el('bimp-result');
   const { zeilen, ungueltig } = bestandVorab;
-  const nArt = new Set(zeilen.map(z => z.artikelnummer)).size;
-  const nLp = new Set(zeilen.map(z => z.lagerplatz).filter(Boolean)).size;
-  // Beispiele mit aktuellem Bestand (vorher → nachher) für die ersten Zeilen
-  const bsp = zeilen.slice(0, 8);
-  let aktuell = {};
+  rd.innerHTML = '<span class="hint">⏳ Vorschau wird berechnet…</span>';
+  // aktuellen Bestand und vorhandene Artikel für ALLE Zeilen der Datei holen
+  // (in Häppchen, damit die Anfrage-URL nicht zu lang wird)
+  const arts = [...new Set(zeilen.map(z => z.artikelnummer))];
+  const aktuell = {}, bekannt = new Set();
   try {
-    const arts = [...new Set(bsp.map(z => z.artikelnummer))];
-    const data = arts.length ? daten(await client.from('bestaende').select('artikelnummer,lagerplatz,menge').in('artikelnummer', arts)) : [];
-    data.forEach(b => { aktuell[b.artikelnummer + '|' + b.lagerplatz] = b.menge; });
-  } catch (e) { aktuell = null; }
+    for (let i = 0; i < arts.length; i += 150) {
+      const teil = arts.slice(i, i + 150);
+      const [best, art] = await Promise.all([
+        fetchAll('bestaende', 'artikelnummer,lagerplatz,menge', { build: q => q.in('artikelnummer', teil) }),
+        fetchAll('artikel', 'artikelnummer', { build: q => q.in('artikelnummer', teil) })
+      ]);
+      best.forEach(b => { aktuell[b.artikelnummer + '|' + b.lagerplatz] = b.menge; });
+      art.forEach(x => bekannt.add(x.artikelnummer));
+    }
+  } catch (e) {
+    rd.innerHTML = '<span class="err">❌ Vorschau konnte nicht geladen werden: ' + esc(buchFehlerText(e)) + '</span>';
+    bestandImportZuruecksetzen();
+    return;
+  }
+  const anlegen = el('bimp-anlegen').checked;
+  const ohneLp = zeilen.filter(z => !z.lagerplatz);
+  const unbekannt = zeilen.filter(z => z.lagerplatz && !bekannt.has(z.artikelnummer));
+  const geaendert = zeilen.filter(z => z.lagerplatz && bekannt.has(z.artikelnummer)
+    && (aktuell[z.artikelnummer + '|' + z.lagerplatz] ?? 0) !== z.bestand);
+  const gleich = zeilen.length - ohneLp.length - unbekannt.length - geaendert.length;
+  const ZEIGEN = 100;
   const zeile = z => {
-    const vorher = aktuell ? (aktuell[z.artikelnummer + '|' + z.lagerplatz] ?? 0) : '?';
-    return `<tr><td class="mono">${esc(z.artikelnummer)}</td><td>${esc(z.lagerplatz || '—')}</td><td style="text-align:right;">${esc(vorher)} → <b>${esc(z.bestand)}</b></td></tr>`;
+    const vorher = aktuell[z.artikelnummer + '|' + z.lagerplatz] ?? 0, diff = z.bestand - vorher;
+    return `<tr><td class="mono">${esc(z.artikelnummer)}</td><td>${esc(z.lagerplatz)}</td>
+      <td style="text-align:right;">${vorher} → <b>${z.bestand}</b></td>
+      <td style="text-align:right;color:${diff > 0 ? 'var(--green)' : 'var(--red)'};font-weight:700;">${diff > 0 ? '+' : ''}${diff}</td></tr>`;
   };
+  const nichts = !geaendert.length && !(anlegen && unbekannt.length);
   rd.innerHTML = `<div style="background:#fffbea;border:2px solid var(--amber);border-radius:8px;padding:12px 14px;">
     <div style="font-weight:700;">Vorschau Teil-Import „${esc(bestandFile.name)}"</div>
-    <div style="margin-top:6px;"><b>${zeilen.length}</b> Zeilen · <b>${nArt}</b> Artikel · <b>${nLp}</b> Lagerplätze.
-      Diese Plätze werden auf den Wert aus der Datei gesetzt; alles andere bleibt unverändert.
-      ${ungueltig.length ? `<br><span class="err">${ungueltig.length} Zeile(n) ohne gültigen Bestand werden übersprungen.</span>` : ''}</div>
-    <table style="margin-top:8px;"><tr><th>Artikel</th><th>Lagerplatz</th><th style="text-align:right;">Bestand jetzt → neu</th></tr>${bsp.map(zeile).join('')}</table>
-    ${zeilen.length > bsp.length ? `<div class="hint">… und ${zeilen.length - bsp.length} weitere Zeilen</div>` : ''}
+    <div style="margin-top:6px;"><b>${geaendert.length}</b> Plätze ändern sich · ${gleich} bleiben gleich
+      ${unbekannt.length ? ` · <span class="err">${unbekannt.length} Zeilen mit unbekanntem Artikel (${anlegen ? 'werden neu angelegt' : 'werden übersprungen'})</span>` : ''}
+      ${ohneLp.length ? ` · <span class="err">${ohneLp.length} ohne Lagerplatz (übersprungen)</span>` : ''}
+      ${ungueltig.length ? ` · <span class="err">${ungueltig.length} ohne gültigen Bestand (übersprungen)</span>` : ''}</div>
+    ${geaendert.length ? `<div style="max-height:320px;overflow:auto;margin-top:8px;"><table><tr><th>Artikel</th><th>Lagerplatz</th><th style="text-align:right;">Bestand jetzt → neu</th><th style="text-align:right;">Änderung</th></tr>${geaendert.slice(0, ZEIGEN).map(zeile).join('')}</table></div>
+      ${geaendert.length > ZEIGEN ? `<div class="hint">… und ${geaendert.length - ZEIGEN} weitere Änderungen</div>` : ''}`
+      : '<div class="hint" style="margin-top:8px;">Keine Bestandsänderungen gegenüber dem aktuellen Stand.</div>'}
     <div class="hint" style="margin-top:6px;">Der Import lässt sich nicht per Rückgängig zurücknehmen.</div>
     <div class="row" style="margin-top:10px;">
-      <button onclick="bestandImportieren('teil')">Import ausführen</button>
-      <button class="sec" onclick="el('bimp-result').innerHTML='';bestandImportZuruecksetzen()">Abbrechen</button>
+      ${nichts ? '' : `<button onclick="bestandImportieren('teil')">Import ausführen</button>`}
+      <button class="sec" onclick="el('bimp-result').innerHTML='';bestandImportZuruecksetzen()">${nichts ? 'Schließen' : 'Abbrechen'}</button>
     </div></div>`;
 }
 async function bestandImportieren(modus) {
@@ -3489,10 +3606,10 @@ async function invAddArtikel() {
   let g, soll;
   try {
     g = await resolveArtikel(code);
-    if (g && !g.mehrdeutig) soll = await erBestandAuf(g.artnr, lp);
+    if (g && g.mehrdeutig) g = await eindeutigerArtikel(g, code);
+    if (g) soll = await erBestandAuf(g.artnr, lp);
   } catch (e) { el('inv-status').innerHTML = '<span class="err">Ladefehler: ' + esc(buchFehlerText(e)) + '</span>'; return; }
-  if (!g) { el('inv-status').innerHTML = '<span class="err">Artikel nicht gefunden.</span>'; return; }
-  if (g.mehrdeutig) { el('inv-status').innerHTML = '<span class="err">EAN mehrdeutig – Artikelnummer eingeben.</span>'; return; }
+  if (!g) { el('inv-status').innerHTML = '<span class="err">Artikel nicht gefunden oder Auswahl abgebrochen.</span>'; return; }
   if (invRows.some(r => r.artnr === g.artnr)) { el('inv-add').value=''; el('inv-status').textContent='Artikel ist bereits in der Liste.'; return; }
   invRows.push({ artnr:g.artnr, name:g.name||'', gtin:'', soll, ist:soll });
   el('inv-add').value=''; el('inv-status').textContent=''; invRender();
@@ -3795,6 +3912,7 @@ window.addEventListener('load', () => {
 <div class="modal-bg" id="scan-frage" style="z-index:2000;">
   <div class="modal-box" tabindex="-1" style="border:3px solid var(--amber);outline:none;">
     <div id="scan-frage-text" style="white-space:pre-line;font-weight:600;"></div>
+    <div id="scan-frage-optionen" style="display:grid;gap:8px;margin-top:12px;"></div>
     <div class="hint" style="margin-top:8px;">Der Scanner ist gesperrt, bis du hier tippst.</div>
     <div class="row" style="margin-top:14px;justify-content:flex-end;gap:8px;">
       <button class="sec" id="scan-frage-nein">Nein</button>
