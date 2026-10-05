@@ -1636,6 +1636,13 @@ begin
             where name is not null and trim(name) <> ''
             on conflict (name) do nothing;
         get diagnostics v_paletten = row_count;
+    else
+        -- ältere Sicherung ohne Palettenliste: bestehende Liste behalten und die
+        -- Paletten ergänzen, die bei den Lagerplätzen vorkommen (sonst fehlen sie
+        -- z. B. nach „Alles löschen" in „Palette sortieren")
+        insert into paletten (name)
+            select distinct palette from lagerplaetze where palette <> ''
+            on conflict (name) do nothing;
     end if;
 
     return jsonb_build_object('ok', true, 'artikel', v_artikel, 'bestaende', v_bestaende,

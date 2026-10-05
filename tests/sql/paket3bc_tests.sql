@@ -1,6 +1,9 @@
 -- Datenbank-Tests für Paket 3b/3c. Erwartet frische Testdaten (01_testdaten.sql).
 \set ON_ERROR_STOP 1
 set client_min_messages = notice;
+-- alles in einer Transaktion, die am Ende zurückgerollt wird: „Alles löschen" würde
+-- sonst die Testdaten (u. a. Paletten) für nachfolgende Browser-Tests leeren
+begin;
 
 -- 50/43: „Alles löschen" löscht auch die Palettenliste
 do $$ declare r jsonb; begin
@@ -22,3 +25,13 @@ do $$ declare r jsonb; begin
   assert (r->>'artikel')::int = 3 and (r->>'mit_bestand')::int = 1, r::text;
   raise notice 'OK: JTL-Kommentar (Sortierung, leere Kommentare, unbekannte Artikel, Maskierung)';
 end $$;
+
+-- 43: ältere Sicherung ohne Palettenliste ergänzt die Paletten der Lagerplätze
+do $$ declare r jsonb; begin
+  r := backup_wiederherstellen('{"artikel":[{"artikelnummer":"X1","artikelname":"x"}],"bestaende":[],
+    "lagerplaetze":[{"name":"P77-K01","palette":"P77","kanal":1}],"buchungen":[],"leermeldungen":[]}');
+  assert exists (select 1 from paletten where name = 'P77'), 'P77 fehlt: ' || r::text;
+  raise notice 'OK: Sicherung ohne Palettenliste ergänzt Paletten der Lagerplätze';
+end $$;
+
+rollback;

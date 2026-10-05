@@ -2964,7 +2964,7 @@ async function amazonStatusAusDatei(file) {
   // „online" übernommen. Jetzt werden sie gesammelt und in der Vorschau zugeordnet.
   const eintraege = {}, unbekannt = {};
   for (const row of rows) {
-    const sku = String(row[colSku] ?? '').trim().replace(/^"|"$/g, '');
+    const sku = String(row[colSku] ?? '').trim().replace(/^"|"$/g, '').replace(/^'(?=[=+\-@])/, '');
     if (!sku) continue;
     if (!colStatus) { eintraege[sku] = { st: 1 }; continue; }
     const roh = String(row[colStatus] ?? '').trim();
@@ -3363,12 +3363,12 @@ async function allesLoeschen() {
   const nochDa = probe.count || 0;
   if (nochDa > 0) {
     st.innerHTML = `<span class="err">⚠️ Die Funktion meldete Erfolg, aber es sind noch ${nochDa} Artikel vorhanden.
-      Die Datenbank-Funktion alles_loeschen ist veraltet: bitte supabase/00_KOMPLETT_neu_aufsetzen.sql im Supabase SQL-Editor ausführen (überschreibt nur Funktionen, keine Daten) und danach nochmal versuchen.</span>`;
+      Die Datenbank-Funktion alles_loeschen ist veraltet: bitte das neueste Update-Skript aus supabase/updates/ im Supabase SQL-Editor ausführen und danach nochmal versuchen.</span>`;
     el('reset-btn').disabled = false;
     return;
   }
   st.innerHTML = `<span class="ok">✓ Gelöscht: ${g.artikel} Artikel, ${g.bestaende} Bestände, ${g.lagerplaetze} Lagerplätze${g.paletten != null ? `, ${g.paletten} Paletten` : ''}, ${g.buchungen} Protokoll-Einträge, ${g.leermeldungen} Leermeldungen.</span>
-    <div class="hint" style="margin-top:8px;">Jetzt tagesaktuelle Daten einspielen: oben bei „⬆️ Bestände per CSV/Excel importieren" → <b>Komplett-Import</b> wählen, „Unbekannte Artikel neu anlegen" aktivieren, Datei wählen. Danach ggf. den Amazon-Status importieren und die Paletten neu anlegen (die Palettenliste wurde mit gelöscht).</div>`;
+    <div class="hint" style="margin-top:8px;">Jetzt tagesaktuelle Daten einspielen: oben bei „⬆️ Bestände per CSV/Excel importieren" → <b>Komplett-Import</b> wählen, „Unbekannte Artikel neu anlegen" aktivieren, Datei wählen. Danach ggf. den Amazon-Status importieren${g.paletten != null ? ' und die Paletten neu anlegen (die Palettenliste wurde mit gelöscht)' : ''}.</div>`;
   el('reset-phrase').value = '';
   await ladeAllePlaetze();
   palettenFuellen();
@@ -3403,7 +3403,7 @@ async function backupEinspielen() {
   const file = el('restore-file').files[0];
   const st = el('restore-status');
   if (!file) { st.innerHTML = '<span class="err">Bitte zuerst eine Sicherungsdatei auswählen.</span>'; return; }
-  if (!confirm('Wirklich das komplette Backup einspielen?\n\nAlle aktuellen Artikel, Bestände, Lagerplätze, das Protokoll und alle Leermeldungen werden gelöscht und durch den Inhalt von "' + file.name + '" ersetzt.\n\nEs wird zuerst automatisch eine Sicherung des jetzigen Stands heruntergeladen.')) return;
+  if (!confirm('Wirklich das komplette Backup einspielen?\n\nAlle aktuellen Artikel, Bestände, Lagerplätze, Paletten, das Protokoll, alle Leermeldungen und Abgleich-Fälle werden gelöscht und durch den Inhalt von "' + file.name + '" ersetzt.\n\nEs wird zuerst automatisch eine Sicherung des jetzigen Stands heruntergeladen.')) return;
   el('restore-btn').disabled = true;
   st.innerHTML = '<span class="hint">⏳ Sicherung des aktuellen Stands wird erstellt…</span>';
   const okBackup = await datenbankSichern();
@@ -3429,7 +3429,8 @@ async function backupEinspielen() {
   st.innerHTML = '<span class="hint">⏳ Backup wird eingespielt…</span>';
   const { data, error } = await client.rpc('backup_wiederherstellen', { p_daten: daten });
   if (error) { st.innerHTML = '<span class="err">❌ ' + esc(error.message) + '</span>'; el('restore-btn').disabled = false; return; }
-  const palTxt = data.paletten === null || typeof data.paletten === 'undefined' ? ' (Paletten-Liste unverändert, war nicht in dieser Sicherung enthalten)' : `, ${data.paletten} Paletten`;
+  const palTxt = data.paletten === null || typeof data.paletten === 'undefined'
+    ? ' (Sicherung ohne Palettenliste: bestehende Liste behalten, Paletten der Lagerplätze ergänzt)' : `, ${data.paletten} Paletten`;
   st.innerHTML = `<span class="ok">✓ Eingespielt: ${data.artikel} Artikel, ${data.bestaende} Bestände, ${data.lagerplaetze} Lagerplätze, ${data.buchungen} Protokoll-Einträge, ${data.leermeldungen} Leermeldungen${palTxt}.</span>`
     + (data.negativ_auf_null > 0 ? `<div class="err" style="margin-top:6px;">⚠️ ${data.negativ_auf_null} negative Bestände aus der Sicherung wurden auf 0 gesetzt (bitte per Inventur prüfen).</div>` : '')
     // Unstimmigkeiten IN der Sicherungsdatei (entstehen, wenn während des Backups
@@ -3588,12 +3589,14 @@ function tagesbeginnIso(datum, plusTage) {
   return new Date(y, m - 1, d + (plusTage || 0)).toISOString();
 }
 function csvZelle(v) { v = v == null ? '' : String(v); if (/[";\n]/.test(v)) v = '"' + v.replace(/"/g, '""') + '"'; return v; }
-// Text, der mit = + - @ beginnt, würde Excel als Formel ausführen (z. B. ein Artikelname
-// „=HYPERLINK(…)"). Ein vorangestelltes ' macht daraus normalen Text. Zahlen wie -3
-// bleiben unverändert.
+// Text, den Excel als Formel ausführen würde (z. B. ein Artikelname „=HYPERLINK(…)"),
+// bekommt ein ' davor und wird so zu normalem Text. Betroffen: Beginn mit = @ Tab CR,
+// sowie + / - nur, wenn danach eine Formel folgt („-2+3", „+SUMME(…)"). Normale Texte
+// wie „-20% Sale" oder Lagerplätze wie „-A1" und Zahlen wie -3 bleiben unverändert.
 function csvFormelSicher(v) {
   const s = v == null ? '' : String(v);
-  return /^[=+\-@\t\r]/.test(s) && !/^[+-]?\d+([.,]\d+)?$/.test(s) ? "'" + s : s;
+  const formel = /^[=@\t\r]/.test(s) || (/^[+-]/.test(s) && /[(=!]|^[+-][\d.,]+[+\-*/^&]/.test(s));
+  return formel ? "'" + s : s;
 }
 // opts.jtl: Dateien für den JTL-Import bleiben unverändert (JTL liest sie als Daten)
 function csvDownload(dateiname, zeilen, opts) {
@@ -3955,7 +3958,7 @@ function renderLeerPanel(data, gesamt) {
 function toggleLeerPanel() {
   const p = el('leer-panel');
   if (p.style.display === 'flex') { p.style.display = 'none'; }
-  else { p.style.display = 'flex'; refreshLeer(); }
+  else { p.style.display = 'flex'; el('leer-panel-body').innerHTML = '<div class="hint" style="padding:8px;">⏳ Lädt…</div>'; refreshLeer(); }
 }
 async function leerGesehen() {
   if (!confirm('Alle offenen Leermeldungen als gesehen markieren?')) return;

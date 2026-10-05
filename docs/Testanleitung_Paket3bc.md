@@ -6,7 +6,7 @@ Wie bei Paket 3a: erst das Datenbank-Update im **Testsystem**, dann die neue `in
 
 1. GitHub → Branch `claude/cloud-sessions-credits-9xe0tz` → `supabase/updates/2026-10_paket3bc.sql` → **„Copy raw file“**.
 2. Supabase → **Testprojekt** → **SQL Editor** → **New query** → einfügen → **Run**.
-3. Ganz unten muss der Fingerabdruck **`c014bb6d7daf8e1c9166fc16c32b91d8`** stehen.
+3. Ganz unten muss der Fingerabdruck **`59e7fcaaef4780b9ce731490775c9c09`** stehen.
 
 ## B. App testen (ca. 10 Minuten)
 

@@ -38,6 +38,12 @@ const herunterladen = async (page, knopf) => {
     if (!jtl.split(/\r\n/).includes('=F1;Regal 3;2')) throw new Error('JTL-Datei verändert: ' + jtl.slice(0, 200));
   });
 
+  await test('Formelschutz trifft nur echte Formeln', async page => {
+    const r = await page.evaluate(() => ['=1+1', '@SUMME(A1)', '+SUMME(A1)', '-2+3', '-A1', '-20% Sale', '+Lager', '-3', '-1,5', '12', 'Regal 3']
+      .map(s => csvFormelSicher(s)));
+    gleich(JSON.stringify(r), JSON.stringify(["'=1+1", "'@SUMME(A1)", "'+SUMME(A1)", "'-2+3", '-A1', '-20% Sale', '+Lager', '-3', '-1,5', '12', 'Regal 3']), 'Ergebnis');
+  });
+
   await test('JTL-Kommentar: Knopf liefert die Datei der Datenbank', async page => {
     sql("insert into bestaende values ('A2', 'Regal 3', 0)");
     await page.click('button[data-t="import"]');

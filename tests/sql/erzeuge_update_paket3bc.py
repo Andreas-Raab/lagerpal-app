@@ -7,7 +7,7 @@ import re, pathlib
 root = pathlib.Path(__file__).resolve().parents[2]
 s = (root / 'supabase/00_KOMPLETT_neu_aufsetzen.sql').read_text(encoding='utf-8')
 ziel = root / 'supabase/updates/2026-10_paket3bc.sql'
-namen = ['alles_loeschen', 'jtl_kommentar_csv']
+namen = ['alles_loeschen', 'backup_wiederherstellen', 'jtl_kommentar_csv']
 def block(name):
     a = re.search(r'create or replace function ' + name + r'\(', s).start()
     nxt = s.find('create or replace function', a + 10)
@@ -26,7 +26,8 @@ kopf = '''-- ══════════════════════�
 -- Testanleitung entsprechen.
 --
 -- Inhalt:
---  • „Alles löschen" löscht auch die Palettenliste
+--  • „Alles löschen" löscht auch die Palettenliste; eine ältere Sicherung ohne
+--    Palettenliste ergänzt beim Einspielen die Paletten der Lagerplätze
 --  • jtl_kommentar_csv(): JTL-Lagerbestandskommentar aus der Datenbank, genutzt
 --    von der App und von der nächtlichen Edge Function (vorher doppelt programmiert)
 -- ═══════════════════════════════════════════════════════════════════════
