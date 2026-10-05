@@ -1460,7 +1460,7 @@ create or replace function alles_loeschen(p_bestaetigung text)
 returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
 declare
     v_artikel integer; v_bestaende integer; v_lagerplaetze integer;
-    v_buchungen integer; v_leermeldungen integer;
+    v_buchungen integer; v_leermeldungen integer; v_paletten integer;
 begin
     if p_bestaetigung is distinct from 'ALLES LOESCHEN' then
         raise exception 'Bestätigung fehlt oder falsch. Bitte exakt "ALLES LOESCHEN" übergeben.';
@@ -1470,6 +1470,7 @@ begin
     select count(*) into v_lagerplaetze from lagerplaetze;
     select count(*) into v_buchungen from buchungen;
     select count(*) into v_leermeldungen from leermeldungen;
+    select count(*) into v_paletten from paletten;
 
     -- DELETE statt TRUNCATE: TRUNCATE braucht ein eigenes TRUNCATE-Recht, das die
     -- App-Rolle "authenticated" nicht hat (nur SELECT/INSERT/UPDATE/DELETE via RLS),
@@ -1483,10 +1484,11 @@ begin
     delete from leermeldungen where true;
     delete from lagerplaetze where true;
     delete from mengen_abweichungen where true;   -- Abgleich-Fälle gehören zum gelöschten Stand
+    delete from paletten where true;              -- „wirklich alles" (Entscheidung 10/2026)
 
     return jsonb_build_object('ok', true, 'geloescht', jsonb_build_object(
         'artikel', v_artikel, 'bestaende', v_bestaende, 'lagerplaetze', v_lagerplaetze,
-        'buchungen', v_buchungen, 'leermeldungen', v_leermeldungen));
+        'buchungen', v_buchungen, 'leermeldungen', v_leermeldungen, 'paletten', v_paletten));
 end; $$;
 revoke all on function alles_loeschen(text) from anon, public;
 grant execute on function alles_loeschen(text) to authenticated;
@@ -1634,6 +1636,13 @@ begin
             where name is not null and trim(name) <> ''
             on conflict (name) do nothing;
         get diagnostics v_paletten = row_count;
+    else
+        -- ältere Sicherung ohne Palettenliste: bestehende Liste behalten und die
+        -- Paletten ergänzen, die bei den Lagerplätzen vorkommen (sonst fehlen sie
+        -- z. B. nach „Alles löschen" in „Palette sortieren")
+        insert into paletten (name)
+            select distinct palette from lagerplaetze where palette <> ''
+            on conflict (name) do nothing;
     end if;
 
     return jsonb_build_object('ok', true, 'artikel', v_artikel, 'bestaende', v_bestaende,
@@ -2055,3 +2064,43 @@ begin
                                or (n.typ = 'Umlagerung' and n.kommentar like 'MOVE|%'
                                    and (substr(n.kommentar, 6)::jsonb)->>'nach' = q.lagerplatz)));
 end $$;
+
+-- ─── Abschnitt: JTL-Lagerbestandskommentar (Paket 3c) ───
+-- Baut die Datei „Lagerbestandskommentar.csv" für den JTL-Import. Genutzt vom
+-- Knopf in der App UND von der nächtlichen Edge Function lagerpal-backup - vorher
+-- war die Logik an beiden Stellen getrennt programmiert und musste gleich bleiben.
+-- Format: Kopfzeile „Artikelnummer;Kommentar", Kommentar = „Platz (Menge), Platz2 (Menge2)"
+-- (Plätze in Datenbank-Sortierung), Artikel nach Artikelnummer (Zeichencode-Reihenfolge
+-- wie früher die JavaScript-Sortierung), Trennzeichen ;, Zeilenende CRLF. Das BOM
+-- (Kennung für UTF-8) setzt der Aufrufer davor.
+-- Artikel OHNE Bestand stehen mit LEEREM Kommentar drin - sonst bliebe in JTL nach
+-- dem Import der alte Lagerplatz stehen. Unbekannte Artikel (Platzhalter WE-0-…,
+-- unbekannt = 1) kennt JTL nicht → nicht exportieren.
+create or replace function jtl_kommentar_csv()
+returns jsonb language sql stable security definer set search_path = public, pg_temp as $$
+    with unb as (
+        select artikelnummer from artikel where unbekannt = 1
+    ), grp as (
+        select b.artikelnummer, string_agg(b.lagerplatz || ' (' || b.menge || ')', ', ' order by b.lagerplatz) as kommentar
+        from bestaende b
+        where b.menge > 0 and b.artikelnummer not in (select artikelnummer from unb)
+        group by b.artikelnummer
+    ), alle as (
+        select artikelnummer from artikel where artikelnummer not in (select artikelnummer from unb)
+        union
+        select artikelnummer from grp
+    ), zeilen as (
+        select a.artikelnummer, coalesce(g.kommentar, '') as kommentar
+        from alle a left join grp g using (artikelnummer)
+    )
+    select jsonb_build_object(
+        'csv', 'Artikelnummer;Kommentar' || coalesce(string_agg(
+            E'\r\n' || case when z.artikelnummer ~ '[";\n]' then '"' || replace(z.artikelnummer, '"', '""') || '"' else z.artikelnummer end
+            || ';' || case when z.kommentar ~ '[";\n]' then '"' || replace(z.kommentar, '"', '""') || '"' else z.kommentar end,
+            '' order by z.artikelnummer collate "C"), ''),
+        'artikel', count(*),
+        'mit_bestand', count(*) filter (where z.kommentar <> ''))
+    from zeilen z;
+$$;
+revoke all on function jtl_kommentar_csv() from anon, public;
+grant execute on function jtl_kommentar_csv() to authenticated, service_role;

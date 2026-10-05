@@ -26,7 +26,7 @@ async function neueSeite(ctx, jsFehler) {
   page.on('dialog', d => d.accept());
   await page.route(/cdn\.jsdelivr\.net/, r => {
     const key = Object.keys(CDN).find(k => r.request().url().includes(k));
-    return key ? r.fulfill({ path: CDN[key], contentType: 'application/javascript' }) : r.abort();
+    return key ? r.fulfill({ path: CDN[key], contentType: 'application/javascript', headers: { 'Access-Control-Allow-Origin': '*' } }) : r.abort();
   });
   await page.goto(BASE + '/index.html');
   // zweites Fenster im selben Browser ist schon verbunden und angemeldet

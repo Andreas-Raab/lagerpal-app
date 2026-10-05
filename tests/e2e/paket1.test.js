@@ -31,7 +31,7 @@ async function test(name, fn) {
   page.on('dialog', d => d.accept());   // alert()/confirm() außerhalb des Tests: annehmen
   await page.route(/cdn\.jsdelivr\.net/, r => {
     const key = Object.keys(CDN).find(k => r.request().url().includes(k));
-    return key ? r.fulfill({ path: CDN[key], contentType: 'application/javascript' }) : r.abort();
+    return key ? r.fulfill({ path: CDN[key], contentType: 'application/javascript', headers: { 'Access-Control-Allow-Origin': '*' } }) : r.abort();
   });
   try {
     await page.goto(BASE + '/index.html');

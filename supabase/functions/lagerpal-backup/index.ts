@@ -26,7 +26,7 @@
 // SUPABASE_URL und SUPABASE_SERVICE_ROLE_KEY sind bei Edge Functions bereits
 // automatisch vorhanden, die müssen NICHT gesetzt werden.
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.117.2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -200,35 +200,15 @@ async function healthcheck(ok: boolean, info: string) {
 }
 
 // ── JTL-Lagerbestandskommentar ─────────────────────────────────────────────
-// Muss exakt dem Export im Frontend entsprechen (index.html: exportJtlKommentarCsv):
-// Spalten "Artikelnummer;Kommentar", Kommentar = "Platz (Menge), Platz2 (Menge2)"
-// in Lagerplatz-Reihenfolge der DB, Artikel nach Artikelnummer sortiert (JS-
-// Standardsortierung), Trennzeichen ";", Zeilenende CRLF, UTF-8 mit BOM.
-// Artikel OHNE Bestand stehen mit LEEREM Kommentar drin - sonst bliebe in JTL
-// nach dem Import der alte Lagerplatz als Kommentar stehen.
-function csvZelle(v: unknown): string {
-  let s = v == null ? "" : String(v);
-  if (/[";\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
-  return s;
-}
-// Unbekannte Artikel (Platzhalter WE-0-…, unbekannt = 1, Paket A 28.09.2026)
-// kennt JTL nicht → bis zur Zuordnung nicht exportieren (gleiche Regel wie
-// exportJtlKommentarCsv in index.html).
-function jtlKommentarCsv(
-  artikelAlle: { artikelnummer: string; unbekannt?: number }[],
-  bestaende: { artikelnummer: string; lagerplatz: string; menge: number }[],
-): { csv: string; artikel: number; mit_bestand: number } {
-  const unb = new Set(artikelAlle.filter((a) => a.unbekannt === 1).map((a) => a.artikelnummer));
-  const artikel = artikelAlle.filter((a) => !unb.has(a.artikelnummer));
-  const grp: Record<string, string[]> = {};
-  for (const r of bestaende) {
-    if (!(r.menge > 0) || unb.has(r.artikelnummer)) continue;
-    (grp[r.artikelnummer] = grp[r.artikelnummer] || []).push(r.lagerplatz + " (" + r.menge + ")");
-  }
-  const alle = [...new Set([...artikel.map((a) => a.artikelnummer), ...Object.keys(grp)])].sort();
-  const zeilen = [["Artikelnummer", "Kommentar"], ...alle.map((nr) => [nr, (grp[nr] || []).join(", ")])];
-  const csv = "\uFEFF" + zeilen.map((z) => z.map(csvZelle).join(";")).join("\r\n");
-  return { csv, artikel: alle.length, mit_bestand: Object.keys(grp).length };
+// Die Datei baut die Datenbank-Funktion jtl_kommentar_csv() - dieselbe, die der
+// Knopf „Lagerbestandskommentar (JTL)" in der App nutzt. Format siehe dort
+// (supabase/00_KOMPLETT_neu_aufsetzen.sql). Hier kommt nur das BOM davor.
+async function jtlKommentarCsv(
+  supabase: ReturnType<typeof createClient>,
+): Promise<{ csv: string; artikel: number; mit_bestand: number }> {
+  const { data, error } = await supabase.rpc("jtl_kommentar_csv");
+  if (error) throw new Error(`jtl_kommentar_csv fehlgeschlagen: ${error.message}`);
+  return { csv: "\uFEFF" + data.csv, artikel: data.artikel, mit_bestand: data.mit_bestand };
 }
 
 // Datum (YYYY-MM-DD) eines Zeitpunkts nach deutscher Zeit
@@ -276,11 +256,8 @@ async function dropboxVerschieben(accessToken: string, von: string, nach: string
   return json?.metadata?.path_display || nach;
 }
 
-async function jtlExport(accessToken: string, snapshot: Record<string, unknown>) {
-  const { csv, artikel, mit_bestand } = jtlKommentarCsv(
-    snapshot.artikel as { artikelnummer: string; unbekannt?: number }[],
-    snapshot.bestaende as { artikelnummer: string; lagerplatz: string; menge: number }[],
-  );
+async function jtlExport(accessToken: string, supabase: ReturnType<typeof createClient>) {
+  const { csv, artikel, mit_bestand } = await jtlKommentarCsv(supabase);
   const pfad = `${JTL_FOLDER}/${JTL_DATEI}`;
   const heute = heuteBerlin();
   let archiviert: string | null = null;
@@ -333,7 +310,10 @@ Deno.serve(async (_req) => {
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    const snapshot: Record<string, unknown> = { erstellt_am: new Date().toISOString() };
+    // gleiches Format wie „Sicherung jetzt" in der App
+    const snapshot: Record<string, unknown> = {
+      format: "lagerpal-backup", version: 2, erstellt_am: new Date().toISOString(), quelle: "Nächtliche Sicherung (Edge Function)",
+    };
     for (const table of TABLES) {
       try {
         snapshot[table] = await fetchAllRows(supabase, table);
@@ -364,7 +344,7 @@ Deno.serve(async (_req) => {
 
     // ── 2. JTL-Lagerbestandskommentar ──
     try {
-      ergebnis.jtl = await jtlExport(accessToken, snapshot);
+      ergebnis.jtl = await jtlExport(accessToken, supabase);
     } catch (e) {
       fehler.push("JTL-Export: " + String((e as Error)?.message || e));
     }

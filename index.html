@@ -4,9 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LagerPal (Web)</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<!-- Feste Versionen mit Prüfsumme (integrity): ein Update beim Anbieter kann die App
+     nicht unbemerkt verändern. Neue Version = neue Prüfsumme (siehe tests/README.md). -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js" integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js" integrity="sha384-D/t0ZMqQW31H3az8ktEiNb39wyKnS82iFY52QPACM+IjKW3jDUhyIgh2PApRqJZs" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 :root{--ink:#16243a;--ink-2:#1f3350;--blue:#2563a8;--blue-bright:#3b82d4;--blue-tint:#eef4fb;--amber:#d97316;--amber-soft:#fff4e6;--green:#15803d;--red:#c0392f;--paper:#f6f7f9;--card:#fff;--line:#e5e8ec;--line-soft:#eef0f3;--zebra:#f7f9fb;--text:#1a2433;--text-2:#5a6678;--text-3:#97a1b0;--field-h:38px;--shadow-sm:0 1px 2px rgba(20,36,58,.06),0 1px 3px rgba(20,36,58,.08);--shadow-lg:0 12px 40px rgba(20,36,58,.18);--font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;}
@@ -464,6 +466,7 @@ tbody tr:hover td{background:#eef4fb;}
             <option>Umbenennung</option><option>Zusammenlegung</option><option>Rückgängig</option>
             <option>CSV-Import</option><option>Artikel gelöscht</option>
             <option>Inventurdifferenz</option><option>Ausgleich</option><option>Abgleich</option>
+            <option>Palette angelegt</option><option>Palette umbenannt</option>
           </select>
           <span class="hint" style="margin:0;">von</span>
           <input type="date" id="prot-von" onchange="protokollLaden()" style="width:150px;">
@@ -527,8 +530,9 @@ tbody tr:hover td{background:#eef4fb;}
       <b>🛟 Datensicherung</b>
       <div class="hint" style="margin-top:6px;">
         Der kostenlose Supabase-Plan legt <b>keine</b> automatischen Backups an (erst ab dem kostenpflichtigen Pro-Plan).
-        Diese Sicherung lädt eine vollständige Kopie aller Daten (Artikel, Bestände, Lagerplätze, Protokoll, Leermeldungen)
-        als JSON-Datei auf deinen Rechner herunter — bewahre sie an einem sicheren Ort auf (z. B. Dropbox-Ordner).
+        Zusätzlich läuft jede Nacht um 3 Uhr eine automatische Sicherung nach Dropbox (30 Tage, danach je Monat die letzte).
+        Diese Sicherung lädt sofort eine vollständige Kopie aller Daten (Artikel, Bestände, Lagerplätze, Paletten, Protokoll,
+        Leermeldungen, Abgleich-Fälle) als JSON-Datei auf deinen Rechner herunter — bewahre sie an einem sicheren Ort auf.
       </div>
       <div class="row" style="margin-top:10px;"><button onclick="datenbankSichern()">🛟 Sicherung jetzt herunterladen</button></div>
       <div id="backup-status" style="margin-top:10px;"></div>
@@ -536,8 +540,8 @@ tbody tr:hover td{background:#eef4fb;}
     <div class="card" style="margin-top:12px;border:2px solid var(--red);">
       <b style="color:var(--red);">☢️ Kompletter Reset — alle Daten löschen</b>
       <div class="hint" style="margin-top:6px;">
-        Löscht <b>unwiderruflich</b>: alle Artikel, Bestände, Lagerplätze/Kartons (inkl. Paletten-/Kanal-Zuordnung), das
-        gesamte Protokoll und alle Leermeldungen. Danach ist die Datenbank komplett leer — ideal, um tagesaktuelle Daten
+        Löscht <b>unwiderruflich</b>: alle Artikel, Bestände, Lagerplätze/Kartons, die Palettenliste, das
+        gesamte Protokoll, alle Leermeldungen und Abgleich-Fälle. Danach ist die Datenbank komplett leer — ideal, um tagesaktuelle Daten
         neu einzuspielen. Vor dem Löschen wird automatisch eine Sicherung als JSON-Datei heruntergeladen.
       </div>
       <label style="margin-top:12px;">Zum Bestätigen exakt <span style="font-family:monospace;font-weight:800;">ALLES LOESCHEN</span> eingeben</label>
@@ -548,7 +552,7 @@ tbody tr:hover td{background:#eef4fb;}
       <div id="reset-status" style="margin-top:12px;"></div>
     </div>
     <div class="card" style="margin-top:12px;border:2px solid var(--red);">
-      <b style="color:var(--red);">📥 Einspielen der JSON Backdatei (tägliche Sicherung)</b>
+      <b style="color:var(--red);">📥 Sicherung einspielen (JSON-Backup-Datei)</b>
       <div class="hint" style="margin-top:6px;">
         Spielt eine zuvor heruntergeladene bzw. aus Dropbox geladene Sicherungsdatei
         (<span style="font-family:monospace;">.json.gz</span> vom täglichen Auto-Backup, oder die ungepackte
@@ -556,7 +560,7 @@ tbody tr:hover td{background:#eef4fb;}
       </div>
       <div class="hint" style="margin-top:8px;color:var(--red);font-weight:700;">
         ⚠️ ACHTUNG: alles wird überschrieben und zurückgesetzt auf den Stand dieser Datei. Alle aktuellen Artikel,
-        Bestände, Lagerplätze, das Protokoll und alle Leermeldungen werden unwiderruflich gelöscht und durch den
+        Bestände, Lagerplätze, Paletten, das Protokoll, alle Leermeldungen und Abgleich-Fälle werden unwiderruflich gelöscht und durch den
         Inhalt der Datei ersetzt. Es wird vorher automatisch eine Sicherung des aktuellen Stands heruntergeladen.
       </div>
       <div class="row" style="margin-top:12px;">
@@ -813,6 +817,7 @@ async function abmelden() {
   location.reload();
 }
 let refreshTimer = null;
+function hintergrundTick() { if (!document.hidden) { refreshLeer(); refreshUndo(); } }
 async function zeigeApp(email) {
   el('auth-card').style.display = 'none';
   el('app').style.display = 'block';
@@ -822,7 +827,12 @@ async function zeigeApp(email) {
   kopfMessen();
   // Glocke/Rückgängig zuerst starten - sie sollen auch laufen, wenn das erste Laden scheitert
   refreshLeer(); refreshUndo();
-  if (!refreshTimer) refreshTimer = setInterval(() => { refreshLeer(); refreshUndo(); }, 15000);
+  // im Hintergrund (Tab nicht sichtbar, Tablet gesperrt) nicht abfragen; beim
+  // Zurückkommen sofort aktualisieren
+  if (!refreshTimer) {
+    refreshTimer = setInterval(hintergrundTick, 15000);
+    document.addEventListener('visibilitychange', hintergrundTick);
+  }
   try { await ladeAllePlaetze(); } catch (e) { fehlerToast(e); }
   ladeSucheDaten().catch(() => {});
   el('suche').focus();
@@ -930,7 +940,7 @@ async function artikelPlaetze(artnr) {
   const data = daten(await client.from('bestaende').select('lagerplatz,menge').eq('artikelnummer', artnr).gt('menge', 0));
   return (data || []).sort((a,b) => a.lagerplatz.localeCompare(b.lagerplatz));
 }
-function escAttr(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function escAttr(s){ return esc(s); }
 function toggleNeu(selId, neuId){ el(neuId).style.display = el(selId).value === '__neu__' ? 'block' : 'none'; }
 function chosenLp(selId, neuId){ const s = el(selId); return s.value === '__neu__' ? el(neuId).value.trim() : s.value; }
 
@@ -2954,7 +2964,7 @@ async function amazonStatusAusDatei(file) {
   // „online" übernommen. Jetzt werden sie gesammelt und in der Vorschau zugeordnet.
   const eintraege = {}, unbekannt = {};
   for (const row of rows) {
-    const sku = String(row[colSku] ?? '').trim().replace(/^"|"$/g, '');
+    const sku = String(row[colSku] ?? '').trim().replace(/^"|"$/g, '').replace(/^'(?=[=+\-@])/, '');
     if (!sku) continue;
     if (!colStatus) { eintraege[sku] = { st: 1 }; continue; }
     const roh = String(row[colStatus] ?? '').trim();
@@ -3266,8 +3276,7 @@ async function bestandImportieren(modus) {
   }
 }
 // Unbekannte Artikel (Platzhalter WE-0-…, Paket A) kennt JTL nicht → bis zur
-// Zuordnung aus beiden JTL-Exporten heraushalten. Gleiche Regel in der Edge
-// Function lagerpal-backup (jtlKommentarCsv).
+// Zuordnung aus beiden JTL-Exporten heraushalten (Kommentar: siehe jtl_kommentar_csv).
 async function jtlUnbekannteSet() {
   const arts = await fetchAll('artikel', '*', { order: { col: 'artikelnummer', asc: true } });
   return { arts: arts.filter(a => a.unbekannt !== 1), unb: new Set(arts.filter(a => a.unbekannt === 1).map(a => a.artikelnummer)) };
@@ -3281,26 +3290,21 @@ async function exportJtlLagerbestandCsv() {
     const rows = alleRows.filter(r => !unb.has(r.artikelnummer));
     const head = ['Artikelnummer','Lagerplatz','Einzubuchende Menge'];
     const data = rows.map(r => [r.artikelnummer, r.lagerplatz, r.menge]);
-    csvDownload('Lagerbestand.csv', [head, ...data]);
+    csvDownload('Lagerbestand.csv', [head, ...data], { jtl: true });
   } catch (e) { alert('Fehler beim Export: ' + (e.message || e)); }
 }
 async function exportJtlKommentarCsv() {
   try {
-    // Gleiches Format wie der tägliche automatische Export (Edge Function
-    // lagerpal-backup, jtlKommentarCsv) - bei Änderungen beide anpassen.
-    const [alleRows, { arts, unb }] = await Promise.all([
-      fetchAll('bestaende', 'artikelnummer,lagerplatz,menge', { order: { col: 'artikelnummer', asc: true } }),
-      jtlUnbekannteSet()
-    ]);
-    const rows = alleRows.filter(r => !unb.has(r.artikelnummer));
-    const grp = {};
-    rows.filter(r => r.menge > 0).forEach(r => { (grp[r.artikelnummer] = grp[r.artikelnummer] || []).push(r.lagerplatz + ' (' + r.menge + ')'); });
-    const head = ['Artikelnummer','Kommentar'];
-    // Artikel OHNE Bestand mit leerem Kommentar mitschicken - sonst bliebe in JTL
-    // nach dem Import der alte Lagerplatz als Kommentar stehen.
-    const alle = [...new Set([...arts.map(a => a.artikelnummer), ...Object.keys(grp)])].sort();
-    const data = alle.map(artnr => [artnr, (grp[artnr] || []).join(', ')]);
-    csvDownload('Lagerbestandskommentar.csv', [head, ...data]);
+    // Die Datei baut die Datenbank (jtl_kommentar_csv) - dieselbe Funktion nutzt
+    // die nächtliche Sicherung (Edge Function lagerpal-backup). So können Knopf
+    // und nächtliche Datei nicht mehr voneinander abweichen.
+    const { data, error } = await client.rpc('jtl_kommentar_csv');
+    if (error) throw error;
+    const blob = new Blob(['\uFEFF' + data.csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'Lagerbestandskommentar.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
   } catch (e) { alert('Fehler beim Export: ' + (e.message || e)); }
 }
 // Vollständige Sicherung aller Tabellen als JSON-Datei (Supabase Free-Tier hat keine automatischen Backups)
@@ -3316,7 +3320,9 @@ async function datenbankSichern() {
       fetchAll('leermeldungen', '*', { orderBy: [{ col: 'id' }] }),
       fetchAll('paletten', '*', { orderBy: [{ col: 'name' }] })
     ]);
-    const snapshot = { erstellt: new Date().toISOString(), quelle: 'LagerPal Web-App', artikel, bestaende, lagerplaetze, buchungen, leermeldungen, paletten };
+    // gleiches Format wie die nächtliche Sicherung (Edge Function lagerpal-backup)
+    const snapshot = { format: 'lagerpal-backup', version: 2, erstellt_am: new Date().toISOString(), quelle: 'LagerPal Web-App',
+                       artikel, bestaende, lagerplaetze, buchungen, leermeldungen, paletten };
     // Abgleich-Fälle (ab Datenbank-Update Paket 2) mitsichern
     try { snapshot.mengen_abweichungen = await fetchAll('mengen_abweichungen', '*', { orderBy: [{ col: 'id' }] }); } catch (e) { /* ältere Datenbank */ }
     const blob = new Blob([JSON.stringify(snapshot)], { type: 'application/json' });
@@ -3337,7 +3343,7 @@ function resetPhraseCheck() {
 }
 async function allesLoeschen() {
   if (el('reset-phrase').value.trim() !== RESET_PHRASE) return;
-  if (!confirm('Wirklich ALLES löschen?\n\nArtikel, Bestände, Lagerplätze/Paletten-Zuordnung, Protokoll und Leermeldungen werden unwiderruflich gelöscht.\n\nEs wird zuerst automatisch eine Sicherung heruntergeladen — diese Datei sicher aufbewahren.')) return;
+  if (!confirm('Wirklich ALLES löschen?\n\nArtikel, Bestände, Lagerplätze, Palettenliste, Protokoll, Leermeldungen und Abgleich-Fälle werden unwiderruflich gelöscht.\n\nEs wird zuerst automatisch eine Sicherung heruntergeladen — diese Datei sicher aufbewahren.')) return;
   const st = el('reset-status');
   el('reset-btn').disabled = true;
   st.innerHTML = '<span class="hint">⏳ Sicherung wird erstellt…</span>';
@@ -3357,14 +3363,15 @@ async function allesLoeschen() {
   const nochDa = probe.count || 0;
   if (nochDa > 0) {
     st.innerHTML = `<span class="err">⚠️ Die Funktion meldete Erfolg, aber es sind noch ${nochDa} Artikel vorhanden.
-      Bitte die aktuelle Version von „alles_loeschen.sql" erneut im Supabase SQL-Editor ausführen (überschreibt die alte Funktion) und danach nochmal versuchen.</span>`;
+      Die Datenbank-Funktion alles_loeschen ist veraltet: bitte das neueste Update-Skript aus supabase/updates/ im Supabase SQL-Editor ausführen und danach nochmal versuchen.</span>`;
     el('reset-btn').disabled = false;
     return;
   }
-  st.innerHTML = `<span class="ok">✓ Gelöscht: ${g.artikel} Artikel, ${g.bestaende} Bestände, ${g.lagerplaetze} Lagerplätze, ${g.buchungen} Protokoll-Einträge, ${g.leermeldungen} Leermeldungen.</span>
-    <div class="hint" style="margin-top:8px;">Jetzt tagesaktuelle Daten einspielen: oben bei „⬆️ Bestände per CSV/Excel importieren" → <b>Komplett-Import</b> wählen, „Unbekannte Artikel neu anlegen" aktivieren, Datei wählen. Danach ggf. den Amazon-Status importieren und Paletten/Kanäle bei den Lagerplätzen neu zuordnen (die Zuordnung wurde mit gelöscht).</div>`;
+  st.innerHTML = `<span class="ok">✓ Gelöscht: ${g.artikel} Artikel, ${g.bestaende} Bestände, ${g.lagerplaetze} Lagerplätze${g.paletten != null ? `, ${g.paletten} Paletten` : ''}, ${g.buchungen} Protokoll-Einträge, ${g.leermeldungen} Leermeldungen.</span>
+    <div class="hint" style="margin-top:8px;">Jetzt tagesaktuelle Daten einspielen: oben bei „⬆️ Bestände per CSV/Excel importieren" → <b>Komplett-Import</b> wählen, „Unbekannte Artikel neu anlegen" aktivieren, Datei wählen. Danach ggf. den Amazon-Status importieren${g.paletten != null ? ' und die Paletten neu anlegen (die Palettenliste wurde mit gelöscht)' : ''}.</div>`;
   el('reset-phrase').value = '';
   await ladeAllePlaetze();
+  palettenFuellen();
   refreshLeer(); refreshUndo();
   if (typeof loadDashboard === 'function') loadDashboard();
   if (typeof sucheRefresh === 'function') sucheRefresh();
@@ -3396,7 +3403,7 @@ async function backupEinspielen() {
   const file = el('restore-file').files[0];
   const st = el('restore-status');
   if (!file) { st.innerHTML = '<span class="err">Bitte zuerst eine Sicherungsdatei auswählen.</span>'; return; }
-  if (!confirm('Wirklich das komplette Backup einspielen?\n\nAlle aktuellen Artikel, Bestände, Lagerplätze, das Protokoll und alle Leermeldungen werden gelöscht und durch den Inhalt von "' + file.name + '" ersetzt.\n\nEs wird zuerst automatisch eine Sicherung des jetzigen Stands heruntergeladen.')) return;
+  if (!confirm('Wirklich das komplette Backup einspielen?\n\nAlle aktuellen Artikel, Bestände, Lagerplätze, Paletten, das Protokoll, alle Leermeldungen und Abgleich-Fälle werden gelöscht und durch den Inhalt von "' + file.name + '" ersetzt.\n\nEs wird zuerst automatisch eine Sicherung des jetzigen Stands heruntergeladen.')) return;
   el('restore-btn').disabled = true;
   st.innerHTML = '<span class="hint">⏳ Sicherung des aktuellen Stands wird erstellt…</span>';
   const okBackup = await datenbankSichern();
@@ -3422,7 +3429,8 @@ async function backupEinspielen() {
   st.innerHTML = '<span class="hint">⏳ Backup wird eingespielt…</span>';
   const { data, error } = await client.rpc('backup_wiederherstellen', { p_daten: daten });
   if (error) { st.innerHTML = '<span class="err">❌ ' + esc(error.message) + '</span>'; el('restore-btn').disabled = false; return; }
-  const palTxt = data.paletten === null || typeof data.paletten === 'undefined' ? ' (Paletten-Liste unverändert, war nicht in dieser Sicherung enthalten)' : `, ${data.paletten} Paletten`;
+  const palTxt = data.paletten === null || typeof data.paletten === 'undefined'
+    ? ' (Sicherung ohne Palettenliste: bestehende Liste behalten, Paletten der Lagerplätze ergänzt)' : `, ${data.paletten} Paletten`;
   st.innerHTML = `<span class="ok">✓ Eingespielt: ${data.artikel} Artikel, ${data.bestaende} Bestände, ${data.lagerplaetze} Lagerplätze, ${data.buchungen} Protokoll-Einträge, ${data.leermeldungen} Leermeldungen${palTxt}.</span>`
     + (data.negativ_auf_null > 0 ? `<div class="err" style="margin-top:6px;">⚠️ ${data.negativ_auf_null} negative Bestände aus der Sicherung wurden auf 0 gesetzt (bitte per Inventur prüfen).</div>` : '')
     // Unstimmigkeiten IN der Sicherungsdatei (entstehen, wenn während des Backups
@@ -3581,8 +3589,19 @@ function tagesbeginnIso(datum, plusTage) {
   return new Date(y, m - 1, d + (plusTage || 0)).toISOString();
 }
 function csvZelle(v) { v = v == null ? '' : String(v); if (/[";\n]/.test(v)) v = '"' + v.replace(/"/g, '""') + '"'; return v; }
-function csvDownload(dateiname, zeilen) {
-  const csv = zeilen.map(r => r.map(csvZelle).join(';')).join('\r\n');
+// Text, den Excel als Formel ausführen würde (z. B. ein Artikelname „=HYPERLINK(…)"),
+// bekommt ein ' davor und wird so zu normalem Text. Betroffen: Beginn mit = @ Tab CR,
+// sowie + / - nur, wenn danach eine Formel folgt („-2+3", „+SUMME(…)"). Normale Texte
+// wie „-20% Sale" oder Lagerplätze wie „-A1" und Zahlen wie -3 bleiben unverändert.
+function csvFormelSicher(v) {
+  const s = v == null ? '' : String(v);
+  const formel = /^[=@\t\r]/.test(s) || (/^[+-]/.test(s) && /[(=!]|^[+-][\d.,]+[+\-*/^&]/.test(s));
+  return formel ? "'" + s : s;
+}
+// opts.jtl: Dateien für den JTL-Import bleiben unverändert (JTL liest sie als Daten)
+function csvDownload(dateiname, zeilen, opts) {
+  const zelle = opts && opts.jtl ? csvZelle : v => csvZelle(csvFormelSicher(v));
+  const csv = zeilen.map(r => r.map(zelle).join(';')).join('\r\n');
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = url; a.download = dateiname;
@@ -3915,6 +3934,9 @@ async function refreshLeer() {
   const n = count || 0;
   if (n > 0) { zahl.textContent = n; zahl.style.display = 'flex'; }
   else { zahl.style.display = 'none'; }
+  // die Liste selbst (bis 200 Zeilen) nur laden, wenn die Glocke offen ist -
+  // beim Öffnen wird refreshLeer() ohnehin aufgerufen
+  if (el('leer-panel').style.display !== 'flex') return;
   const { data } = await client.from('leermeldungen')
     .select('zeitstempel,artikelnummer,artikelname,gtin,lagerplatz,hinweis').eq('gesehen',0).order('id',{ascending:false}).limit(200);
   renderLeerPanel(data || [], n);
@@ -3936,7 +3958,7 @@ function renderLeerPanel(data, gesamt) {
 function toggleLeerPanel() {
   const p = el('leer-panel');
   if (p.style.display === 'flex') { p.style.display = 'none'; }
-  else { p.style.display = 'flex'; refreshLeer(); }
+  else { p.style.display = 'flex'; el('leer-panel-body').innerHTML = '<div class="hint" style="padding:8px;">⏳ Lädt…</div>'; refreshLeer(); }
 }
 async function leerGesehen() {
   if (!confirm('Alle offenen Leermeldungen als gesehen markieren?')) return;
@@ -4032,7 +4054,8 @@ function eanHint() {
   el('art-ean-hint').innerHTML = g === null ? '' : (g ? '<span class="ok">✓ gültige EAN</span>' : '<span class="err">⚠ Prüfziffer stimmt nicht</span>');
 }
 
-function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+// auch Anführungszeichen maskieren: so ist esc() auch in Attributen (title="…") sicher
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
 window.addEventListener('load', () => {
   const u = localStorage.getItem('lp_url'), k = localStorage.getItem('lp_key');
