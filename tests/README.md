@@ -15,3 +15,19 @@ psql -h /tmp -p 54329 -U postgres -d lp -At -f tests/sql/fingerabdruck.sql   # S
 
 `fingerabdruck.sql` lässt sich auch im Supabase SQL-Editor ausführen: Gleicher Wert
 in Supabase und lokal = gleiche Datenbankstruktur.
+
+## Bibliotheken aktualisieren (Paket 3b)
+
+`index.html` lädt supabase-js, papaparse und xlsx mit fester Version und Prüfsumme
+(`integrity`). Für eine neue Version: Paket von npm holen, Prüfsumme der Datei bilden
+und Version + Prüfsumme im `<script>`-Tag ersetzen, z. B.
+
+```
+npm pack @supabase/supabase-js@2.x.y && tar xzf supabase-supabase-js-2.x.y.tgz
+echo "sha384-$(openssl dgst -sha384 -binary package/dist/umd/supabase.js | base64 -w0)"
+```
+
+jsDelivr liefert die npm-Dateien unverändert aus, die Prüfsumme passt also.
+
+`tests/e2e/jtl_vergleich.js` vergleicht die JTL-Kommentar-Datei der Datenbank
+(`jtl_kommentar_csv`) mit der früheren JavaScript-Logik.
