@@ -2272,7 +2272,10 @@ async function kartonBlattTeil(name) {
   // Barcode, Palette und Artikelnummer stehen bewusst nicht mehr auf dem Blatt.
   const punktFarbe = meta.kanal===1 ? '#22c55e' : (meta.kanal===2 ? '#c0392f' : '');
   const punkt = punktFarbe ? `<span class="dot" style="background:${punktFarbe};"></span>` : '';
-  const body = rows.map(a => `<tr><td class="mono">${esc(a.gtin)}</td><td class="t">${esc(a.name)}</td><td class="r m">${a.menge}</td><td class="w">${esc(a.weitere)}</td></tr>`).join('')
+  // EAN groß, die letzten 4 Ziffern noch größer: nach ihnen ist die Liste sortiert
+  // und nach ihnen wird im Lager gesucht
+  const eanHtml = g => g.length > 4 ? esc(g.slice(0, -4)) + '<b>' + esc(g.slice(-4)) + '</b>' : '<b>' + esc(g) + '</b>';
+  const body = rows.map(a => `<tr><td class="mono">${eanHtml(a.gtin)}</td><td class="t">${esc(a.name)}</td><td class="r m">${a.menge}</td><td class="w">${esc(a.weitere)}</td></tr>`).join('')
     || '<tr><td colspan="4" style="text-align:center;color:#888;padding:8mm;">(leer)</td></tr>';
   return `<div class="blatt">
     <div class="kopf"><div class="kar">${esc(name)}</div>${punkt}</div>
@@ -2283,20 +2286,23 @@ function kartonBlattSeite(titel, blaetter) {
   return `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${esc(titel)}</title><style>
     *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
     body{margin:0;padding:7mm;font-family:Arial,sans-serif;color:#000;}
+    /* Blatt so breit wie der Druckbereich (A4 minus 2×15 mm): dann gilt das Einpassen
+       von Kartonname und Artikelnamen am Bildschirm genauso auf dem Papier */
+    .blatt{width:180mm;}
     .blatt + .blatt{break-before:page;page-break-before:always;}
     @media screen{.blatt + .blatt{margin-top:12mm;padding-top:6mm;border-top:3px dashed #999;}}
     .kopf{display:flex;align-items:center;justify-content:center;gap:8mm;border-bottom:2px solid #000;padding-bottom:3mm;margin-bottom:3mm;}
-    .kar{font-size:90pt;font-weight:800;line-height:1;letter-spacing:-1px;}
+    .kar{font-size:90pt;font-weight:800;line-height:1;letter-spacing:-1px;white-space:nowrap;}
     .dot{display:inline-block;width:56pt;height:56pt;border-radius:50%;flex:none;}
     /* feste Spaltenbreiten: nichts darf breiter als das Blatt werden (sonst schneidet der Drucker ab) */
     table{width:100%;border-collapse:collapse;font-size:10pt;table-layout:fixed;}
-    col.c-ean{width:31mm;} col.c-m{width:14mm;} col.c-w{width:42mm;}
+    col.c-ean{width:53mm;} col.c-m{width:14mm;} col.c-w{width:40mm;}
     th,td{border-bottom:1px solid #ccc;padding:1.3mm 1.5mm;text-align:left;vertical-align:top;overflow:hidden;}
     th{border-bottom:1.5px solid #000;font-size:8.5pt;text-transform:uppercase;}
-    .r{text-align:right;} .m{font-weight:700;} .t{font-size:8pt;white-space:nowrap;} .t.umbruch{white-space:normal;} .w{font-size:8.5pt;overflow-wrap:anywhere;} .mono{font-family:'Courier New',monospace;white-space:nowrap;}
+    .r{text-align:right;} .m{font-weight:700;} .t{font-size:8pt;white-space:nowrap;} .t.umbruch{white-space:normal;} .w{font-size:8.5pt;overflow-wrap:anywhere;} .mono{font-family:'Courier New',monospace;white-space:nowrap;font-size:15pt;letter-spacing:.3px;} .mono b{font-size:19pt;font-weight:800;}
     .hint{margin-bottom:4mm;font-size:9pt;color:#666;}
-    /* oben 7 mm, links/rechts/unten 12 mm */
-    @page{size:A4;margin:7mm 12mm 12mm 12mm;}
+    /* rundum 15 mm: kleinere Ränder schneiden manche Drucker ab */
+    @page{size:A4;margin:15mm;}
     @media print{.hint{display:none;} body{padding:0;}}
   </style></head><body>
     <div class="hint">${blaetter.length > 1 ? blaetter.length + ' Karton-Blätter (je eine Seite)' : 'Karton-Blatt'}. Druck startet automatisch — sonst Strg/Cmd+P.</div>
@@ -2313,8 +2319,17 @@ function kartonBlattSeite(titel, blaetter) {
       }
       // load-Ereignis UND Rückfallzeit: das Fenster wurde vorher schon einmal
       // beschrieben (Ladehinweis), darauf soll sich der Druckstart nicht verlassen
+      // Kartonname: lange Namen (z. B. „Unbekannt-01") liefen in 90pt über den Rand
+      // hinaus und wurden beim Druck abgeschnitten → so weit verkleinern, dass er passt
+      function kopfEinpassen(){
+        document.querySelectorAll('.kopf').forEach(function(k){
+          var kar=k.querySelector('.kar'), dot=k.querySelector('.dot');
+          var platz=k.clientWidth-(dot?dot.offsetWidth+30:0), s=90;
+          while(kar.scrollWidth>platz && s>30){ s-=2; kar.style.fontSize=s+'pt'; }
+        });
+      }
       var gedruckt=false;
-      function los(){ if(gedruckt) return; gedruckt=true; namenEinpassen(); setTimeout(function(){window.print();},150); }
+      function los(){ if(gedruckt) return; gedruckt=true; kopfEinpassen(); namenEinpassen(); setTimeout(function(){window.print();},150); }
       window.addEventListener('load', los);
       setTimeout(los, 1500);
     <\/script>

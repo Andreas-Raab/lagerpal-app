@@ -6,6 +6,8 @@ PostgREST (dieselbe Schnittstelle, die Supabase nutzt) und ein kleiner Test-Serv
 Die App selbst (`index.html`) wird unverändert im Browser (Playwright) getestet.
 
 Gedacht für einen Entwicklungs-Container (Postgres 16, Node, Playwright vorhanden).
+Einmalig vorher: PostgREST v12.2.3 als `/var/tmp/postgrest` ablegen und in
+`/var/tmp/lp-e2e` `npm install @supabase/supabase-js@2.117.2 papaparse@5.4.1 xlsx@0.18.5 jsonwebtoken`.
 
 ```
 tests/e2e/start.sh                                      # Testumgebung starten (frische DB + Testdaten)
