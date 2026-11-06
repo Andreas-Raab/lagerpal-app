@@ -778,6 +778,22 @@ function testsystemAnzeigen(url) {
   document.querySelector('header').style.top = istTest ? el('testsystem-balken').offsetHeight + 'px' : '0';
   kopfMessen();
 }
+// „JWT issued at future": Direkt nach dem Erneuern der Anmeldung (oft beim Start)
+// stellt der Anmelde-Dienst von Supabase ein Ticket aus, dessen Ausstellungszeit
+// nach der Uhr des Datenbank-Dienstes noch ein paar Sekunden in der Zukunft liegt.
+// Die Anfrage wird dann abgelehnt, BEVOR irgendetwas gelesen oder gebucht wird -
+// sie kurz danach zu wiederholen ist also gefahrlos.
+async function fetchMitZeitToleranz(input, init) {
+  let res = await fetch(input, init);
+  for (const warte of [1500, 3000]) {
+    if (res.status !== 401) break;
+    const txt = await res.clone().text().catch(() => '');
+    if (!/issued at future/i.test(txt)) break;
+    await new Promise(r => setTimeout(r, warte));
+    res = await fetch(input, init);
+  }
+  return res;
+}
 function verbinden() {
   let url = el('url').value.trim();
   const key = el('key').value.trim();
@@ -786,7 +802,7 @@ function verbinden() {
   if (m) url = m[0];
   if (!url || !key) { el('login-status').innerHTML = '<span class="err">URL und Schlüssel eingeben.</span>'; return; }
   try {
-    client = supabase.createClient(url, key);
+    client = supabase.createClient(url, key, { global: { fetch: fetchMitZeitToleranz } });
     testsystemAnzeigen(url);
     localStorage.setItem('lp_url', url); localStorage.setItem('lp_key', key);
     el('url').value = url;

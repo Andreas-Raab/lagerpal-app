@@ -7,7 +7,7 @@ const ROOT = path.resolve(__dirname, '../..');
 const SECRET = 'lokales-test-geheimnis-mindestens-32-zeichen';
 const USER = { id: '11111111-1111-1111-1111-111111111111', email: 'test@lager.local', aud: 'authenticated', role: 'authenticated' };
 // Verzögerung für REST-Aufrufe (simuliert langsames Lager-WLAN), per /__delay?ms=…
-let delayMs = 0;
+let delayMs = 0, jwtZukunft = 0;
 function token() {
   const exp = Math.floor(Date.now() / 1000) + 3600 * 24;
   return jwt.sign({ sub: USER.id, email: USER.email, role: 'authenticated', aud: 'authenticated', exp }, SECRET);
@@ -19,6 +19,8 @@ http.createServer((req, res) => {
     res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' });
     return res.end();
   }
+  // die nächsten n REST-Anfragen wie Supabase mit „JWT issued at future" ablehnen
+  if (u.pathname === '/__jwtzukunft') { jwtZukunft = +u.searchParams.get('n') || 0; return send(res, 200, { jwtZukunft }); }
   if (u.pathname === '/__delay') { delayMs = +u.searchParams.get('ms') || 0; return send(res, 200, { delayMs }); }
   if (u.pathname.startsWith('/auth/v1/')) {
     const t = token(), now = Math.floor(Date.now() / 1000);
@@ -28,6 +30,7 @@ http.createServer((req, res) => {
     return send(res, 404, { msg: 'nicht nachgebildet' });
   }
   if (u.pathname.startsWith('/rest/v1')) {
+    if (jwtZukunft > 0 && req.method !== 'HEAD') { jwtZukunft--; return send(res, 401, { code: 'PGRST303', message: 'JWT issued at future' }); }
     const ziel = u.pathname.slice('/rest/v1'.length) || '/';
     const headers = { ...req.headers }; delete headers.host;
     // anon-Key ohne Anmeldung: PostgREST braucht dann gar keinen Token
