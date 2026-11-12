@@ -524,6 +524,7 @@ tbody tr:hover td{background:#eef4fb;}
       <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:8px;">
         <button onclick="exportJtlLagerbestandCsv()">⬇️ Lagerbestand (JTL)</button>
         <button onclick="exportJtlKommentarCsv()">💬 Lagerbestandskommentar (JTL)</button>
+        <button onclick="exportJtlStandardlagerCsv()">🏬 Bestand für JTL-Standardlager</button>
       </div>
     </div>
     <div class="card" style="margin-top:12px;">
@@ -3336,6 +3337,23 @@ async function exportJtlKommentarCsv() {
     const a = document.createElement('a'); a.href = url; a.download = 'Lagerbestandskommentar.csv';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch (e) { alert('Fehler beim Export: ' + (e.message || e)); }
+}
+// Gesamtbestand pro Artikel (alle Lagerplätze zusammen) für den Import in ein
+// JTL-Standardlager (ohne WMS). Eine Zeile pro Artikel, auch Bestand 0.
+// Unbekannte Artikel (Platzhalter WE-0-…) sind ausgeschlossen - JTL kennt sie nicht.
+async function exportJtlStandardlagerCsv() {
+  try {
+    const [rows, { arts, unb }] = await Promise.all([
+      fetchAll('bestaende', 'artikelnummer,lagerplatz,menge', { order: { col: 'artikelnummer', asc: true } }),
+      jtlUnbekannteSet()
+    ]);
+    const summe = {};
+    rows.filter(r => r.menge > 0 && !unb.has(r.artikelnummer)).forEach(r => { summe[r.artikelnummer] = (summe[r.artikelnummer] || 0) + r.menge; });
+    const alle = [...new Set([...arts.map(a => a.artikelnummer), ...Object.keys(summe)])].filter(nr => !unb.has(nr)).sort();
+    const head = ['Artikelnummer','Bestand'];
+    const data = alle.map(nr => [nr, summe[nr] || 0]);
+    csvDownload('Bestand_JTL_Standardlager.csv', [head, ...data], { jtl: true });
   } catch (e) { alert('Fehler beim Export: ' + (e.message || e)); }
 }
 // Vollständige Sicherung aller Tabellen als JSON-Datei (Supabase Free-Tier hat keine automatischen Backups)
