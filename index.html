@@ -977,9 +977,9 @@ let sucheSichtbar = [];           // aktuell gerenderte Artikelnummern (für „
 const SUCH_BLOCK = 60;
 let sucheLimit = SUCH_BLOCK;
 
-function amaBadge(online) {
+function amaBadge(online, warum) {
   if (online === 1) return '<span class="badge b-on">AMA</span>';
-  if (online === 2) return '<span class="badge b-off" style="text-decoration:line-through;">AMA</span>';
+  if (online === 2) return warum ? `<span class="badge b-off" style="text-decoration:line-through;cursor:help;" title="Warum nicht online: ${esc(warum)}">AMA</span>` : '<span class="badge b-off" style="text-decoration:line-through;">AMA</span>';
   return '<span class="badge b-unk">AMA ?</span>';
 }
 let sucheLadeSeq = 0;       // verwirft Antworten überholter Ladevorgänge
@@ -994,7 +994,7 @@ async function ladeSucheDaten(still) {
   let arts, best, lps;
   try {
     [arts, best, lps] = await Promise.all([
-      fetchAll('artikel', 'artikelnummer,artikelname,gtin,online,ist_set', { order: { col: 'artikelname', asc: true } }),
+      fetchAll('artikel', '*', { order: { col: 'artikelname', asc: true } }),
       fetchAll('bestaende', 'artikelnummer,lagerplatz,menge'),   // auch 0-Mengen (frühere Lagerorte)
       fetchAll('v_lagerplaetze', 'name,palette')
     ]);
@@ -1279,7 +1279,7 @@ function sucheRender(behalteLimit) {
     const cb = `<input type="checkbox" onclick="event.stopPropagation()" onchange="sucheToggleSelect('${jsAttr(a.artikelnummer)}',this.checked)" ${sucheSelektion.has(a.artikelnummer)?'checked':''}>`;
     const setBadge = a.istSet ? '<span class="set-badge">SET</span>' : '';
     const nameHtml = `<div class="such-name-row">
-        <span class="such-name-text">${esc(a.artikelname||'')}</span>${setBadge}${amaBadge(a.online)}
+        <span class="such-name-text">${esc(a.artikelname||'')}</span>${setBadge}${amaBadge(a.online, a.warum_nicht_online)}
         <span class="such-name-actions">
           <button class="sec icon-btn" title="Etikett" onclick="openEtikettModal('${jsAttr(a.artikelnummer)}','${jsAttr(a.artikelname||'')}','${jsAttr(a.gtin||'')}')">🏷️</button>
           <button class="sec icon-btn" title="Bearbeiten" onclick="openEdit('${jsAttr(a.artikelnummer)}')">✏️</button>
@@ -4033,6 +4033,7 @@ function openNeu() {
   el('art-nr').value = ''; el('art-nr').disabled = false;
   el('art-name').value = ''; el('art-gtin').value = ''; el('art-set').checked = false; el('art-online').value = '0';
   el('art-lp').value = ''; el('art-menge').value = '0';
+  el('art-wno').value = ''; el('art-info').value = '';
   el('art-neu-only').style.display = 'block'; el('art-err').textContent = ''; eanHint();
   el('art-del-btn').style.display = 'none';
   window._artEdit = null;
@@ -4042,6 +4043,9 @@ async function openEdit(artnr) {
   const { data } = await client.from('artikel').select('artikelnummer,artikelname,gtin,ist_set,online').eq('artikelnummer', artnr).limit(1);
   if (!data || !data.length) { alert('Artikel nicht gefunden'); return; }
   const a = data[0];
+  el('art-wno').value = ''; el('art-info').value = '';
+  { const r = await client.from('artikel').select('warum_nicht_online,info').eq('artikelnummer', artnr).limit(1);
+    if (!r.error && r.data && r.data.length) { el('art-wno').value = r.data[0].warum_nicht_online || ''; el('art-info').value = r.data[0].info || ''; } }
   el('art-titel').textContent = 'Artikel bearbeiten';
   el('art-nr').value = a.artikelnummer; el('art-nr').disabled = true;
   el('art-name').value = a.artikelname || ''; el('art-gtin').value = a.gtin || '';
@@ -4085,6 +4089,10 @@ async function saveArtikel() {
     res = await client.rpc('artikel_neu', { p_artikelnummer: nr, p_artikelname: name, p_gtin: gtin, p_ist_set: set, p_online: online, p_lagerplatz: lp, p_menge: menge });
   }
   if (res.error) { err.textContent = res.error.message; return; }
+  // Infofelder (Warum nicht online / Info) über eigene Funktion speichern
+  { const infoNr = window._artEdit || el('art-nr').value.trim();
+    const r2 = await client.rpc('artikel_infos_setzen', { p_artikelnummer: infoNr, p_warum_nicht_online: el('art-wno').value, p_info: el('art-info').value });
+    if (r2.error) { err.textContent = 'Artikel gespeichert, aber Infofelder nicht: ' + r2.error.message; window._artEdit = infoNr; return; } }
   el('art-modal').style.display = 'none';
   await ladeAllePlaetze();
   refreshUndo();
@@ -4126,6 +4134,10 @@ window.addEventListener('load', () => {
     <label style="display:flex;gap:8px;align-items:center;margin-top:10px;"><input type="checkbox" id="art-set" style="width:auto;"> Set-Artikel</label>
     <label>Amazon-Status</label>
     <select id="art-online"><option value="0">unbekannt</option><option value="1">online</option><option value="2">nicht online</option></select>
+    <label>Warum nicht online</label>
+    <textarea id="art-wno" rows="2" style="width:100%;box-sizing:border-box;padding:8px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:.92rem;font-family:var(--font);color:var(--text);resize:vertical;" maxlength="2000" placeholder="optional – erscheint in der Artikelsuche beim roten AMA-Zeichen"></textarea>
+    <label>Info</label>
+    <textarea id="art-info" rows="2" style="width:100%;box-sizing:border-box;padding:8px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:.92rem;font-family:var(--font);color:var(--text);resize:vertical;" maxlength="2000" placeholder="optional – nur hier sichtbar"></textarea>
     <div id="art-neu-only">
       <label>Lagerplatz (optional)</label><input id="art-lp">
       <label>Anfangsbestand</label><input id="art-menge" type="number" min="0" value="0">
