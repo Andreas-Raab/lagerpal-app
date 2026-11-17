@@ -1531,13 +1531,16 @@ begin
     delete from mengen_abweichungen where true;
 
     -- unbekannt: ältere Sicherungen haben die Spalte nicht → 0
-    insert into artikel (artikelnummer, artikelname, gtin, ist_set, online, unbekannt)
+    -- warum_nicht_online / info (seit 11/2026): ältere Sicherungen haben sie nicht → ''
+    insert into artikel (artikelnummer, artikelname, gtin, ist_set, online, unbekannt, warum_nicht_online, info)
         select artikelnummer, coalesce(artikelname,''), coalesce(gtin,''),
                case when ist_set = 1 then 1 else 0 end,
                case when online in (1,2) then online else 0 end,
-               case when unbekannt = 1 then 1 else 0 end
+               case when unbekannt = 1 then 1 else 0 end,
+               coalesce(warum_nicht_online,''), coalesce(info,'')
         from jsonb_to_recordset(coalesce(p_daten->'artikel', '[]'::jsonb)) as x(
-            artikelnummer text, artikelname text, gtin text, ist_set smallint, online smallint, unbekannt smallint)
+            artikelnummer text, artikelname text, gtin text, ist_set smallint, online smallint, unbekannt smallint,
+            warum_nicht_online text, info text)
         where artikelnummer is not null
         on conflict (artikelnummer) do nothing;
     get diagnostics v_artikel = row_count;
@@ -2104,3 +2107,28 @@ returns jsonb language sql stable security definer set search_path = public, pg_
 $$;
 revoke all on function jtl_kommentar_csv() from anon, public;
 grant execute on function jtl_kommentar_csv() to authenticated, service_role;
+
+-- ─── Artikel-Infofelder (11/2026) ───
+alter table artikel add column if not exists warum_nicht_online text not null default '';
+alter table artikel add column if not exists info text not null default '';
+
+create or replace function artikel_infos_setzen(p_artikelnummer text, p_warum_nicht_online text, p_info text)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_alt record;
+begin
+    p_warum_nicht_online := trim(coalesce(p_warum_nicht_online,''));
+    p_info := trim(coalesce(p_info,''));
+    if length(p_warum_nicht_online) > 2000 or length(p_info) > 2000 then
+        raise exception 'Text zu lang (höchstens 2000 Zeichen)';
+    end if;
+    select warum_nicht_online, info into v_alt from artikel where artikelnummer = p_artikelnummer for update;
+    if not found then raise exception 'Artikel % nicht gefunden', p_artikelnummer; end if;
+    if v_alt.warum_nicht_online = p_warum_nicht_online and v_alt.info = p_info then
+        return jsonb_build_object('ok', true, 'unveraendert', true);
+    end if;
+    update artikel set warum_nicht_online = p_warum_nicht_online, info = p_info
+        where artikelnummer = p_artikelnummer;
+    return jsonb_build_object('ok', true);
+end; $$;
+revoke all on function artikel_infos_setzen(text,text,text) from anon, public;
+grant execute on function artikel_infos_setzen(text,text,text) to authenticated;
