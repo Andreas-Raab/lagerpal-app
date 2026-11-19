@@ -145,6 +145,14 @@ tbody tr:hover td{background:#eef4fb;}
 .so-kopf{cursor:pointer;}
 .ss-block{background:var(--red);color:#fff;font-size:1.25rem;font-weight:700;padding:14px 16px;border-radius:8px;animation:ssPuls .5s ease 2;}
 @keyframes ssPuls{0%,100%{transform:scale(1);}50%{transform:scale(1.03);}}
+.ss-pop{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:40;width:min(720px,calc(100vw - 32px));background:#fff;border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.35);border:6px solid #555;padding:22px 26px;text-align:center;pointer-events:none;}
+.ss-pop .kopf{font-size:3rem;font-weight:900;letter-spacing:.04em;line-height:1.1;}
+.ss-pop .titel{font-size:1.5rem;font-weight:700;margin-top:12px;line-height:1.25;}
+.ss-pop .zeile{font-size:1.25rem;margin-top:8px;color:#333;}
+.ss-pop .menge{font-size:2.6rem;font-weight:900;margin-top:10px;}
+.ss-pop.ein{border-color:var(--green);} .ss-pop.ein .kopf{color:var(--green);}
+.ss-pop.aus{border-color:var(--red);} .ss-pop.aus .kopf{color:var(--red);}
+.ss-pop.unbekannt{border-color:#7c3aed;} .ss-pop.unbekannt .kopf{color:#7c3aed;}
 .so-kopf:hover{border-color:var(--blue);}
 .so-kachel{flex:1 1 120px;border-radius:8px;padding:8px 12px;cursor:pointer;border:2px solid transparent;user-select:none;}
 .so-kachel:hover{border-color:var(--line);}
@@ -327,6 +335,7 @@ tbody tr:hover td{background:#eef4fb;}
       <div id="ss-unb" style="display:none;margin-top:14px;"></div>
 
       <div id="ss-status" class="hint" style="margin-top:16px;">Modus wählen und scannen</div>
+      <div id="ss-pop" class="ss-pop" style="display:none;"></div>
     </div>
   </div>
 
@@ -2750,6 +2759,32 @@ function ssMenge() {
   if (!Number.isInteger(m) || m < 1) { ssStatus('Menge muss eine ganze Zahl ≥ 1 sein.', 'err'); return null; }
   return m;
 }
+// Großes Fenster mit der letzten Buchung (Scanner), verschwindet nach 2 s von
+// selbst. Liegt UNTER allen anderen Fenstern (Set-Rückfrage, Bestätigungen …),
+// fängt keine Klicks ab und wird beim nächsten Scan sofort ausgeblendet.
+let ssPopTimer = null, ssPopNr = 0;
+function ssPopWeg() { clearTimeout(ssPopTimer); const b = el('ss-pop'); if (b) b.style.display = 'none'; }
+function ssPopZeigen(art, d) {
+  const b = el('ss-pop'); if (!b) return;
+  const nr = ++ssPopNr;
+  const kopf = art === 'ein' ? '✚ EINGEBUCHT' : art === 'aus' ? '− AUSGEBUCHT' : '❓ UNBEKANNT EINGEBUCHT';
+  b.className = 'ss-pop ' + art;
+  b.innerHTML = `<div class="kopf">${kopf}</div>`
+    + `<div class="titel">${esc(d.name || d.artnr || '')}</div>`
+    + `<div class="zeile">Art.-Nr. ${esc(d.artnr || '')} · EAN <span class="ss-pop-ean">${esc(d.gtin || '…')}</span><span class="ss-pop-set"></span></div>`
+    + `<div class="menge">${d.menge} Stk</div>`
+    + `<div class="zeile">${art === 'aus' ? 'von' : 'auf'} ${esc(d.lp || '')}</div>`;
+  b.style.display = 'block';
+  clearTimeout(ssPopTimer);
+  ssPopTimer = setTimeout(() => { if (nr === ssPopNr) b.style.display = 'none'; }, 2000);
+  if (!d.gtin && d.artnr) {
+    client.from('artikel').select('gtin,ist_set').eq('artikelnummer', d.artnr).limit(1).then(({ data }) => {
+      if (nr !== ssPopNr || !data || !data.length) return;
+      const e = b.querySelector('.ss-pop-ean'); if (e) e.textContent = data[0].gtin || '—';
+      const s = b.querySelector('.ss-pop-set'); if (s && data[0].ist_set) s.textContent = ' · ⚠️ SET';
+    }, () => {});
+  }
+}
 async function ssBook(artnr, lp, typ, menge, name) {
   const { data, error } = await client.rpc('buchen', { p_artikelnummer: artnr, p_lagerplatz: lp, p_typ: typ, p_menge: menge, p_kommentar: '' });
   if (error) { ssStatus('Fehler: ' + esc(buchFehlerText(error)), 'err'); return null; }
@@ -2758,6 +2793,7 @@ async function ssBook(artnr, lp, typ, menge, name) {
   ssStatus(`${wort}: <b>${menge} Stk</b>${wohin} — ${esc(name||artnr)}<br>Bestand auf ${esc(lp)}: <b>${data.lp_bestand_neu}</b> · Gesamt: <b>${data.bestand_gesamt_neu}</b>`, 'ok');
   el('ss-status').insertAdjacentHTML('beforeend', ssVerworfenHtml());
   el('ss-menge').value = 1;
+  ssPopZeigen(typ === 'ein' ? 'ein' : 'aus', { artnr, name: name || data.artikelname, menge, lp });
   plaetzeMerken(lp); refreshUndo();
   return data;
 }
@@ -2800,6 +2836,7 @@ async function ssScan() {
     ssStatus('⏳ Moment – vorheriger Scan läuft noch. Bitte gleich nochmal scannen.', 'err'); return;
   }
   ssLaeuft = true;
+  ssPopWeg();
   try { await ssScanIntern(); }
   catch (e) { ssStatus('❌ ' + esc(buchFehlerText(e)) + ' – bitte noch einmal scannen.', 'err'); ssWarnen('Fehler, bitte nochmal scannen'); }
   finally {
@@ -2836,6 +2873,7 @@ async function ssScanIntern() {
     if (r.error) { ssStatus('Fehler: ' + esc(buchFehlerText(r.error)), 'err'); el('ss-scan').focus(); return; }
     ssStatus(unbMeldungHtml(r.data, menge)
       + (ssLp ? `<div class="hint" style="margin-top:4px;">Hinweis: unbekannte Artikel gehen immer in den Unbekannt-Karton, nicht auf ${esc(ssLp)}.</div>` : ''));
+    ssPopZeigen('unbekannt', { artnr: r.data.artikelnummer, name: r.data.artikelname, gtin: r.data.gtin, menge, lp: r.data.karton });
     plaetzeMerken(r.data.karton); refreshUndo(); ssUnbRender();
     el('ss-scan').focus();
     return;
